@@ -22,3 +22,44 @@
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*
 replay_pid*
+
+# Maven
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+# Node / Frontend
+node_modules/
+dist/
+dist-ssr/
+build/
+.vite/
+*.local
+
+# Fichiers d'environnement (secrets, jamais versionnes)
+.env
+.env.*
+!.env.example
+*.env.local
+
+# IDE
+.idea/
+*.iml
+.vscode/
+!.vscode/extensions.json
+.settings/
+.classpath
+.project
+.factorypath
+
+# Systeme d'exploitation
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.override.yml
+
+# Documents internes de preparation (non destines au depot public)
+docs/initialisation projet/
+sprint actuel.md
