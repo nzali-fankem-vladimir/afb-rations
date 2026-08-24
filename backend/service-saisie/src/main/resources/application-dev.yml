@@ -1,0 +1,14 @@
+spring:
+  datasource:
+    url: ${DB_SAISIE_URL:jdbc:postgresql://localhost:5432/rations_saisie}
+    username: ${DB_SAISIE_USERNAME:rations_saisie}
+    password: ${DB_SAISIE_PASSWORD:changeme-in-development}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+
+logging:
+  level:
+    root: INFO
+    cm.afrilandfirstbank.rations.saisie: DEBUG

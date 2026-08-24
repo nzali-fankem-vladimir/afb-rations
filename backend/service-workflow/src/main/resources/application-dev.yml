@@ -1,0 +1,14 @@
+spring:
+  datasource:
+    url: ${DB_WORKFLOW_URL:jdbc:postgresql://localhost:5432/rations_workflow}
+    username: ${DB_WORKFLOW_USERNAME:rations_workflow}
+    password: ${DB_WORKFLOW_PASSWORD:changeme-in-development}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+
+logging:
+  level:
+    root: INFO
+    cm.afrilandfirstbank.rations.workflow: DEBUG

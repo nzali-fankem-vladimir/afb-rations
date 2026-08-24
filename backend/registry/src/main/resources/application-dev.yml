@@ -1,0 +1,14 @@
+# Instance de registre autonome pour le developpement local : ne s'enregistre
+# pas et ne recupere pas de registre aupres d'elle-meme. Enregistrement des
+# services configure au Sprint 8.
+eureka:
+  client:
+    register-with-eureka: false
+    fetch-registry: false
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka}
+
+logging:
+  level:
+    root: INFO
+    cm.afrilandfirstbank.rations.registry: DEBUG

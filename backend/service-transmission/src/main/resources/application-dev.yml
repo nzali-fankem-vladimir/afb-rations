@@ -1,0 +1,11 @@
+# Pas de base propre pour ce service (document maitre section 3) : il met a
+# jour le processus via l'API du service Workflow. Aucune datasource ni
+# configuration Flyway ici.
+spring:
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+
+logging:
+  level:
+    root: INFO
+    cm.afrilandfirstbank.rations.transmission: DEBUG

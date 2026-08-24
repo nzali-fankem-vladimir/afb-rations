@@ -1,0 +1,14 @@
+spring:
+  datasource:
+    url: ${DB_AUDIT_URL:jdbc:postgresql://localhost:5432/rations_audit}
+    username: ${DB_AUDIT_USERNAME:rations_audit}
+    password: ${DB_AUDIT_PASSWORD:changeme-in-development}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+
+logging:
+  level:
+    root: INFO
+    cm.afrilandfirstbank.rations.audit: DEBUG

@@ -1,0 +1,6 @@
+# Pas de base propre pour ce service (document maitre section 3) : il lit via
+# les API des autres services. Aucune datasource ni configuration Flyway ici.
+logging:
+  level:
+    root: INFO
+    cm.afrilandfirstbank.rations.reporting: DEBUG

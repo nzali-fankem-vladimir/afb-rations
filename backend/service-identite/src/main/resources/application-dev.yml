@@ -1,0 +1,14 @@
+spring:
+  datasource:
+    url: ${DB_IDENTITE_URL:jdbc:postgresql://localhost:5432/rations_identite}
+    username: ${DB_IDENTITE_USERNAME:rations_identite}
+    password: ${DB_IDENTITE_PASSWORD:changeme-in-development}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+
+logging:
+  level:
+    root: INFO
+    cm.afrilandfirstbank.rations.identite: DEBUG
