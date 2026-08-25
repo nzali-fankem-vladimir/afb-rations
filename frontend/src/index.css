@@ -1,0 +1,11 @@
+@import "tailwindcss";
+
+@theme {
+  --color-rouge-principal: #e30613;
+  --color-rouge-secondaire: #c0000a;
+  --color-noir-charte: #1a1a1a;
+}
+
+body {
+  margin: 0;
+}
