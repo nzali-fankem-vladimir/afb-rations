@@ -1,0 +1,253 @@
+{
+  "realm": "afb-rations-dev",
+  "displayName": "AFB Rations et Transport Garde Armee (developpement)",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginTheme": "keycloak",
+  "accessTokenLifespan": 28800,
+  "roles": {
+    "realm": [
+      {
+        "name": "AGENT_UNITE",
+        "description": "Agent d'unite - saisie journaliere et soumission"
+      },
+      {
+        "name": "CHEF_UNITE_DA",
+        "description": "Chef d'unite - premier niveau de validation"
+      },
+      {
+        "name": "DIRECTEUR_RESEAU_DR",
+        "description": "Directeur reseau - validation au-dela du seuil d'aiguillage"
+      },
+      {
+        "name": "ARH",
+        "description": "Analyste ressources humaines - creation des grilles tarifaires"
+      },
+      {
+        "name": "DRH",
+        "description": "Directeur des ressources humaines - validation des grilles tarifaires"
+      },
+      {
+        "name": "ADMIN",
+        "description": "Administrateur du module rations"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "rations-frontend",
+      "name": "Frontend React du module rations",
+      "description": "Client public, authorization code + PKCE S256. Aucun secret : le code est telecharge par le navigateur.",
+      "enabled": true,
+      "publicClient": true,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "fullScopeAllowed": true,
+      "redirectUris": [
+        "http://localhost:5173/*"
+      ],
+      "webOrigins": [
+        "http://localhost:5173"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:5173/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "audience-rations-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "rations-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "matricule",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "matricule",
+            "claim.name": "matricule",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "jean_mbarga",
+      "email": "jean_mbarga@afrilandfirstbank.com",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Jean",
+      "lastName": "MBARGA",
+      "attributes": {
+        "matricule": [
+          "1847"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Rations2026",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "AGENT_UNITE"
+      ]
+    },
+    {
+      "username": "paul_essama",
+      "email": "paul_essama@afrilandfirstbank.com",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Paul",
+      "lastName": "ESSAMA",
+      "attributes": {
+        "matricule": [
+          "2093"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Rations2026",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "CHEF_UNITE_DA"
+      ]
+    },
+    {
+      "username": "sylvie_atangana",
+      "email": "sylvie_atangana@afrilandfirstbank.com",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Sylvie",
+      "lastName": "ATANGANA",
+      "attributes": {
+        "matricule": [
+          "1562"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Rations2026",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "DIRECTEUR_RESEAU_DR"
+      ]
+    },
+    {
+      "username": "claire_nkolo",
+      "email": "claire_nkolo@afrilandfirstbank.com",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Claire",
+      "lastName": "NKOLO",
+      "attributes": {
+        "matricule": [
+          "2201"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Rations2026",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "ARH"
+      ]
+    },
+    {
+      "username": "agnes_tchinda",
+      "email": "agnes_tchinda@afrilandfirstbank.com",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Agnes",
+      "lastName": "TCHINDA",
+      "attributes": {
+        "matricule": [
+          "1734"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Rations2026",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "DRH"
+      ]
+    },
+    {
+      "username": "martin_fouda",
+      "email": "martin_fouda@afrilandfirstbank.com",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Martin",
+      "lastName": "FOUDA",
+      "attributes": {
+        "matricule": [
+          "2456"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Rations2026",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "ADMIN"
+      ]
+    },
+    {
+      "username": "pierre_belinga",
+      "email": "pierre_belinga@afrilandfirstbank.com",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Pierre",
+      "lastName": "BELINGA",
+      "attributes": {
+        "matricule": [
+          "1903"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Rations2026",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "AGENT_UNITE"
+      ],
+      "_commentaire": "Compte de controle : present a l'annuaire, volontairement SANS profil local dans le module. Sert a verifier le 403 sur compte non habilite."
+    }
+  ]
+}

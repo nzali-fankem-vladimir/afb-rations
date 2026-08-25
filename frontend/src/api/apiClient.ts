@@ -1,5 +1,7 @@
 import axios from 'axios'
 
+import { fournisseurAuth } from '../auth'
+
 export interface ApiErrorResponse {
   timestamp: string
   status: number
@@ -15,9 +17,29 @@ const apiClient = axios.create({
   },
 })
 
+/**
+ * Chaque appel part avec le jeton courant, renouvele si necessaire.
+ * Aucun jeton n'est conserve ici : le fournisseur en reste le seul detenteur.
+ */
+apiClient.interceptors.request.use(async (config) => {
+  const jeton = await fournisseurAuth.jetonAcces()
+  if (jeton) {
+    config.headers.Authorization = `Bearer ${jeton}`
+  }
+  return config
+})
+
 apiClient.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
+    // 401 : jeton absent, expire ou invalide. Le renouvellement a deja echoue en
+    // amont, il reste a rouvrir une session chez le fournisseur.
+    // 403 est laisse a l'appelant : l'utilisateur est authentifie mais pas habilite,
+    // le rediriger vers la connexion ne changerait rien.
+    if (error.response?.status === 401) {
+      await fournisseurAuth.connecter()
+    }
+
     const apiError: ApiErrorResponse = error.response?.data ?? {
       timestamp: new Date().toISOString(),
       status: error.response?.status ?? 0,

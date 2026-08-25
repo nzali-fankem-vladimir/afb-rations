@@ -1,3 +1,17 @@
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Realm emetteur des jetons. Le service ne fait que les valider :
+          # aucun mot de passe stocke, aucune route de login (CLAUDE.md section 10).
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/afb-rations-dev}
+          audiences: ${KEYCLOAK_AUDIENCE:rations-api}
+
+app:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+
 # Pas de base propre pour ce service (document maitre section 3) : il lit via
 # les API des autres services. Aucune datasource ni configuration Flyway ici.
 logging:
