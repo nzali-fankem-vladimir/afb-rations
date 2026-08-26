@@ -47,7 +47,7 @@ Ne jamais réintroduire : EHR, enrôlement, fonctions éligibles, mot de passe a
 | Transmission comptable | (topics Kafka) | 8086 | Publie l'état validé et consomme l'accusé comptable. |
 | **Audit** | **BD Audit** | **8087** | **Journal immuable de toutes les actions du module. Consomme les événements d'audit émis par les six autres services.** |
 
-Passerelle 8080, registre 8761, frontend 3000.
+Passerelle 8080, registre 8761, frontend 5173 (port figé dans les URI de redirection du realm Keycloak, écart au port 3000 initialement prévu au Sprint 0.3 — voir section 17).
 
 Communication synchrone en REST via la passerelle. Communication asynchrone via Kafka pour l'échange comptable et pour l'audit.
 
@@ -80,7 +80,7 @@ Répartition par base :
 | `rations_workflow` | `processus_mensuel`, `etape_workflow`, `piece_jointe`, `parametre_systeme` |
 | `rations_audit` | `audit_log` |
 
-- **utilisateurs** — projection locale du compte annuaire. `login` (prenom_nom), `sub_keycloak`, `role`, `code_unite`. AUCUN mot de passe.
+- **utilisateurs** — projection locale du compte annuaire. `login` (prenom_nom), `sub_keycloak`, `role`, `code_unite`. Complétée en pratique de `matricule`, `email`, `actif`, `date_dernier_acces` (décision Sprint 0.7, section 17). AUCUN mot de passe.
 - **beneficiaires** — agent servi. `nom`, `prenom`, `num_compte_courant`, `code_agence`. Créé au fil des saisies, pas d'enrôlement.
 - **grille_tarifaire** — `nature`, `session`, `montant_fcfa`, `statut_validation`, `id_createur` (ARH), `id_validateur` (DRH). Une seule grille ACTIVE avec `date_fin NULL` par couple (nature, session).
 - **processus_mensuel** — `mois_paiement`, `annee_paiement`, `code_unite`, `type_processus`, `id_processus_origine`, `motif_ouverture`, `montant_total`, `statut`, `transmis_comptabilite`. Un seul processus NORMAL par (code_unite, mois, année) ; plusieurs COMPLEMENTAIRE possibles.
@@ -90,6 +90,8 @@ Répartition par base :
 - **piece_jointe** — UN SEUL document par processus (`id_processus` unique), enrichi progressivement des signatures.
 - **parametre_systeme** — `code`, `libelle`, `valeur`, `actif`. Porte le seuil d'aiguillage et les drapeaux de fonctionnalité.
 - **audit_log** — journal immuable, **base `rations_audit`, service Audit**. `id_utilisateur`, `service_emetteur`, `action`, `entite_cible`, `id_entite`, `date_action`, `adresse_ip`, `detail_json`. Aucune méthode de modification ni de suppression n'est exposée, y compris celles héritées par défaut du repository.
+
+**Convention transverse.** Une colonne `date_creation` (`TIMESTAMP`, défaut `CURRENT_TIMESTAMP`) est ajoutée à chaque table métier pour l'audit technique, sauf `parametre_systeme` (sans horodatage propre) et `audit_log` (porte `date_action`). Décision Sprint 0.7, section 17.
 
 **CODE AGENCE ≠ CODE UNITE.** Même format (VARCHAR(5), référentiel des codes guichets Afriland), mais rôles distincts. `code_agence` = agence de domiciliation du compte du bénéficiaire (ligne de crédit). `code_unite` = unité qui supporte la charge (ligne de débit). Toujours les distinguer.
 
@@ -159,6 +161,8 @@ Jamais dans ce module : génération d'écritures, schéma débit/crédit codifi
 
 ## 9. ÉCHANGES KAFKA (trois topics)
 
+Noms de développement (Sprint 0.5) : `rations.etat.valide`, `rations.etat.accuse`, `rations.audit.evenement`. Nommage définitif en environnement partagé non arrêté (point DSI D-07, voir `docs/points-en-attente.md`) : ne pas figer ces noms ailleurs que dans `infra/docker/kafka-topics.sh`.
+
 ### 9.1 Échange comptable (producteur ET consommateur)
 
 - **Publie** sur `rations.etat.valide` à la clôture : période, code unité, type, montant total, et le détail des lignes (nom, prénom, compte courant, **code agence**, nature, session, montant).
@@ -180,6 +184,7 @@ Le service Transmission n'expose pas d'endpoint de déclenchement : la transmiss
 - Connexion = redirection du frontend vers Keycloak (Authorization Code + PKCE). Aucun service n'émet de jeton.
 - Les services valident le jeton (OAuth2 Resource Server), en extraient l'identité (`sub_keycloak`) et le rôle.
 - `utilisateurs` est une projection locale : `login`, `sub_keycloak`, `role`, `code_unite`. Le rôle applicatif et le code unité sont gérés localement, pas dans l'annuaire.
+- **Création du profil local (décision Sprint 0.4) : pré-provisionnement puis liaison automatique.** L'administrateur ouvre le profil (`login`, `role`, `code_unite`) sans connaître le `sub_keycloak`. À la première connexion, le service Identité rapproche le profil par le `login` et y inscrit le `sub` ; les connexions suivantes passent directement par le `sub`. Un jeton valide sans profil local correspondant est refusé (403) : l'habilitation au module reste un acte d'administration explicite, elle ne découle pas de la seule existence d'un compte à l'annuaire.
 - **Ne jamais** ajouter de champ mot de passe, ni de route de login côté backend.
 - En développement : realm de dev Keycloak sur localhost:8180 ; en production : realm AFB partagé.
 - Chaque service porte une `SecurityConfig` dans `infrastructure/config`. La sonde `/actuator/health` est la seule route métier publique.
@@ -275,3 +280,7 @@ Le service Audit remonte en deuxième position : les services suivants publient 
 | 0.2 | `git config core.longpaths true` appliqué localement au dépôt. |
 | 0.5 | Écriture d'audit **asynchrone par topic Kafka** `rations.audit.evenement`, jamais par appel REST synchrone. |
 | 0.6 | Documentation Springdoc (`/swagger-ui.html`, `/swagger-ui/**`, `/v3/api-docs`, `/v3/api-docs/**`) déclarée `permitAll()` en `GET` dans chaque `SecurityConfig`, à côté de `/actuator/health`. Motif : « accès interne » ne veut pas dire authentifiée, et Swagger doit rester consultable directement au navigateur sans jeton Bearer. Les routes métier restent toutes protégées. |
+| 0.3 | Frontend démarré sur le port **5173** au lieu de 3000 (planning initial) : port figé dans les URI de redirection du realm Keycloak, tout autre port ferait échouer la connexion sans message explicite. |
+| 0.4 | Création du profil local : **pré-provisionnement par l'administrateur puis liaison automatique** au premier login. Rapprochement par le `login`, inscription du `sub_keycloak` à la première connexion. Un jeton valide sans profil correspondant est refusé (403). |
+| 0.7 | Table `utilisateurs` complétée de `matricule`, `email`, `actif`, `date_dernier_acces`, au-delà du dictionnaire d'origine (section 4). Conservées et consignées plutôt que supprimées : jugées utiles à l'usage (contrôle de rôle insuffisant, désactivation de compte). |
+| 0.7 | Colonne `date_creation` ajoutée par convention à la plupart des tables métier (absente du dictionnaire d'origine). Conservée et consignée comme convention transverse d'audit technique. |
