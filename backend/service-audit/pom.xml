@@ -15,7 +15,7 @@
     <packaging>jar</packaging>
 
     <name>service-audit</name>
-    <description>Audit - journal d'audit centralise, ecrit par les six autres services via API</description>
+    <description>Audit - journal d'audit centralise, alimente par les six autres services via Kafka (rations.audit.evenement)</description>
 
     <dependencies>
         <dependency>

@@ -1,0 +1,57 @@
+
+# Infrastructure locale du module Paiement des Rations et du Transport de la
+# Garde Armee : PostgreSQL et Kafka uniquement (CLAUDE.md section 2).
+#
+# Keycloak est volontairement absent de cette composition : le realm de
+# developpement afb-rations-dev vit dans le conteneur partage dottel-keycloak,
+# externe a ce depot (infra/keycloak/README.md). Verifier qu'il tourne avant de
+# lancer les services applicatifs : infra/keycloak/verifier-keycloak.ps1.
+#
+# Aucun mot de passe en clair : toutes les valeurs sensibles passent par des
+# variables d'environnement, avec repli explicite sur changeme-in-development.
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: rations-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_SUPERUSER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:-changeme-in-development}
+      RATIONS_DB_PASSWORD: ${RATIONS_DB_PASSWORD:-changeme-in-development}
+    ports:
+      # Port hote 5433, pas 5432 : le port par defaut est deja occupe sur ce
+      # poste par le PostgreSQL natif du projet DOTTEL. Le port interne au
+      # conteneur reste 5432, standard.
+      - "5433:5432"
+    volumes:
+      - rations-postgres-data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_SUPERUSER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  kafka:
+    image: apache/kafka:3.7.1
+    container_name: rations-kafka
+    # L'image tourne par defaut sous un utilisateur non-root (appuser) qui ne
+    # peut pas ecrire dans un volume nomme fraichement cree par Docker,
+    # proprietaire root. Root ici est sans risque : infrastructure locale, non
+    # exposee.
+    user: root
+    ports:
+      - "9092:9092"
+    volumes:
+      - rations-kafka-data:/tmp/kraft-combined-logs
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+volumes:
+  rations-postgres-data:
+    name: rations-postgres-data
+  rations-kafka-data:
+    name: rations-kafka-data

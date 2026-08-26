@@ -1,6 +1,6 @@
 spring:
   datasource:
-    url: ${DB_WORKFLOW_URL:jdbc:postgresql://localhost:5432/rations_workflow}
+    url: ${DB_WORKFLOW_URL:jdbc:postgresql://localhost:5433/rations_workflow}
     username: ${DB_WORKFLOW_USERNAME:rations_workflow}
     password: ${DB_WORKFLOW_PASSWORD:changeme-in-development}
   flyway:

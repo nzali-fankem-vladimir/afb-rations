@@ -25,9 +25,9 @@ Le module s'intègre au portail interne INTRA en application liée autonome, ave
 - **ORM :** Spring Data JPA / Hibernate.
 - **Migrations :** Flyway, un jeu de migrations versionné par service.
 - **Sécurité :** Spring Security + OAuth2 Resource Server, adossé à Keycloak. Flux Authorization Code + PKCE. Sessions stateless.
-- **Passerelle :** API Gateway + service registry / configuration.
-- **Messagerie :** Apache Kafka pour l'échange avec la comptabilité.
-- **PDF :** iText 8. **Excel :** Apache POI.
+- **Passerelle :** Spring Cloud Gateway. **Registre :** Eureka. Spring Cloud 2025.1.2.
+- **Messagerie :** Apache Kafka, pour l'échange avec la comptabilité et pour le journal d'audit.
+- **PDF :** iText 8 (artefacts `kernel` et `layout`). **Excel :** Apache POI.
 - **Doc API :** Springdoc OpenAPI (swagger-ui par service, accès interne).
 - **Conteneurisation :** Docker, registre privé Harbor, orchestration Kubernetes.
 
@@ -35,18 +35,23 @@ Ne jamais réintroduire : EHR, enrôlement, fonctions éligibles, mot de passe a
 
 ---
 
-## 3. DÉCOUPAGE EN MICROSERVICES (6 services + passerelle + registre)
+## 3. DÉCOUPAGE EN MICROSERVICES (7 services + passerelle + registre)
 
-| Service | Base | Responsabilité |
-| --- | --- | --- |
-| Identité et habilitations | BD Identité | Projection locale des comptes annuaire, rôles, code unité, vérification des habilitations à partir du jeton. |
-| Saisie | BD Saisie | Fiches journalières, lignes de prestation, contrôles de doublon RG-04 et RG-15. |
-| Grilles tarifaires | BD Grilles | Cycle de vie des grilles, validation ARH puis DRH, résolution du montant. |
-| Workflow et validation | BD Workflow | Processus mensuel, étapes, aiguillage au seuil, pièce jointe, clôture. |
-| Reporting | (lecture) | Suivi des statuts, historique, export PDF et Excel. |
-| Transmission comptable | Stockage / topics | Publie l'état validé et consomme l'accusé comptable via Kafka. |
+| Service | Base | Port | Responsabilité |
+| --- | --- | --- | --- |
+| Identité et habilitations | BD Identité | 8081 | Projection locale des comptes annuaire, rôles, code unité, vérification des habilitations à partir du jeton. |
+| Saisie | BD Saisie | 8082 | Fiches journalières, lignes de prestation, contrôles de doublon RG-04 et RG-15. |
+| Grilles tarifaires | BD Grilles | 8083 | Cycle de vie des grilles, validation ARH puis DRH, résolution du montant. |
+| Workflow et validation | BD Workflow | 8084 | Processus mensuel, étapes, aiguillage au seuil, pièce jointe, clôture. |
+| Reporting | (lecture) | 8085 | Suivi des statuts, historique, export PDF et Excel. |
+| Transmission comptable | (topics Kafka) | 8086 | Publie l'état validé et consomme l'accusé comptable. |
+| **Audit** | **BD Audit** | **8087** | **Journal immuable de toutes les actions du module. Consomme les événements d'audit émis par les six autres services.** |
 
-Communication synchrone en REST via la passerelle. Communication asynchrone via Kafka uniquement pour l'échange comptable.
+Passerelle 8080, registre 8761, frontend 3000.
+
+Communication synchrone en REST via la passerelle. Communication asynchrone via Kafka pour l'échange comptable et pour l'audit.
+
+**Pourquoi un service Audit dédié.** Le cahier des charges exige un journal immuable. Un journal réparti en une table par service laisserait chaque service maître de ses propres traces, avec les pleins droits dessus. Un service dédié rend la base d'audit inaccessible en modification depuis les services métier : l'immuabilité devient une propriété de l'architecture, pas une discipline de code. C'est un argument de contrôle interne autant que d'architecture.
 
 Structure interne de chaque service (dépendances vers l'intérieur, le domaine ne dépend d'aucune couche technique) :
 
@@ -56,6 +61,7 @@ service-xxx/
   application/    services applicatifs, orchestration
   domaine/        entités, règles de gestion
   infrastructure/ repositories JPA, clients REST, producteurs/consommateurs Kafka
+                  config/ SecurityConfig par service
 ```
 
 ---
@@ -63,6 +69,16 @@ service-xxx/
 ## 4. MODÈLE DE DONNÉES : 10 TABLES
 
 Conventions : PostgreSQL 16, `snake_case`, PK `id BIGINT` auto-incrémentée, dates en `TIMESTAMP`, montants en entier (FCFA).
+
+Répartition par base :
+
+| Base | Tables |
+| --- | --- |
+| `rations_identite` | `utilisateurs` |
+| `rations_saisie` | `beneficiaires`, `fiche_journaliere`, `ligne_prestation` |
+| `rations_grilles` | `grille_tarifaire` |
+| `rations_workflow` | `processus_mensuel`, `etape_workflow`, `piece_jointe`, `parametre_systeme` |
+| `rations_audit` | `audit_log` |
 
 - **utilisateurs** — projection locale du compte annuaire. `login` (prenom_nom), `sub_keycloak`, `role`, `code_unite`. AUCUN mot de passe.
 - **beneficiaires** — agent servi. `nom`, `prenom`, `num_compte_courant`, `code_agence`. Créé au fil des saisies, pas d'enrôlement.
@@ -72,8 +88,8 @@ Conventions : PostgreSQL 16, `snake_case`, PK `id BIGINT` auto-incrémentée, da
 - **ligne_prestation** — `id_fiche_journaliere`, `id_beneficiaire`, `nature`, `session`, `montant_applique`. Montant figé à la saisie.
 - **etape_workflow** — `id_processus`, `id_acteur`, `ordre_etape`, `nom_etape`, `statut_etape`, `motif_retour`, `signature_numerique`.
 - **piece_jointe** — UN SEUL document par processus (`id_processus` unique), enrichi progressivement des signatures.
-- **parametre_systeme** — `code`, `libelle`, `valeur`, `actif`. Porte le seuil d'aiguillage.
-- **audit_log** — journal immuable. `id_utilisateur`, `action`, `entite_cible`, `id_entite`, `date_action`, `adresse_ip`, `detail_json`.
+- **parametre_systeme** — `code`, `libelle`, `valeur`, `actif`. Porte le seuil d'aiguillage et les drapeaux de fonctionnalité.
+- **audit_log** — journal immuable, **base `rations_audit`, service Audit**. `id_utilisateur`, `service_emetteur`, `action`, `entite_cible`, `id_entite`, `date_action`, `adresse_ip`, `detail_json`. Aucune méthode de modification ni de suppression n'est exposée, y compris celles héritées par défaut du repository.
 
 **CODE AGENCE ≠ CODE UNITE.** Même format (VARCHAR(5), référentiel des codes guichets Afriland), mais rôles distincts. `code_agence` = agence de domiciliation du compte du bénéficiaire (ligne de crédit). `code_unite` = unité qui supporte la charge (ligne de débit). Toujours les distinguer.
 
@@ -127,13 +143,13 @@ Agent : saisie journalière → consolidation → soumission (signature agent)
 
 Tout retour (DA ou DR) ramène l'état à l'agent (RETOURNE), jamais à un niveau intermédiaire. L'état CLOTURE est définitif.
 
-**État complémentaire (régularisation).** Un bénéficiaire signale hors système un oubli sur un mois clôturé. L'agent ouvre un `processus_mensuel` de type COMPLEMENTAIRE qui référence l'état d'origine (jamais rouvert). À chaque ligne, RG-15 est vérifiée. Le circuit de validation est identique à un état normal. **Ce cas n'est dans aucun cahier des charges : à faire confirmer par le métier avant industrialisation.**
+**État complémentaire (régularisation).** Un bénéficiaire signale hors système un oubli sur un mois clôturé. L'agent ouvre un `processus_mensuel` de type COMPLEMENTAIRE qui référence l'état d'origine (jamais rouvert). À chaque ligne, RG-15 est vérifiée. Le circuit de validation est identique à un état normal. **Fonctionnalité livrée mais fermée par le drapeau `RATTRAPAGE_ACTIF` dans `parametre_systeme`, tant que le métier n'a pas confirmé.**
 
 ---
 
 ## 8. PÉRIMÈTRE DU MODULE
 
-**Dans le périmètre :** saisie, consolidation, workflow, aiguillage, clôture, grilles, suivi, reporting, régularisation par état complémentaire.
+**Dans le périmètre :** saisie, consolidation, workflow, aiguillage, clôture, grilles, suivi, reporting, journal d'audit, régularisation par état complémentaire.
 
 **Hors périmètre :** la production des écritures comptables, l'impact CBS, la refonte du système comptable. Le module publie l'état validé et consomme l'accusé comptable, rien de plus.
 
@@ -141,12 +157,21 @@ Jamais dans ce module : génération d'écritures, schéma débit/crédit codifi
 
 ---
 
-## 9. ÉCHANGE COMPTABLE (Kafka, producteur ET consommateur)
+## 9. ÉCHANGES KAFKA (trois topics)
+
+### 9.1 Échange comptable (producteur ET consommateur)
 
 - **Publie** sur `rations.etat.valide` à la clôture : période, code unité, type, montant total, et le détail des lignes (nom, prénom, compte courant, **code agence**, nature, session, montant).
 - **Consomme** sur `rations.etat.accuse` l'accusé du module de comptabilisation : `statut_integration` (EN_ATTENTE | INTEGRE | REJETE), référence comptable, date. Met à jour le statut d'intégration du processus, remonté dans le suivi.
 
 Le service Transmission n'expose pas d'endpoint de déclenchement : la transmission est déclenchée par le service Workflow à la clôture.
+
+### 9.2 Journal d'audit (six producteurs, un consommateur)
+
+- **Les six services métier publient** sur `rations.audit.evenement` après chaque action significative : identifiant utilisateur, service émetteur, action, entité ciblée, identifiant d'entité, horodatage, adresse IP, delta avant/après.
+- **Le service Audit consomme** ce topic et écrit dans `audit_log`.
+
+**L'écriture d'audit est asynchrone par construction.** Un service métier publie et poursuit son traitement : il n'attend aucune réponse et ne dépend pas de la disponibilité du service Audit. C'est ce qui garantit le principe selon lequel l'audit ne fait jamais échouer une opération métier. Un appel REST synchrone vers le service Audit est **interdit** : il réintroduirait exactement la dépendance que ce choix élimine.
 
 ---
 
@@ -157,10 +182,11 @@ Le service Transmission n'expose pas d'endpoint de déclenchement : la transmiss
 - `utilisateurs` est une projection locale : `login`, `sub_keycloak`, `role`, `code_unite`. Le rôle applicatif et le code unité sont gérés localement, pas dans l'annuaire.
 - **Ne jamais** ajouter de champ mot de passe, ni de route de login côté backend.
 - En développement : realm de dev Keycloak sur localhost:8180 ; en production : realm AFB partagé.
+- Chaque service porte une `SecurityConfig` dans `infrastructure/config`. La sonde `/actuator/health` est la seule route publique.
 
 ---
 
-## 11. CONTRATS API : 24 ENDPOINTS (préfixe passerelle /api)
+## 11. CONTRATS API : 26 ENDPOINTS (préfixe passerelle /api)
 
 - **Identité (3)** : `/identite/moi`, `/identite/utilisateurs`, `/identite/utilisateurs/{id}/role`.
 - **Saisie (5)** : `/saisie/fiches`, `/saisie/fiches/{id}/lignes`, `/saisie/lignes` (POST/PUT/DELETE).
@@ -168,6 +194,7 @@ Le service Transmission n'expose pas d'endpoint de déclenchement : la transmiss
 - **Workflow (6)** : `/processus` (POST), `/processus/{id}`, `/processus/{id}/etat`, `/processus/{id}/soumission`, `/processus/{id}/validation`, `/processus/{id}/retour`.
 - **Reporting (4)** : `/reporting/demandes`, `/reporting/processus/{id}/historique`, `/reporting/rapports`, `/reporting/rapports/export`.
 - **Transmission (1)** : `/transmission/processus/{id}`.
+- **Audit (2)** : `/audit/entrees` (recherche filtrable), `/audit/processus/{id}` (journal d'un processus). **Lecture seule, aucun endpoint d'écriture : l'alimentation se fait exclusivement par le topic Kafka.**
 
 JSON UTF-8, dates ISO 8601. Erreurs au format uniforme `{ timestamp, status, code, message, path }`. Codes usuels : 400, 401, 403, 404, 409 (doublon/unicité), 422 (règle de gestion).
 
@@ -181,9 +208,10 @@ JSON UTF-8, dates ISO 8601. Erreurs au format uniforme `{ timestamp, status, cod
 - DTO en entrée et en sortie, jamais d'entité JPA exposée directement.
 - Requêtes paramétrées JPA uniquement, aucune concaténation de chaîne utilisateur.
 - Validation des DTO entrants, erreurs explicites.
-- Toute action sensible écrit dans `audit_log` (auteur, date, delta avant/après).
+- Toute action sensible publie un événement d'audit (auteur, date, delta avant/après) sur `rations.audit.evenement`.
 - Frontend : composants en PascalCase, hooks en `useXxx`, appels API centralisés (axios), typage strict (pas de `any`).
-- Secrets hors du code : variables d'environnement (URL realm, DB, brokers Kafka, origines CORS). Fichiers d'environnement jamais versionnés.
+- Secrets hors du code : variables d'environnement (URL realm, DB, brokers Kafka, origines CORS), avec repli explicite `changeme-in-development`. Fichiers d'environnement jamais versionnés.
+- Dépôt Git : `core.longpaths=true` requis sous Windows, le chemin projet plus l'arborescence à quatre couches dépassant la limite de 260 caractères.
 
 ---
 
@@ -196,13 +224,16 @@ JSON UTF-8, dates ISO 8601. Erreurs au format uniforme `{ timestamp, status, cod
 ## 14. ORDRE D'IMPLÉMENTATION SUGGÉRÉ
 
 1. Service Identité + intégration Keycloak (socle d'authentification).
-2. Service Grilles (prérequis du calcul des montants).
-3. Service Saisie (fiches, lignes, RG-01 à RG-05, RG-04).
-4. Service Workflow (soumission, validation, RG-07 à RG-13, aiguillage RG-08).
-5. Service Transmission (Kafka publication + consommation).
-6. Service Reporting (suivi, historique, exports).
-7. État complémentaire (RG-15) une fois le besoin confirmé par le métier.
-8. Passerelle + registre, conteneurisation, déploiement Kubernetes.
+2. **Service Audit** (socle de traçabilité, consommé par tous les suivants).
+3. Service Grilles (prérequis du calcul des montants).
+4. Service Saisie (fiches, lignes, RG-01 à RG-05).
+5. Service Workflow (soumission, validation, RG-07 à RG-13, aiguillage RG-08).
+6. Service Transmission (Kafka publication + consommation).
+7. Service Reporting (suivi, historique, exports).
+8. État complémentaire (RG-15), fonctionnalité fermée par drapeau jusqu'à confirmation métier.
+9. Passerelle + registre, conteneurisation, déploiement Kubernetes.
+
+Le service Audit remonte en deuxième position : les services suivants publient des événements d'audit dès leurs premières écritures, il faut donc que le consommateur existe.
 
 ---
 
@@ -218,11 +249,27 @@ JSON UTF-8, dates ISO 8601. Erreurs au format uniforme `{ timestamp, status, cod
 - Transmettre deux fois le même état à la comptabilité.
 - Rouvrir un état clôturé pour une régularisation (créer un état COMPLEMENTAIRE à la place).
 - Oublier le contrôle d'unicité inter-états (RG-15) à la saisie d'une ligne de régularisation.
+- **Appeler le service Audit en REST synchrone depuis un service métier** (l'audit passe par le topic Kafka, jamais par un appel bloquant).
+- **Exposer un endpoint d'écriture sur le service Audit** ou une méthode de suppression sur `audit_log`.
 
 ---
 
 ## 16. POINTS À CONFIRMER AVEC LE MÉTIER
 
-- Gestion de l'état complémentaire : fréquence réelle du besoin, délai pendant lequel une période close reste régularisable.
+- Gestion de l'état complémentaire : fréquence réelle du besoin, délai pendant lequel une période close reste régularisable (valeur provisoire : 90 jours).
 - Position de la comptabilité sur une seconde transmission portant sur une période déjà traitée.
 - Namespace Kubernetes, conventions de nommage des déploiements et gestion des secrets (à arrêter avec la DSI).
+
+---
+
+## 17. DÉCISIONS PRISES EN COURS DE DÉVELOPPEMENT
+
+| Sprint | Décision |
+| --- | --- |
+| 0.2 | `audit_log` géré par un **service Audit dédié** (7ᵉ service, port 8087, base `rations_audit`) plutôt qu'une table par service ou une base partagée. Motif : immuabilité garantie par l'architecture. |
+| 0.2 | Passerelle **Spring Cloud Gateway**, registre **Eureka**, Spring Cloud 2025.1.2. |
+| 0.2 | `spring-boot-starter-parent` comme parent Maven, versions hors Spring Boot en `dependencyManagement`. |
+| 0.2 | `SecurityConfig` minimale par service, ouverte, jusqu'à l'intégration Keycloak du Sprint 0.4. |
+| 0.2 | iText 8 déclaré via les artefacts `kernel` et `layout` (`itext-core` est un agrégat, pas une dépendance directe). |
+| 0.2 | `git config core.longpaths true` appliqué localement au dépôt. |
+| 0.5 | Écriture d'audit **asynchrone par topic Kafka** `rations.audit.evenement`, jamais par appel REST synchrone. |

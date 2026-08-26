@@ -1,6 +1,6 @@
 spring:
   datasource:
-    url: ${DB_SAISIE_URL:jdbc:postgresql://localhost:5432/rations_saisie}
+    url: ${DB_SAISIE_URL:jdbc:postgresql://localhost:5433/rations_saisie}
     username: ${DB_SAISIE_USERNAME:rations_saisie}
     password: ${DB_SAISIE_PASSWORD:changeme-in-development}
   flyway:

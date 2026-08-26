@@ -5,6 +5,9 @@
 --
 -- sub_keycloak est nullable : l'administrateur ouvre le profil a partir du login
 -- annuaire, la liaison au compte Keycloak s'etablit a la premiere connexion.
+--
+-- code_unite est nullable : les roles a portee nationale (DRH, ARH, ADMIN)
+-- ne sont rattaches a aucune unite qui supporte une charge.
 
 CREATE TABLE utilisateurs (
     id                 BIGSERIAL     PRIMARY KEY,
@@ -15,13 +18,14 @@ CREATE TABLE utilisateurs (
     prenom             VARCHAR(100)  NOT NULL,
     email              VARCHAR(150),
     role               VARCHAR(30)   NOT NULL,
-    code_unite         VARCHAR(5)    NOT NULL,
+    code_unite         VARCHAR(5),
     actif              BOOLEAN       NOT NULL DEFAULT TRUE,
     date_creation      TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     date_dernier_acces TIMESTAMP,
 
     CONSTRAINT uk_utilisateurs_login        UNIQUE (login),
     CONSTRAINT uk_utilisateurs_sub_keycloak UNIQUE (sub_keycloak),
+    CONSTRAINT uk_utilisateurs_matricule    UNIQUE (matricule),
     CONSTRAINT ck_utilisateurs_role CHECK (role IN (
         'AGENT_UNITE', 'CHEF_UNITE_DA', 'DIRECTEUR_RESEAU_DR', 'ARH', 'DRH', 'ADMIN'
     ))
