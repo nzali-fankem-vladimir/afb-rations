@@ -18,6 +18,7 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import cm.afrilandfirstbank.rations.identite.application.PorteeAccesService;
 import cm.afrilandfirstbank.rations.identite.application.UtilisateurCourantService;
 import cm.afrilandfirstbank.rations.identite.domaine.RoleEnum;
 import cm.afrilandfirstbank.rations.identite.domaine.Utilisateur;
@@ -35,7 +36,7 @@ import org.mockito.Mockito;
  */
 @WebMvcTest(controllers = IdentiteController.class)
 @Import({ SecurityConfig.class, RoleJwtConverter.class, GestionnaireErreursApi.class,
-        IdentiteControllerTest.ConfigurationDeTest.class })
+        PorteeAccesService.class, IdentiteControllerTest.ConfigurationDeTest.class })
 class IdentiteControllerTest {
 
     private static final String SUB_JEAN_MBARGA = "4bf9cd35-4f6b-4b62-a005-12b1481d33fa";
@@ -78,6 +79,8 @@ class IdentiteControllerTest {
                 .andExpect(jsonPath("$.prenom").value("Jean"))
                 .andExpect(jsonPath("$.role").value("AGENT_UNITE"))
                 .andExpect(jsonPath("$.codeUnite").value("00002"))
+                .andExpect(jsonPath("$.porteeAcces.nationale").value(false))
+                .andExpect(jsonPath("$.porteeAcces.codesUnite[0]").value("00002"))
                 // Le profil expose ne doit jamais laisser filtrer l'identifiant technique.
                 .andExpect(jsonPath("$.subKeycloak").doesNotExist());
     }

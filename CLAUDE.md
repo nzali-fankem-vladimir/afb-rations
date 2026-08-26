@@ -262,6 +262,7 @@ Le service Audit remonte en deuxième position : les services suivants publient 
 
 ## 16. POINTS À CONFIRMER AVEC LE MÉTIER
 
+- Découpage en réseaux pour la portée d'accès du Directeur Réseau (DR) : aucune spécification ne définit la notion de réseau ni le rattachement d'une unité à un réseau. Décision provisoire prise au Sprint 1.1 (voir section 17 et `docs/decisions/2026-08-26-portee-acces-directeur-reseau.md`) : portée nationale par défaut, comme ARH/DRH/ADMIN.
 - Gestion de l'état complémentaire : fréquence réelle du besoin, délai pendant lequel une période close reste régularisable (valeur provisoire : 90 jours).
 - Position de la comptabilité sur une seconde transmission portant sur une période déjà traitée.
 - Namespace Kubernetes, conventions de nommage des déploiements et gestion des secrets (à arrêter avec la DSI).
@@ -284,3 +285,4 @@ Le service Audit remonte en deuxième position : les services suivants publient 
 | 0.4 | Création du profil local : **pré-provisionnement par l'administrateur puis liaison automatique** au premier login. Rapprochement par le `login`, inscription du `sub_keycloak` à la première connexion. Un jeton valide sans profil correspondant est refusé (403). |
 | 0.7 | Table `utilisateurs` complétée de `matricule`, `email`, `actif`, `date_dernier_acces`, au-delà du dictionnaire d'origine (section 4). Conservées et consignées plutôt que supprimées : jugées utiles à l'usage (contrôle de rôle insuffisant, désactivation de compte). |
 | 0.7 | Colonne `date_creation` ajoutée par convention à la plupart des tables métier (absente du dictionnaire d'origine). Conservée et consignée comme convention transverse d'audit technique. |
+| 1.1 | Portée d'accès du Directeur Réseau (DR) : **portée nationale par défaut**, comme ARH/DRH/ADMIN, faute de découpage en réseaux défini par le métier. Décision provisoire, réversible à coût faible. Voir `docs/decisions/2026-08-26-portee-acces-directeur-reseau.md`. |

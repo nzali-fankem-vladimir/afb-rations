@@ -8,7 +8,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import cm.afrilandfirstbank.rations.identite.api.dto.ProfilUtilisateurDto;
+import cm.afrilandfirstbank.rations.identite.application.PorteeAccesService;
 import cm.afrilandfirstbank.rations.identite.application.UtilisateurCourantService;
+import cm.afrilandfirstbank.rations.identite.domaine.Utilisateur;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -28,9 +30,12 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 public class IdentiteController {
 
     private final UtilisateurCourantService utilisateurCourantService;
+    private final PorteeAccesService porteeAccesService;
 
-    public IdentiteController(UtilisateurCourantService utilisateurCourantService) {
+    public IdentiteController(UtilisateurCourantService utilisateurCourantService,
+            PorteeAccesService porteeAccesService) {
         this.utilisateurCourantService = utilisateurCourantService;
+        this.porteeAccesService = porteeAccesService;
     }
 
     @GetMapping("/moi")
@@ -43,7 +48,8 @@ public class IdentiteController {
             @ApiResponse(responseCode = "403", description = "Aucun profil ouvert dans le module")
     })
     public ResponseEntity<ProfilUtilisateurDto> profilCourant(@AuthenticationPrincipal Jwt jeton) {
-        return ResponseEntity.ok(ProfilUtilisateurDto.depuis(utilisateurCourantService.resoudre(jeton)));
+        Utilisateur utilisateur = utilisateurCourantService.resoudre(jeton);
+        return ResponseEntity.ok(ProfilUtilisateurDto.depuis(utilisateur, porteeAccesService.determinerPortee(utilisateur)));
     }
 
 }

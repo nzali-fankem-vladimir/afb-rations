@@ -60,9 +60,11 @@ public class Utilisateur {
 
     /**
      * Unite qui supporte la charge, au referentiel des codes guichets.
-     * A ne pas confondre avec le code agence du beneficiaire (CLAUDE.md section 4).
+     * Nullable : les roles a portee nationale (ARH, DRH, ADMIN) ne sont rattaches
+     * a aucune unite (CLAUDE.md section 4). A ne pas confondre avec le code agence
+     * du beneficiaire.
      */
-    @Column(name = "code_unite", nullable = false, length = 5)
+    @Column(name = "code_unite", length = 5)
     private String codeUnite;
 
     @Column(name = "actif", nullable = false)
