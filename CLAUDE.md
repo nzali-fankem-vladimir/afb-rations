@@ -182,7 +182,8 @@ Le service Transmission n'expose pas d'endpoint de déclenchement : la transmiss
 - `utilisateurs` est une projection locale : `login`, `sub_keycloak`, `role`, `code_unite`. Le rôle applicatif et le code unité sont gérés localement, pas dans l'annuaire.
 - **Ne jamais** ajouter de champ mot de passe, ni de route de login côté backend.
 - En développement : realm de dev Keycloak sur localhost:8180 ; en production : realm AFB partagé.
-- Chaque service porte une `SecurityConfig` dans `infrastructure/config`. La sonde `/actuator/health` est la seule route publique.
+- Chaque service porte une `SecurityConfig` dans `infrastructure/config`. La sonde `/actuator/health` est la seule route métier publique.
+- **Documentation Springdoc** (`/swagger-ui.html`, `/swagger-ui/**`, `/v3/api-docs`, `/v3/api-docs/**`) : « accès interne » (section 2) signifie exposée sans jeton, mais réservée au réseau interne — distinct des routes métier, qui restent toutes protégées par OAuth2. Chaque `SecurityConfig` doit donc les déclarer `permitAll()` en `GET`, à côté de la sonde de santé, pour rester consultable directement au navigateur.
 
 ---
 
@@ -273,3 +274,4 @@ Le service Audit remonte en deuxième position : les services suivants publient 
 | 0.2 | iText 8 déclaré via les artefacts `kernel` et `layout` (`itext-core` est un agrégat, pas une dépendance directe). |
 | 0.2 | `git config core.longpaths true` appliqué localement au dépôt. |
 | 0.5 | Écriture d'audit **asynchrone par topic Kafka** `rations.audit.evenement`, jamais par appel REST synchrone. |
+| 0.6 | Documentation Springdoc (`/swagger-ui.html`, `/swagger-ui/**`, `/v3/api-docs`, `/v3/api-docs/**`) déclarée `permitAll()` en `GET` dans chaque `SecurityConfig`, à côté de `/actuator/health`. Motif : « accès interne » ne veut pas dire authentifiée, et Swagger doit rester consultable directement au navigateur sans jeton Bearer. Les routes métier restent toutes protégées. |

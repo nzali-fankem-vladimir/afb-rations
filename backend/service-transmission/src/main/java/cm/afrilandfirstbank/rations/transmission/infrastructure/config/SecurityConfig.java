@@ -50,6 +50,11 @@ public class SecurityConfig {
                         // Seule la sonde de sante est ouverte : elle est interrogee par
                         // l'orchestrateur, qui ne porte pas de jeton.
                         .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
+                        // Documentation d'API a acces interne (CLAUDE.md section 2) : ouverte
+                        // sans jeton pour rester consultable directement au navigateur.
+                        .requestMatchers(HttpMethod.GET, "/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs",
+                                "/v3/api-docs/**")
+                        .permitAll()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(roleJwtConverter)));
