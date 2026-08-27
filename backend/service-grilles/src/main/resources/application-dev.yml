@@ -1,8 +1,23 @@
 spring:
+  kafka:
+    # Seule l'adresse des brokers est reprise par le producteur d'audit : ses
+    # bornes de securite (max.block.ms notamment) sont fixees par le module
+    # rations-audit-commun et ne doivent pas etre surchargees ici, sous peine de
+    # rompre la garantie « l'audit ne fait jamais echouer le metier ».
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+
   datasource:
     url: ${DB_GRILLES_URL:jdbc:postgresql://localhost:5433/rations_grilles}
     username: ${DB_GRILLES_USERNAME:rations_grilles}
     password: ${DB_GRILLES_PASSWORD:changeme-in-development}
+  jpa:
+    hibernate:
+      # Le schema est produit par Flyway (une migration versionnee par service).
+      # Hibernate ne fait que verifier la concordance entite <-> table au
+      # demarrage : jamais de generation ni de modification automatique
+      # (Sprint 2.1, point de vigilance).
+      ddl-auto: validate
+    open-in-view: false
   flyway:
     enabled: true
     locations: classpath:db/migration
