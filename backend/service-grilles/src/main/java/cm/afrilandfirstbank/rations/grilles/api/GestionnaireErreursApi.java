@@ -20,6 +20,9 @@ import cm.afrilandfirstbank.rations.commun.audit.EvenementAudit;
 import cm.afrilandfirstbank.rations.commun.audit.PublicateurAudit;
 import cm.afrilandfirstbank.rations.grilles.domaine.exception.AuteurNonHabiliteException;
 import cm.afrilandfirstbank.rations.grilles.domaine.exception.ConflitGrilleException;
+import cm.afrilandfirstbank.rations.grilles.domaine.exception.GrilleIntrouvableException;
+import cm.afrilandfirstbank.rations.grilles.domaine.exception.MotifRejetRequisException;
+import cm.afrilandfirstbank.rations.grilles.domaine.exception.TransitionGrilleInterditeException;
 import cm.afrilandfirstbank.rations.grilles.infrastructure.identite.IdentiteIndisponibleException;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -113,6 +116,49 @@ public class GestionnaireErreursApi {
     public ResponseEntity<ErreurApiDto> conflitGrille(ConflitGrilleException exception,
             HttpServletRequest requete) {
         return reponse(requete, HttpStatus.CONFLICT, exception.getCode(), exception.getMessage());
+    }
+
+    /**
+     * Grille demandee inexistante (Sprint 2.3). 404, sans trace de refus : ce
+     * n'est pas une tentative hors perimetre, c'est un lien perime.
+     */
+    @ExceptionHandler(GrilleIntrouvableException.class)
+    public ResponseEntity<ErreurApiDto> grilleIntrouvable(GrilleIntrouvableException exception,
+            HttpServletRequest requete) {
+        return reponse(requete, HttpStatus.NOT_FOUND, "GRILLE_INTROUVABLE", exception.getMessage());
+    }
+
+    /**
+     * Transition de statut non prevue par ET02 : valider une grille deja ACTIVE,
+     * rejeter une grille REJETEE, etc.
+     *
+     * <p>422 et non 409 : la ressource existe et rien ne la duplique — c'est une
+     * regle de gestion qui refuse l'operation (contrat d'API, tableau des codes).
+     * La DRH consulte typiquement une liste chargee il y a quelques minutes ; le
+     * message doit donc nommer le statut courant, seul moyen pour elle de
+     * comprendre que quelqu'un a tranche entre-temps.
+     */
+    @ExceptionHandler(TransitionGrilleInterditeException.class)
+    public ResponseEntity<ErreurApiDto> transitionInterdite(TransitionGrilleInterditeException exception,
+            HttpServletRequest requete) {
+        return reponse(requete, HttpStatus.UNPROCESSABLE_ENTITY, "TRANSITION_INTERDITE",
+                exception.getMessage());
+    }
+
+    /**
+     * Rejet sans motif (RG-10). 422 {@code MOTIF_OBLIGATOIRE}, code deja retenu
+     * par le contrat d'API pour le retour d'un processus sans motif : meme regle,
+     * meme code, pour que le frontend n'ait pas deux traitements a ecrire.
+     *
+     * <p>Distinct d'un 400 de validation de DTO : le champ peut etre present et
+     * syntaxiquement valide tout en ne constituant pas un motif — une chaine
+     * d'espaces, par exemple.
+     */
+    @ExceptionHandler(MotifRejetRequisException.class)
+    public ResponseEntity<ErreurApiDto> motifRequis(MotifRejetRequisException exception,
+            HttpServletRequest requete) {
+        return reponse(requete, HttpStatus.UNPROCESSABLE_ENTITY, "MOTIF_OBLIGATOIRE",
+                exception.getMessage());
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

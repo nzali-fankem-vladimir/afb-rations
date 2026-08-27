@@ -3,6 +3,7 @@ package cm.afrilandfirstbank.rations.grilles.infrastructure;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -175,4 +176,84 @@ class GrilleTarifaireRepositoryTest {
         assertThat(repository.existsByNatureAndSessionAndStatutValidation(
                 NatureEnum.TRANSPORT, SessionEnum.SOIR, StatutGrilleEnum.ACTIVE)).isTrue();
     }
+
+    /**
+     * Verification de bout en bout du Sprint 2.3, exigee par le guide : apres une
+     * bascule, la recherche de grille active du Sprint 2.1 retourne <b>la nouvelle
+     * grille, et une seule</b>.
+     *
+     * <p>Ce test tourne contre PostgreSQL, seul endroit ou l'index partiel
+     * {@code ux_grille_active_par_couple} existe reellement. Les tests unitaires
+     * de {@code DecisionGrilleServiceTest} prouvent que le service ecrit les deux
+     * lignes dans le bon ordre ; celui-ci prouve que la base l'accepte, ce
+     * qu'aucun mock ne peut etablir.
+     *
+     * <p>Il verifie aussi le bornage retenu au sous-sprint : l'ancienne grille est
+     * fermee <b>a la veille</b>, et les deux periodes s'enchainent sans trou. La
+     * derniere assertion est celle qui compte pour le Sprint 6bis — une
+     * prestation datee du dernier jour de l'ancienne periode trouve encore son
+     * montant d'epoque, et pas celui du nouveau tarif.
+     */
+    @Test
+    @DisplayName("13. apres bascule : une seule grille active, la nouvelle, et aucun trou de periode")
+    void basculeLaisseUneSeuleGrilleActive() {
+        // On part de la grille COURANTE, comme le fait le service de decision, et
+        // non de celle qui s'applique aujourd'hui. Les deux coincident tant que le
+        // couple n'a qu'une grille, et divergent des la premiere bascule : la
+        // grille du jour peut etre une grille deja close, que fermer une seconde
+        // fois laisserait deux lignes sans date de fin.
+        GrilleTarifaire ancienne = repository
+                .rechercherGrilleCourante(NatureEnum.TRANSPORT, SessionEnum.SOIR)
+                .orElseThrow();
+
+        // La prise d'effet est calculee depuis la grille courante, pas depuis la
+        // date du jour : elle doit lui etre strictement posterieure, quel que soit
+        // l'historique deja accumule sur le couple.
+        LocalDate priseEffet = ancienne.getDateDebut().plusMonths(1);
+        LocalDate veille = priseEffet.minusDays(1);
+
+        Integer montantAncien = ancienne.getMontantFcfa();
+        int montantNouveau = montantAncien + 500;
+
+        GrilleTarifaire remplacante = new GrilleTarifaire(NatureEnum.TRANSPORT, SessionEnum.SOIR,
+                montantNouveau, priseEffet, 4L, "NKOLO Claire");
+        TransitionGrille.soumettre(remplacante);
+        repository.saveAndFlush(remplacante);
+
+        // La bascule, dans l'ordre du service : fermeture puis activation. Si
+        // l'ordre etait inverse, l'index partiel refuserait la premiere ecriture.
+        TransitionGrille.fermer(ancienne, veille);
+        repository.saveAndFlush(ancienne);
+        TransitionGrille.valider(remplacante, 7L, LocalDateTime.now(), "TCHINDA Agnes");
+        repository.saveAndFlush(remplacante);
+
+        // Une seule grille COURANTE sur le couple : c'est l'invariant de RG-14,
+        // et l'index partiel vient de l'accepter sans broncher.
+        Optional<GrilleTarifaire> courante =
+                repository.rechercherGrilleCourante(NatureEnum.TRANSPORT, SessionEnum.SOIR);
+        assertThat(courante).isPresent();
+        assertThat(courante.get().getId()).isEqualTo(remplacante.getId());
+
+        // A la date de prise d'effet : la nouvelle grille, et son montant.
+        Optional<GrilleTarifaire> aLaPriseEffet =
+                repository.rechercherGrilleActive(NatureEnum.TRANSPORT, SessionEnum.SOIR, priseEffet);
+        assertThat(aLaPriseEffet).isPresent();
+        assertThat(aLaPriseEffet.get().getId()).isEqualTo(remplacante.getId());
+        assertThat(aLaPriseEffet.get().getMontantFcfa()).isEqualTo(montantNouveau);
+
+        // La veille : l'ancienne grille, encore. Aucun trou entre les deux
+        // periodes, aucun chevauchement — c'est ce dont depend la resolution du
+        // montant a une date passee.
+        Optional<GrilleTarifaire> laVeille =
+                repository.rechercherGrilleActive(NatureEnum.TRANSPORT, SessionEnum.SOIR, veille);
+        assertThat(laVeille).isPresent();
+        assertThat(laVeille.get().getId()).isEqualTo(ancienne.getId());
+        assertThat(laVeille.get().getMontantFcfa()).isEqualTo(montantAncien);
+
+        // L'ancienne reste ACTIVE : fermer n'est pas rejeter, c'est poser une
+        // borne. Son statut porte encore la decision qui l'avait rendue applicable.
+        assertThat(ancienne.getStatutValidation()).isEqualTo(StatutGrilleEnum.ACTIVE);
+        assertThat(ancienne.getDateFin()).isEqualTo(veille);
+    }
+
 }

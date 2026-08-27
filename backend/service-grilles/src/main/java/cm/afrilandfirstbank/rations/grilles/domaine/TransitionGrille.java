@@ -70,10 +70,42 @@ public final class TransitionGrille {
         grille.appliquerStatut(StatutGrilleEnum.EN_ATTENTE_DRH);
     }
 
+    /**
+     * Verifie, sans rien modifier, que la grille peut etre validee.
+     *
+     * <p>Sert au service de decision (Sprint 2.3) : la bascule ferme d'abord
+     * l'ancienne grille, et il serait deplaisant de decouvrir apres coup que la
+     * cible n'etait pas validable. Le rollback rattraperait la situation, mais
+     * la correction dependrait alors d'un mecanisme technique plutot que de
+     * l'ordre des etapes.
+     *
+     * @throws TransitionGrilleInterditeException si le statut courant n'admet pas ACTIVE
+     */
+    public static void exigerValidationPossible(GrilleTarifaire grille) {
+        exigerTransition(grille.getStatutValidation(), StatutGrilleEnum.ACTIVE);
+    }
+
     /** EN_ATTENTE_DRH -> ACTIVE : la DRH valide. Enregistre le validateur et l'horodatage. */
     public static void valider(GrilleTarifaire grille, Long idValidateur, LocalDateTime instant) {
+        valider(grille, idValidateur, instant, null);
+    }
+
+    /**
+     * EN_ATTENTE_DRH -> ACTIVE, en recopiant le nom lisible de la DRH.
+     *
+     * <p>Le libelle est fige au moment de la decision, comme celui du createur au
+     * Sprint 2.2 : il repond a « qui a valide, tel qu'il etait connu ce jour-la ».
+     *
+     * <p>La recopie passe par ici, et non par le service applicatif, parce que les
+     * mutateurs de {@link GrilleTarifaire} sont en visibilite paquet : aucune
+     * couche au-dessus du domaine ne modifie une grille sans qu'une transition
+     * ait ete jugee legale au prealable.
+     */
+    public static void valider(GrilleTarifaire grille, Long idValidateur, LocalDateTime instant,
+            String libelleValidateur) {
         exigerTransition(grille.getStatutValidation(), StatutGrilleEnum.ACTIVE);
         grille.enregistrerValidation(idValidateur, instant);
+        grille.enregistrerLibelleValidateur(libelleValidateur);
         grille.appliquerStatut(StatutGrilleEnum.ACTIVE);
     }
 
@@ -83,12 +115,31 @@ public final class TransitionGrille {
      * interdite.
      */
     public static void rejeter(GrilleTarifaire grille, String motif, LocalDateTime instant) {
+        rejeter(grille, motif, instant, null, null);
+    }
+
+    /**
+     * EN_ATTENTE_DRH -> REJETEE, en enregistrant qui a rejete.
+     *
+     * <p>Un rejet est une decision autant qu'une validation : l'omettre du journal
+     * laisserait l'ARH devant un refus sans auteur. {@code id_validateur} porte
+     * donc la DRH dans les deux cas — la colonne designe celui qui a tranche, pas
+     * celui qui a approuve.
+     *
+     * <p>Le motif est verifie <b>avant</b> la transition : un rejet sans motif
+     * d'une grille deja ACTIVE signale l'absence de motif plutot que la transition
+     * interdite, et l'utilisateur corrige la premiere chose qu'on lui reproche.
+     */
+    public static void rejeter(GrilleTarifaire grille, String motif, LocalDateTime instant,
+            Long idValidateur, String libelleValidateur) {
         if (motif == null || motif.isBlank()) {
             throw new MotifRejetRequisException(
                     "Le rejet d'une grille exige un motif (RG-10).");
         }
         exigerTransition(grille.getStatutValidation(), StatutGrilleEnum.REJETEE);
         grille.enregistrerRejet(motif.strip(), instant);
+        grille.enregistrerValidation(idValidateur, instant);
+        grille.enregistrerLibelleValidateur(libelleValidateur);
         grille.appliquerStatut(StatutGrilleEnum.REJETEE);
     }
 

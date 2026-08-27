@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -32,6 +33,8 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 
 import cm.afrilandfirstbank.rations.commun.audit.PublicateurAudit;
+import cm.afrilandfirstbank.rations.grilles.application.DecisionGrilleService;
+import cm.afrilandfirstbank.rations.grilles.application.DecisionGrilleService.ResultatValidation;
 import cm.afrilandfirstbank.rations.grilles.application.GrilleService;
 import cm.afrilandfirstbank.rations.grilles.domaine.GrilleTarifaire;
 import cm.afrilandfirstbank.rations.grilles.domaine.NatureEnum;
@@ -39,11 +42,16 @@ import cm.afrilandfirstbank.rations.grilles.domaine.SessionEnum;
 import cm.afrilandfirstbank.rations.grilles.domaine.StatutGrilleEnum;
 import cm.afrilandfirstbank.rations.grilles.domaine.TransitionGrille;
 import cm.afrilandfirstbank.rations.grilles.domaine.exception.ConflitGrilleException;
+import cm.afrilandfirstbank.rations.grilles.domaine.exception.GrilleIntrouvableException;
+import cm.afrilandfirstbank.rations.grilles.domaine.exception.MotifRejetRequisException;
+import cm.afrilandfirstbank.rations.grilles.domaine.exception.TransitionGrilleInterditeException;
+import cm.afrilandfirstbank.rations.grilles.infrastructure.identite.IdentiteIndisponibleException;
 import cm.afrilandfirstbank.rations.grilles.infrastructure.config.RoleJwtConverter;
 import cm.afrilandfirstbank.rations.grilles.infrastructure.config.SecurityConfig;
 
 /**
- * Chaine jeton -> securite -> controleur des deux endpoints du sous-sprint 2.2.
+ * Chaine jeton -> securite -> controleur des quatre endpoints du service :
+ * proposition par l'ARH (Sprint 2.2), decision par la DRH (Sprint 2.3).
  *
  * <p>Le service applicatif est simule : la logique metier est couverte par
  * {@code GrilleServiceTest} et {@code UniciteGrilleServiceTest}. Ce qui est
@@ -83,6 +91,9 @@ class GrilleControllerIT {
 
     @MockitoBean
     private GrilleService grilleService;
+
+    @MockitoBean
+    private DecisionGrilleService decisionGrilleService;
 
     private void keycloakEmet(String sub, String login, String role) {
         when(jwtDecoder.decode(anyString())).thenReturn(Jwt.withTokenValue("jeton-de-test")
@@ -313,20 +324,216 @@ class GrilleControllerIT {
                 .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("EN_ATTENTE_DRH")));
     }
 
-    // --- Absence d'endpoint de decision (perimetre du sous-sprint) -----------
+    // --- POST /grilles/{id}/validation et /rejet (Sprint 2.3) ---------------
+
+    private static ResultatValidation bascule(GrilleTarifaire validee, GrilleTarifaire ancienne) {
+        return new ResultatValidation(validee, ancienne);
+    }
+
+    /** Grille cible telle que le service la rend apres validation : ACTIVE, validateur pose. */
+    private static GrilleTarifaire grilleValidee(Long id, LocalDate dateDebut) {
+        GrilleTarifaire grille = grilleEnAttente(id, NatureEnum.TRANSPORT, SessionEnum.SOIR,
+                3000, dateDebut);
+        TransitionGrille.valider(grille, 7L, LocalDateTime.of(2026, 8, 27, 11, 4), "TCHINDA Agnes");
+        return grille;
+    }
+
+    /** Ancienne grille telle que le service la rend apres fermeture : ACTIVE avec une date de fin. */
+    private static GrilleTarifaire grilleFermee(Long id, LocalDate dateFin) {
+        GrilleTarifaire grille = grilleEnAttente(id, NatureEnum.TRANSPORT, SessionEnum.SOIR,
+                2500, LocalDate.of(2026, 1, 1));
+        TransitionGrille.valider(grille, 7L, LocalDateTime.of(2025, 12, 20, 15, 41), "TCHINDA Agnes");
+        TransitionGrille.fermer(grille, dateFin);
+        return grille;
+    }
 
     @Test
-    @DisplayName("aucun endpoint de validation n'existe dans ce sous-sprint")
-    void aucunEndpointDeValidation() throws Exception {
+    @DisplayName("11. POST /grilles/{id}/validation sans jeton : 401")
+    void validationSansJetonRefusee() throws Exception {
+        mockMvc.perform(post("/grilles/29/validation"))
+                .andExpect(status().isUnauthorized());
+
+        verify(decisionGrilleService, never()).valider(any(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("12. POST /grilles/{id}/validation avec un jeton ARH : 403, la decision est reservee a la DRH")
+    void validationParArhRefusee() throws Exception {
+        keycloakEmet(SUB_ARH, "claire_nkolo", "ARH");
+
+        // Le coeur de RG-14 : l'ARH qui pourrait valider ses propres propositions
+        // annulerait le double regard que la regle institue.
+        mockMvc.perform(post("/grilles/29/validation").header(HttpHeaders.AUTHORIZATION, JETON))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCES_REFUSE"));
+
+        verify(decisionGrilleService, never()).valider(any(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("13. POST /grilles/{id}/validation avec un jeton DRH : 200, nouvelle ACTIVE et ancienne fermee")
+    void validationParDrhAcceptee() throws Exception {
+        keycloakEmet(SUB_DRH, "agnes_tchinda", "DRH");
+        when(decisionGrilleService.valider(eq(29L), anyString(), anyString()))
+                .thenReturn(bascule(grilleValidee(29L, LocalDate.of(2026, 9, 1)),
+                        grilleFermee(12L, LocalDate.of(2026, 8, 31))));
+
+        mockMvc.perform(post("/grilles/29/validation").header(HttpHeaders.AUTHORIZATION, JETON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.grille.id").value(29))
+                .andExpect(jsonPath("$.grille.statutValidation").value("ACTIVE"))
+                .andExpect(jsonPath("$.grille.dateFin").doesNotExist())
+                .andExpect(jsonPath("$.grille.validateur").value("TCHINDA Agnes"))
+                // Ce que l'interface doit pouvoir afficher : ce qui a ete remplace,
+                // et depuis quand la remplacante s'applique.
+                .andExpect(jsonPath("$.ancienneFermee.id").value(12))
+                .andExpect(jsonPath("$.ancienneFermee.dateFin").value("2026-08-31"))
+                .andExpect(jsonPath("$.ancienneFermee.statutValidation").value("ACTIVE"));
+    }
+
+    @Test
+    @DisplayName("13bis. premiere grille du couple : 200, ancienneFermee absente")
+    void validationSansAncienne() throws Exception {
+        keycloakEmet(SUB_DRH, "agnes_tchinda", "DRH");
+        when(decisionGrilleService.valider(eq(29L), anyString(), anyString()))
+                .thenReturn(bascule(grilleValidee(29L, LocalDate.of(2026, 9, 1)), null));
+
+        mockMvc.perform(post("/grilles/29/validation").header(HttpHeaders.AUTHORIZATION, JETON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.grille.statutValidation").value("ACTIVE"))
+                .andExpect(jsonPath("$.ancienneFermee").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("14. POST /grilles/{id}/validation sur un identifiant inexistant : 404")
+    void validationSurGrilleInexistante() throws Exception {
+        keycloakEmet(SUB_DRH, "agnes_tchinda", "DRH");
+        when(decisionGrilleService.valider(eq(999L), anyString(), anyString()))
+                .thenThrow(new GrilleIntrouvableException(
+                        "Aucune grille tarifaire ne porte l'identifiant 999."));
+
+        mockMvc.perform(post("/grilles/999/validation").header(HttpHeaders.AUTHORIZATION, JETON))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("GRILLE_INTROUVABLE"))
+                .andExpect(jsonPath("$.path").value("/grilles/999/validation"));
+    }
+
+    @Test
+    @DisplayName("14bis. validation d'une grille au statut incompatible : 422 TRANSITION_INTERDITE")
+    void validationStatutIncompatible() throws Exception {
+        keycloakEmet(SUB_DRH, "agnes_tchinda", "DRH");
+        when(decisionGrilleService.valider(eq(29L), anyString(), anyString()))
+                .thenThrow(new TransitionGrilleInterditeException(
+                        "Transition de statut interdite : ACTIVE -> ACTIVE."));
+
+        // 422 et non 409 : rien n'est duplique, c'est une regle de gestion qui
+        // refuse. La DRH lit typiquement une liste chargee quelques minutes plus
+        // tot ; le message doit lui dire dans quel etat la grille se trouve.
+        mockMvc.perform(post("/grilles/29/validation").header(HttpHeaders.AUTHORIZATION, JETON))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("TRANSITION_INTERDITE"))
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("ACTIVE")));
+    }
+
+    @Test
+    @DisplayName("14ter. service Identite injoignable pendant une validation : 503, rien n'a bascule")
+    void validationServiceIdentiteInjoignable() throws Exception {
+        keycloakEmet(SUB_DRH, "agnes_tchinda", "DRH");
+        when(decisionGrilleService.valider(eq(29L), anyString(), anyString()))
+                .thenThrow(new IdentiteIndisponibleException(
+                        "Le service Identite n'a pas repondu dans le delai imparti."));
+
+        // Doctrine 1.3 rendue en 503 (decision 2.2) : la DRH possede le droit
+        // qu'elle exerce, un 403 l'enverrait reclamer une habilitation acquise.
+        mockMvc.perform(post("/grilles/29/validation").header(HttpHeaders.AUTHORIZATION, JETON))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("SERVICE_IDENTITE_INDISPONIBLE"));
+    }
+
+    @Test
+    @DisplayName("15. POST /grilles/{id}/rejet sans motif : 400, le champ est obligatoire")
+    void rejetSansMotifRefuse() throws Exception {
         keycloakEmet(SUB_DRH, "agnes_tchinda", "DRH");
 
-        // La validation et le rejet relevent du sous-sprint 2.3. Ce test echouera
-        // le jour ou ils seront ajoutes : c'est voulu, il devra etre retire
-        // sciemment plutot que l'absence de decision etre perdue de vue.
-        mockMvc.perform(post("/grilles/29/validation").header(HttpHeaders.AUTHORIZATION, JETON))
-                .andExpect(status().isNotFound());
-        mockMvc.perform(post("/grilles/29/rejet").header(HttpHeaders.AUTHORIZATION, JETON))
-                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/grilles/29/rejet")
+                .header(HttpHeaders.AUTHORIZATION, JETON)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("REQUETE_INVALIDE"))
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("motif")));
+
+        verify(decisionGrilleService, never()).rejeter(any(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("15bis. motif fait d'espaces : 400 — une chaine vide n'est pas un motif")
+    void rejetMotifEnEspacesRefuse() throws Exception {
+        keycloakEmet(SUB_DRH, "agnes_tchinda", "DRH");
+
+        mockMvc.perform(post("/grilles/29/rejet")
+                .header(HttpHeaders.AUTHORIZATION, JETON)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"motif\":\"     \"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("REQUETE_INVALIDE"));
+
+        verify(decisionGrilleService, never()).rejeter(any(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("15ter. le service refuse un motif vide qui aurait franchi la couche api : 422 MOTIF_OBLIGATOIRE")
+    void rejetMotifRefuseParLeService() throws Exception {
+        keycloakEmet(SUB_DRH, "agnes_tchinda", "DRH");
+        when(decisionGrilleService.rejeter(eq(29L), anyString(), anyString(), anyString()))
+                .thenThrow(new MotifRejetRequisException(
+                        "Le rejet d'une grille exige un motif (RG-10)."));
+
+        // La regle vit aux deux etages, et le code du contrat differe de celui de
+        // la validation de forme : 422 MOTIF_OBLIGATOIRE, meme code que le retour
+        // d'un processus sans motif (contrat d'API section 5).
+        mockMvc.perform(post("/grilles/29/rejet")
+                .header(HttpHeaders.AUTHORIZATION, JETON)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"motif\":\"quelconque\"}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("MOTIF_OBLIGATOIRE"));
+    }
+
+    @Test
+    @DisplayName("POST /grilles/{id}/rejet avec un jeton DRH et un motif : 200, statut REJETEE")
+    void rejetParDrhAccepte() throws Exception {
+        keycloakEmet(SUB_DRH, "agnes_tchinda", "DRH");
+        GrilleTarifaire rejetee = grilleEnAttente(29L, NatureEnum.TRANSPORT, SessionEnum.SOIR,
+                3000, LocalDate.of(2026, 9, 1));
+        TransitionGrille.rejeter(rejetee, "Montant superieur au bareme en vigueur",
+                LocalDateTime.of(2026, 8, 27, 11, 30), 7L, "TCHINDA Agnes");
+        when(decisionGrilleService.rejeter(eq(29L), anyString(), anyString(), anyString()))
+                .thenReturn(rejetee);
+
+        mockMvc.perform(post("/grilles/29/rejet")
+                .header(HttpHeaders.AUTHORIZATION, JETON)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"motif\":\"Montant superieur au bareme en vigueur\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.statutValidation").value("REJETEE"))
+                .andExpect(jsonPath("$.motifRejet").value("Montant superieur au bareme en vigueur"))
+                .andExpect(jsonPath("$.validateur").value("TCHINDA Agnes"));
+    }
+
+    @Test
+    @DisplayName("POST /grilles/{id}/rejet avec un jeton ARH : 403")
+    void rejetParArhRefuse() throws Exception {
+        keycloakEmet(SUB_ARH, "claire_nkolo", "ARH");
+
+        mockMvc.perform(post("/grilles/29/rejet")
+                .header(HttpHeaders.AUTHORIZATION, JETON)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"motif\":\"Trop cher\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCES_REFUSE"));
+
+        verify(decisionGrilleService, never()).rejeter(any(), anyString(), anyString(), anyString());
     }
 
 }
