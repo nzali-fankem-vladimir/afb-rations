@@ -63,3 +63,5 @@ docker-compose.override.yml
 # Documents internes de preparation (non destines au depot public)
 docs/initialisation projet/
 sprint actuel.md
+# Sortie generee par la cartographie graphify (non versionnee)
+graphify-out/

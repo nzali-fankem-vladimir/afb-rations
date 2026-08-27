@@ -20,6 +20,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import cm.afrilandfirstbank.rations.commun.audit.PublicateurAudit;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -51,6 +52,14 @@ class ProtectionParRoleTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    /**
+     * Le port d'audit vient de l'autoconfiguration de rations-audit-commun, que
+     * la tranche @WebMvcTest ne charge pas. Le gestionnaire d'erreurs en depend
+     * pour tracer les refus (CT-04) : sans ce mock, le contexte ne demarre pas.
+     */
+    @MockitoBean
+    private PublicateurAudit publicateurAudit;
 
     @MockitoBean
     private JwtDecoder jwtDecoder;

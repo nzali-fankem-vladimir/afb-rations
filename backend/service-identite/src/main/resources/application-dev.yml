@@ -1,4 +1,11 @@
 spring:
+  kafka:
+    # Seule l'adresse des brokers est reprise par le producteur d'audit : ses
+    # bornes de securite (max.block.ms notamment) sont fixees par le module
+    # rations-audit-commun et ne doivent pas etre surchargees ici, sous peine de
+    # rompre la garantie « l'audit ne fait jamais echouer le metier ».
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+
   datasource:
     url: ${DB_IDENTITE_URL:jdbc:postgresql://localhost:5433/rations_identite}
     username: ${DB_IDENTITE_USERNAME:rations_identite}

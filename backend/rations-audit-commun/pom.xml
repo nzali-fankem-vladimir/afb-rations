@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>cm.afrilandfirstbank.rations</groupId>
+        <artifactId>rations-backend</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>rations-audit-commun</artifactId>
+    <packaging>jar</packaging>
+
+    <name>rations-audit-commun</name>
+    <description>Publication des evenements d'audit sur rations.audit.evenement - repris par les six services metier</description>
+
+    <!--
+        PERIMETRE STRICT, decision Sprint 1.3.
+
+        Ce module ne contient QUE la publication d'audit : la charge de
+        l'evenement, le port, le producteur Kafka et sa configuration. Aucun
+        type metier, aucun DTO, aucun utilitaire, jamais.
+
+        Un module "commun" qui grossit devient un monolithe distribue : c'est le
+        mode de defaillance connu de ce choix. La contrainte est donc VERIFIEE AU
+        BUILD (enforcer ci-dessous + PerimetreDuModuleTest), pas seulement ecrite
+        dans un README.
+
+        Portee honnete de cette garantie : elle rend la derive impossible par
+        accident, pas impossible tout court. Qui veut ajouter un type metier peut
+        editer ce fichier. C'est strictement plus fort qu'une convention ecrite,
+        strictement plus faible que l'isolation du service Audit, ou l'absence
+        d'identifiants de connexion rend l'ecriture physiquement impossible.
+
+        Le service Audit (consommateur) NE DOIT PAS dependre de ce module : il lit
+        le topic en tolerant reader, avec son propre type. Sinon un changement de
+        schema imposerait un pas cadence a sept services, et le service Audit ne
+        pourrait plus relire les messages deja presents dans le topic.
+    -->
+
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.kafka</groupId>
+            <artifactId>spring-kafka</artifactId>
+        </dependency>
+        <!-- Journalisation seule (facade, sans implementation) : la perte d'un
+             evenement d'audit doit laisser une trace en WARN, c'est le seul
+             signal de supervision quand une publication echoue. -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+        <!-- Auto-configuration : les services consommateurs n'ont rien a cabler
+             a la main, l'ajout de la dependance suffit. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jsr310</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Barriere de perimetre : toute tentative d'introduire du web, de
+                 la persistance, de la securite ou un autre service du reacteur
+                 dans ce module casse la compilation. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>perimetre-du-module-audit-commun</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <bannedDependencies>
+                                    <excludes>
+                                        <exclude>org.springframework.boot:spring-boot-starter-web</exclude>
+                                        <exclude>org.springframework.boot:spring-boot-starter-webflux</exclude>
+                                        <exclude>org.springframework.boot:spring-boot-starter-data-jpa</exclude>
+                                        <exclude>org.springframework.boot:spring-boot-starter-security</exclude>
+                                        <exclude>org.springframework.boot:spring-boot-starter-oauth2-resource-server</exclude>
+                                        <exclude>org.springframework.boot:spring-boot-starter-flyway</exclude>
+                                        <exclude>cm.afrilandfirstbank.rations:service-*</exclude>
+                                    </excludes>
+                                    <message>
+                                        rations-audit-commun ne contient que la publication d'audit.
+                                        Ni web, ni persistance, ni securite, ni dependance vers un service.
+                                        Voir la decision Sprint 1.3 dans CLAUDE.md section 17.
+                                    </message>
+                                </bannedDependencies>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>
