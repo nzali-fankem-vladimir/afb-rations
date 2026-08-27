@@ -82,6 +82,19 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Spring Boot 4 : @WebMvcTest vit dans ce starter dedie. Requis par
+             GrilleControllerIT (Sprint 2.2). -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webmvc-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Support de test de Spring Security (contexte d'authentification). -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
         <!-- Spring Boot 4 a scinde les tranches de test : @DataJpaTest et
              @AutoConfigureTestDatabase vivent dans ce starter dedie, pas dans
              spring-boot-starter-test. Utilise par GrilleTarifaireRepositoryTest,

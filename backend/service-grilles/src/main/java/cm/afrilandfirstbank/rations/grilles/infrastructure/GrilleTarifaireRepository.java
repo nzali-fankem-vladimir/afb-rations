@@ -77,6 +77,55 @@ public interface GrilleTarifaireRepository extends JpaRepository<GrilleTarifaire
                                                         StatutGrilleEnum statut);
 
     /**
+     * Grille COURANTE du couple : ACTIVE et sans date de fin.
+     *
+     * <p>Distincte de {@link #rechercherGrilleActive} : celle-ci demande « quelle
+     * grille s'applique a telle date », celle-la demande « quelle grille est en
+     * vigueur, sans terme pose ». Les deux different des qu'une grille a ete
+     * fermee : une grille close reste ACTIVE, mais n'est plus courante.
+     *
+     * <p>Retourne au plus une ligne, garanti par l'index partiel
+     * {@code ux_grille_active_par_couple}
+     * ({@code WHERE statut_validation = 'ACTIVE' AND date_fin IS NULL}).
+     *
+     * <p>Sert au controle d'unicite du Sprint 2.2 : une nouvelle grille doit
+     * debuter STRICTEMENT APRES la grille en vigueur. Comparer a
+     * {@code rechercherGrilleActive(date)} ne suffirait pas — une proposition
+     * anti-datee avant le debut de la grille en vigueur ne serait couverte par
+     * aucune grille a sa propre date de debut, donc passerait inapercue, alors
+     * qu'elle reecrirait une periode deja servie.
+     */
+    @Query("""
+            select g from GrilleTarifaire g
+            where g.nature = :nature
+              and g.session = :session
+              and g.statutValidation = cm.afrilandfirstbank.rations.grilles.domaine.StatutGrilleEnum.ACTIVE
+              and g.dateFin is null
+            """)
+    Optional<GrilleTarifaire> rechercherGrilleCourante(@Param("nature") NatureEnum nature,
+                                                       @Param("session") SessionEnum session);
+
+    /**
+     * Propositions du couple en attente de la decision DRH.
+     *
+     * <p>Retourne une liste, non un {@code Optional}, alors que le controle
+     * d'unicite du Sprint 2.2 garantit qu'il n'y en a jamais plus d'une : aucune
+     * contrainte de base ne l'impose (l'index partiel ne porte que sur les
+     * grilles ACTIVE). Une requete typee {@code Optional} echouerait alors sur une
+     * exception technique si l'invariant venait a etre viole — par une reprise de
+     * donnees, par exemple. Mieux vaut lire la situation que planter dessus.
+     */
+    @Query("""
+            select g from GrilleTarifaire g
+            where g.nature = :nature
+              and g.session = :session
+              and g.statutValidation = cm.afrilandfirstbank.rations.grilles.domaine.StatutGrilleEnum.EN_ATTENTE_DRH
+            order by g.id asc
+            """)
+    List<GrilleTarifaire> rechercherPropositionsEnAttente(@Param("nature") NatureEnum nature,
+                                                          @Param("session") SessionEnum session);
+
+    /**
      * Liste paginee, filtre optionnel sur le statut : {@code statut} nul renvoie
      * toutes les grilles, sinon celles du statut demande.
      */

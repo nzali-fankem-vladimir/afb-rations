@@ -2,6 +2,9 @@ package cm.afrilandfirstbank.rations.commun.audit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -77,6 +80,34 @@ class DeltaAuditTest {
     @DisplayName("aucun champ : null plutot qu'un objet vide")
     void deltaVide() {
         assertThat(DeltaAudit.nouveau().enJson()).isNull();
+    }
+
+    /**
+     * Non-regression du correctif releve au Sprint 2.2 : Jackson serialisait par
+     * defaut une {@code LocalDate} en tableau de composants ({@code [2026,9,1]}),
+     * contre l'ISO 8601 exige par CLAUDE.md section 11.
+     *
+     * <p>Le journal restait lisible, ce qui rendait le defaut d'autant plus facile
+     * a laisser passer : il ne cassait rien, il rendait seulement chaque date
+     * illisible sans effort. Il valait pour les six services.
+     */
+    @Test
+    @DisplayName("les dates sortent en ISO 8601, jamais en tableau de composants")
+    void datesEnIso8601() throws Exception {
+        String json = DeltaAudit.nouveau()
+                .champ("dateDebut", null, LocalDate.of(2026, 9, 1))
+                .champ("dateValidation", null, LocalDateTime.of(2026, 8, 27, 17, 50, 1))
+                .contexte("dateAction", LocalDate.of(2026, 12, 31))
+                .enJson();
+
+        JsonNode arbre = MAPPER.readTree(json);
+
+        assertThat(arbre.get("dateDebut").get("apres").isTextual())
+                .as("une date serialisee en tableau force le lecteur du journal a la reconstituer")
+                .isTrue();
+        assertThat(arbre.get("dateDebut").get("apres").asText()).isEqualTo("2026-09-01");
+        assertThat(arbre.get("dateValidation").get("apres").asText()).startsWith("2026-08-27T17:50:01");
+        assertThat(arbre.get("dateAction").asText()).isEqualTo("2026-12-31");
     }
 
 }

@@ -5,6 +5,7 @@ import java.util.Map;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 /**
@@ -39,8 +40,22 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
  */
 public final class DeltaAudit {
 
-    /** {@code ObjectMapper} est immuable une fois configure, donc partageable. */
-    private static final ObjectMapper MAPPER = new ObjectMapper().registerModule(new JavaTimeModule());
+    /**
+     * {@code ObjectMapper} est immuable une fois configure, donc partageable.
+     *
+     * <p><b>{@code WRITE_DATES_AS_TIMESTAMPS} desactive</b> (correctif releve au
+     * Sprint 2.2). Par defaut, Jackson serialise une {@code LocalDate} en tableau
+     * de composants — {@code [2026,9,1]} — et non en ISO 8601. Le journal d'audit
+     * restait lisible, mais contredisait CLAUDE.md section 11 (« dates ISO 8601 »)
+     * et obligeait quiconque relit une trace a reconstituer la date de tete.
+     *
+     * <p>Le defaut valait pour les six services : toute date placee dans un delta
+     * en aurait souffert. Il a ete corrige ici, a la source, plutot qu'a chaque
+     * appelant.
+     */
+    private static final ObjectMapper MAPPER = new ObjectMapper()
+            .registerModule(new JavaTimeModule())
+            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
     /** LinkedHashMap : l'ordre de declaration des champs est conserve dans la trace. */
     private final Map<String, Object> champs = new LinkedHashMap<>();

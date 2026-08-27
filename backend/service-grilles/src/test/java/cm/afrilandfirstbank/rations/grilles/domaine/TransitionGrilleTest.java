@@ -24,11 +24,12 @@ class TransitionGrilleTest {
     private static final LocalDateTime INSTANT = LocalDateTime.of(2026, 8, 27, 10, 0);
     private static final Long ID_DRH = 5L;   // agnes_tchinda, DRH (donnees de test service Identite)
     private static final Long ID_ARH = 4L;   // claire_nkolo, ARH
+    private static final String LIBELLE_ARH = "NKOLO Claire"; // libelle fige a la creation (Sprint 2.2)
 
     /** Grille neuve : RATION / JOUR, 1500 FCFA, debut ce mois, creee par l'ARH. */
     private static GrilleTarifaire grilleNeuve() {
         return new GrilleTarifaire(NatureEnum.RATION, SessionEnum.JOUR, 1500,
-                LocalDate.of(2026, 8, 1), ID_ARH);
+                LocalDate.of(2026, 8, 1), ID_ARH, LIBELLE_ARH);
     }
 
     private static GrilleTarifaire grilleSoumise() {

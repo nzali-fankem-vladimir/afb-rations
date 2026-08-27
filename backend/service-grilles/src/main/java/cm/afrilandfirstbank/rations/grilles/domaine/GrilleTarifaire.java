@@ -88,6 +88,27 @@ public class GrilleTarifaire {
     @Column(name = "motif_rejet", length = 255)
     private String motifRejet;
 
+    /**
+     * Nom lisible de l'ARH auteur, recopie a la creation depuis
+     * {@code GET /identite/moi} (decision Sprint 2.2).
+     *
+     * <p>Ce service ne connait pas les utilisateurs : sans cette copie, afficher
+     * une liste de grilles exigerait un appel reseau par ligne, sur le chemin de
+     * lecture. Le libelle est donc <b>fige au moment de l'acte</b> : il repond a
+     * « qui a cree cette grille, tel qu'il etait connu ce jour-la », pas a « qui
+     * est cette personne aujourd'hui ». Un changement ulterieur du profil ne le
+     * met pas a jour, et c'est voulu.
+     *
+     * <p>Nul si le libelle n'a pu etre obtenu : {@link #getIdCreateur()} reste la
+     * donnee de reference.
+     */
+    @Column(name = "libelle_createur", length = 100)
+    private String libelleCreateur;
+
+    /** Nom lisible de la DRH ayant tranche, recopie a la decision (Sprint 2.3). Fige de meme. */
+    @Column(name = "libelle_validateur", length = 100)
+    private String libelleValidateur;
+
     protected GrilleTarifaire() {
         // requis par JPA
     }
@@ -98,12 +119,13 @@ public class GrilleTarifaire {
      * typees, jamais des chaines libres.
      */
     public GrilleTarifaire(NatureEnum nature, SessionEnum session, Integer montantFcfa,
-                           LocalDate dateDebut, Long idCreateur) {
+                           LocalDate dateDebut, Long idCreateur, String libelleCreateur) {
         this.nature = nature;
         this.session = session;
         this.montantFcfa = montantFcfa;
         this.dateDebut = dateDebut;
         this.idCreateur = idCreateur;
+        this.libelleCreateur = libelleCreateur;
         this.statutValidation = StatutGrilleEnum.BROUILLON;
     }
 
@@ -126,6 +148,11 @@ public class GrilleTarifaire {
     void enregistrerValidation(Long idValidateur, LocalDateTime instant) {
         this.idValidateur = idValidateur;
         this.dateValidation = instant;
+    }
+
+    /** Recopie du nom lisible de la DRH, au moment de sa decision (Sprint 2.3). */
+    void enregistrerLibelleValidateur(String libelleValidateur) {
+        this.libelleValidateur = libelleValidateur;
     }
 
     void enregistrerRejet(String motif, LocalDateTime instant) {
@@ -185,6 +212,14 @@ public class GrilleTarifaire {
 
     public String getMotifRejet() {
         return motifRejet;
+    }
+
+    public String getLibelleCreateur() {
+        return libelleCreateur;
+    }
+
+    public String getLibelleValidateur() {
+        return libelleValidateur;
     }
 
 }
