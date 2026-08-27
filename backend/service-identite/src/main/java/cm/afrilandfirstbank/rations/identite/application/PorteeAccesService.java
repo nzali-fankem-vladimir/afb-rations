@@ -3,6 +3,7 @@ package cm.afrilandfirstbank.rations.identite.application;
 import org.springframework.stereotype.Service;
 
 import cm.afrilandfirstbank.rations.identite.domaine.PorteeAcces;
+import cm.afrilandfirstbank.rations.identite.domaine.RoleEnum;
 import cm.afrilandfirstbank.rations.identite.domaine.Utilisateur;
 
 /**
@@ -29,6 +30,19 @@ public class PorteeAccesService {
 
     public boolean peutAccederAUnite(Utilisateur utilisateur, String codeUnite) {
         return determinerPortee(utilisateur).couvre(codeUnite);
+    }
+
+    /**
+     * Un code unite est requis pour les roles a portee locale (AGENT_UNITE,
+     * CHEF_UNITE_DA), facultatif pour les roles a portee nationale. Utilise par
+     * {@code UtilisateurAdminService} pour verifier la coherence role/codeUnite a
+     * l'attribution (sous-sprint 1.2).
+     */
+    public boolean exigeCodeUnite(RoleEnum role) {
+        return switch (role) {
+            case AGENT_UNITE, CHEF_UNITE_DA -> true;
+            case DIRECTEUR_RESEAU_DR, ARH, DRH, ADMIN -> false;
+        };
     }
 
 }

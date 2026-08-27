@@ -34,4 +34,13 @@ public interface UtilisateurRepository extends JpaRepository<Utilisateur, Long>,
 
     List<Utilisateur> findByCodeUnite(String codeUnite);
 
+    /**
+     * Sert au controle du dernier administrateur actif (sous-sprint 1.2,
+     * decision {@code docs/decisions/2026-08-26-attribution-role-administrateur.md}).
+     * Compte par statut actif, sans exiger de liaison Keycloak deja etablie : un
+     * profil ADMIN pre-provisionne mais jamais connecte reste un administrateur
+     * valide.
+     */
+    long countByRoleAndActif(RoleEnum role, boolean actif);
+
 }

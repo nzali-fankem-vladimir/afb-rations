@@ -107,6 +107,17 @@ public class Utilisateur {
         this.subKeycloak = subKeycloak;
     }
 
+    /**
+     * Attribue un nouveau role applicatif et code unite (sous-sprint 1.2). La
+     * coherence entre les deux (code unite requis pour un role a portee locale)
+     * est verifiee en amont, dans {@code UtilisateurAdminService} : l'entite ne
+     * connait pas la notion de portee.
+     */
+    public void attribuerRoleEtCodeUnite(RoleEnum role, String codeUnite) {
+        this.role = role;
+        this.codeUnite = codeUnite;
+    }
+
     /** Retire l'habilitation au module sans supprimer la trace du profil. */
     public void desactiver() {
         this.actif = false;
