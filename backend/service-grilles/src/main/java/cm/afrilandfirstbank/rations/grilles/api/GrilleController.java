@@ -1,8 +1,11 @@
 package cm.afrilandfirstbank.rations.grilles.api;
 
+import java.time.LocalDate;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -18,12 +21,16 @@ import org.springframework.web.bind.annotation.RestController;
 
 import cm.afrilandfirstbank.rations.grilles.api.dto.CreationGrilleRequest;
 import cm.afrilandfirstbank.rations.grilles.api.dto.GrilleResponse;
+import cm.afrilandfirstbank.rations.grilles.api.dto.MontantApplicableResponse;
 import cm.afrilandfirstbank.rations.grilles.api.dto.PageResponse;
 import cm.afrilandfirstbank.rations.grilles.api.dto.RejetGrilleRequest;
 import cm.afrilandfirstbank.rations.grilles.api.dto.ValidationGrilleResponse;
 import cm.afrilandfirstbank.rations.grilles.application.DecisionGrilleService;
 import cm.afrilandfirstbank.rations.grilles.application.GrilleService;
+import cm.afrilandfirstbank.rations.grilles.application.ResolutionMontantService;
 import cm.afrilandfirstbank.rations.grilles.domaine.GrilleTarifaire;
+import cm.afrilandfirstbank.rations.grilles.domaine.NatureEnum;
+import cm.afrilandfirstbank.rations.grilles.domaine.SessionEnum;
 import cm.afrilandfirstbank.rations.grilles.domaine.StatutGrilleEnum;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -54,11 +61,99 @@ public class GrilleController {
 
     private final GrilleService grilleService;
     private final DecisionGrilleService decisionGrilleService;
+    private final ResolutionMontantService resolutionMontantService;
 
     public GrilleController(GrilleService grilleService,
-            DecisionGrilleService decisionGrilleService) {
+            DecisionGrilleService decisionGrilleService,
+            ResolutionMontantService resolutionMontantService) {
         this.grilleService = grilleService;
         this.decisionGrilleService = decisionGrilleService;
+        this.resolutionMontantService = resolutionMontantService;
+    }
+
+    // --- Resolution du montant applicable (Sprint 2.4, RG-03) ---------------
+
+    @GetMapping("/active")
+    @Operation(summary = "Montant applicable a une prestation, a la date de cette prestation",
+            description = """
+                    Repond a la question que pose le service Saisie avant de figer une ligne :
+                    **quel montant s'applique a cette nature et cette session, a cette date ?**
+                    Le montant n'est jamais saisi ni transmis par le client, il est repris d'ici
+                    (RG-03).
+
+                    **A la date de la prestation, pas a la date du jour.** Une saisie du 10
+                    juillet effectuee le 27 aout est tarifee au montant de juillet. Le parametre
+                    `date` est donc **obligatoire** : lui donner une valeur par defaut ferait
+                    produire un montant plausible mais faux a tout appelant qui l'oublierait pour
+                    une saisie retroactive, sans declencher la moindre erreur.
+
+                    **Role requis :** aucun en particulier — un jeton valide suffit. Le montant
+                    retourne est un bareme de reference, sans information nominative, deja
+                    lisible par `GET /grilles` pour l'ARH et la DRH. Meme parti que
+                    `GET /identite/habilitation` (Sprint 1.3). Le service appelant relaie tel
+                    quel l'en-tete `Authorization` de l'utilisateur final ; il ne s'authentifie
+                    pas avec un compte de service, le realm n'en comporte aucun.
+
+                    **Aucune grille ne couvre la date ?** La reponse reste **200**, avec
+                    `disponible: false` et `montantFcfa: null` — jamais zero, qui serait
+                    enregistre comme un tarif. C'est au service Saisie de traduire cette reponse
+                    en refus de ligne (`422 GRILLE_INDISPONIBLE`, US-05 et CT-10). Voir
+                    `docs/appel-resolution-montant.md`.
+
+                    Une grille `EN_ATTENTE_DRH` ou `REJETEE` n'est jamais retenue (CT-25) : une
+                    proposition non tranchee est sans effet sur les saisies, meme apres sa propre
+                    date de debut.
+                    """)
+    @ApiResponses({
+            @ApiResponse(responseCode = "200",
+                    description = "Verdict rendu : montant applicable, ou indisponibilite explicite",
+                    content = @Content(mediaType = "application/json", examples = {
+                            @ExampleObject(name = "Montant trouve", value = """
+                                    {
+                                      "disponible": true,
+                                      "nature": "RATION",
+                                      "session": "JOUR",
+                                      "date": "2026-07-10",
+                                      "montantFcfa": 1500,
+                                      "idGrille": 12,
+                                      "dateDebut": "2026-07-01",
+                                      "dateFin": "2026-07-31"
+                                    }"""),
+                            @ExampleObject(name = "Aucune grille ne couvre la date", value = """
+                                    {
+                                      "disponible": false,
+                                      "nature": "RATION",
+                                      "session": "JOUR",
+                                      "date": "2020-01-01",
+                                      "montantFcfa": null,
+                                      "idGrille": null,
+                                      "dateDebut": null,
+                                      "dateFin": null
+                                    }""")})),
+            @ApiResponse(responseCode = "400",
+                    description = "Parametre manquant, nature ou session hors enumeration, date hors format AAAA-MM-JJ",
+                    content = @Content),
+            @ApiResponse(responseCode = "401", description = "Jeton absent, invalide ou expire", content = @Content),
+            @ApiResponse(responseCode = "500",
+                    description = "Incoherence de donnees : plusieurs grilles actives couvrent la meme date. "
+                            + "Aucun montant n'est retourne plutot qu'un montant arbitre.",
+                    content = @Content(mediaType = "application/json", examples = @ExampleObject(value = """
+                            {
+                              "timestamp": "2026-08-27T14:22:00",
+                              "status": 500,
+                              "code": "INCOHERENCE_GRILLE",
+                              "message": "Plusieurs grilles actives couvrent RATION / JOUR au 2026-07-10 (#30 [2026-07-01 -> sans terme] 2000 FCFA, #12 [2026-01-01 -> sans terme] 1500 FCFA). Le montant applicable ne peut pas etre determine sans arbitrage : aucune valeur n'est retournee plutot qu'une valeur possiblement fausse. Signalez cette incoherence a l'administrateur.",
+                              "path": "/grilles/active"
+                            }""")))
+    })
+    public ResponseEntity<MontantApplicableResponse> resoudreMontant(
+            @RequestParam NatureEnum nature,
+            @RequestParam SessionEnum session,
+            // Obligatoire, et sans valeur par defaut : voir la description.
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+
+        return ResponseEntity.ok(MontantApplicableResponse.depuis(
+                resolutionMontantService.resoudre(nature, session, date)));
     }
 
     @GetMapping

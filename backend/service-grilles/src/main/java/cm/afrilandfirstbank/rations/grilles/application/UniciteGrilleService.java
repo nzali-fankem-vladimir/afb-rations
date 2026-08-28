@@ -55,7 +55,7 @@ import cm.afrilandfirstbank.rations.grilles.infrastructure.GrilleTarifaireReposi
  * posterieure, est <b>acceptee</b> : c'est le mecanisme normal de changement de
  * tarif (decision Sprint 2.2, versionnement par nouvelle ligne). Tant qu'elle
  * reste {@code EN_ATTENTE_DRH}, elle est invisible de
- * {@code rechercherGrilleActive} et ne change aucun montant paye.
+ * {@code rechercherGrillesCouvrant} et ne change aucun montant paye.
  *
  * <h2>Rapport avec l'index de la base</h2>
  *

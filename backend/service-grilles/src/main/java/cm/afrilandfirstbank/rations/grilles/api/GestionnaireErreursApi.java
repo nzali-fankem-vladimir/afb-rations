@@ -11,6 +11,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -21,6 +22,7 @@ import cm.afrilandfirstbank.rations.commun.audit.PublicateurAudit;
 import cm.afrilandfirstbank.rations.grilles.domaine.exception.AuteurNonHabiliteException;
 import cm.afrilandfirstbank.rations.grilles.domaine.exception.ConflitGrilleException;
 import cm.afrilandfirstbank.rations.grilles.domaine.exception.GrilleIntrouvableException;
+import cm.afrilandfirstbank.rations.grilles.domaine.exception.IncoherenceGrilleException;
 import cm.afrilandfirstbank.rations.grilles.domaine.exception.MotifRejetRequisException;
 import cm.afrilandfirstbank.rations.grilles.domaine.exception.TransitionGrilleInterditeException;
 import cm.afrilandfirstbank.rations.grilles.infrastructure.identite.IdentiteIndisponibleException;
@@ -159,6 +161,49 @@ public class GestionnaireErreursApi {
             HttpServletRequest requete) {
         return reponse(requete, HttpStatus.UNPROCESSABLE_ENTITY, "MOTIF_OBLIGATOIRE",
                 exception.getMessage());
+    }
+
+    /**
+     * Chevauchement de periodes : plusieurs grilles ACTIVE couvrent la meme date
+     * (Sprint 2.4).
+     *
+     * <p>{@code 500}, et c'en est bien un : l'etat des donnees est invalide, la
+     * requete etait legitime. Le service pourrait retenir l'une des grilles et
+     * repondre 200, mais il servirait un montant potentiellement faux que
+     * personne ne verrait passer — la ligne serait figee, validee, puis transmise
+     * a la comptabilite au mauvais tarif.
+     *
+     * <p>Le cas est intercepte ici <b>pour rester au format d'erreur uniforme du
+     * projet</b>. Le laisser filer produirait une reponse generique Spring Boot,
+     * hors format : on casserait le contrat d'erreur sans gagner la visibilite
+     * recherchee. La trace exploitable, elle, est deja ecrite en log par
+     * {@code ResolutionMontantService} au prefixe {@code INCOHERENCE GRILLE}.
+     *
+     * <p>Pas de trace d'audit : ce n'est pas un refus d'acces, c'est un incident
+     * de donnees.
+     */
+    @ExceptionHandler(IncoherenceGrilleException.class)
+    public ResponseEntity<ErreurApiDto> incoherenceGrille(IncoherenceGrilleException exception,
+            HttpServletRequest requete) {
+        return reponse(requete, HttpStatus.INTERNAL_SERVER_ERROR, "INCOHERENCE_GRILLE",
+                exception.getMessage());
+    }
+
+    /**
+     * Parametre de requete obligatoire absent : {@code GET /grilles/active} sans
+     * {@code date}, par exemple.
+     *
+     * <p>Ce gestionnaire devient necessaire au Sprint 2.4, ou {@code date} est
+     * rendue obligatoire precisement pour qu'un oubli echoue au lieu de produire
+     * un montant faux. Encore faut-il que cet echec soit au format uniforme, et
+     * qu'il dise <b>quel</b> parametre manque : sans cela, l'appelant recevrait un
+     * 400 muet et chercherait longtemps.
+     */
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ErreurApiDto> parametreManquant(MissingServletRequestParameterException exception,
+            HttpServletRequest requete) {
+        return reponse(requete, HttpStatus.BAD_REQUEST, "REQUETE_INVALIDE",
+                "Le parametre obligatoire %s est absent.".formatted(exception.getParameterName()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

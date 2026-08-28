@@ -36,13 +36,16 @@ import cm.afrilandfirstbank.rations.commun.audit.PublicateurAudit;
 import cm.afrilandfirstbank.rations.grilles.application.DecisionGrilleService;
 import cm.afrilandfirstbank.rations.grilles.application.DecisionGrilleService.ResultatValidation;
 import cm.afrilandfirstbank.rations.grilles.application.GrilleService;
+import cm.afrilandfirstbank.rations.grilles.application.ResolutionMontantService;
 import cm.afrilandfirstbank.rations.grilles.domaine.GrilleTarifaire;
 import cm.afrilandfirstbank.rations.grilles.domaine.NatureEnum;
+import cm.afrilandfirstbank.rations.grilles.domaine.ResolutionMontant;
 import cm.afrilandfirstbank.rations.grilles.domaine.SessionEnum;
 import cm.afrilandfirstbank.rations.grilles.domaine.StatutGrilleEnum;
 import cm.afrilandfirstbank.rations.grilles.domaine.TransitionGrille;
 import cm.afrilandfirstbank.rations.grilles.domaine.exception.ConflitGrilleException;
 import cm.afrilandfirstbank.rations.grilles.domaine.exception.GrilleIntrouvableException;
+import cm.afrilandfirstbank.rations.grilles.domaine.exception.IncoherenceGrilleException;
 import cm.afrilandfirstbank.rations.grilles.domaine.exception.MotifRejetRequisException;
 import cm.afrilandfirstbank.rations.grilles.domaine.exception.TransitionGrilleInterditeException;
 import cm.afrilandfirstbank.rations.grilles.infrastructure.identite.IdentiteIndisponibleException;
@@ -94,6 +97,9 @@ class GrilleControllerIT {
 
     @MockitoBean
     private DecisionGrilleService decisionGrilleService;
+
+    @MockitoBean
+    private ResolutionMontantService resolutionMontantService;
 
     private void keycloakEmet(String sub, String login, String role) {
         when(jwtDecoder.decode(anyString())).thenReturn(Jwt.withTokenValue("jeton-de-test")
@@ -534,6 +540,163 @@ class GrilleControllerIT {
                 .andExpect(jsonPath("$.code").value("ACCES_REFUSE"));
 
         verify(decisionGrilleService, never()).rejeter(any(), anyString(), anyString(), anyString());
+    }
+
+    // --- GET /grilles/active (Sprint 2.4, RG-03) ----------------------------
+
+    @Test
+    @DisplayName("14. GET /grilles/active sans jeton : 401, l'endpoint interne reste protege")
+    void resolutionSansJetonRefusee() throws Exception {
+        // « Usage interne » ne veut pas dire ouvert : seules la sonde de sante et
+        // Swagger sont permitAll. Le service Saisie relaiera le jeton de l'agent
+        // (decision Sprint 1.3), il n'appelle pas anonymement.
+        mockMvc.perform(get("/grilles/active")
+                .param("nature", "RATION")
+                .param("session", "JOUR")
+                .param("date", "2026-07-10"))
+                .andExpect(status().isUnauthorized());
+
+        verify(resolutionMontantService, never()).resoudre(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("15. GET /grilles/active avec un jeton AGENT_UNITE : 200, aucun role particulier exige")
+    void resolutionOuverteATousLesRolesAuthentifies() throws Exception {
+        keycloakEmet("f31c8b04-77aa-4f52-9c18-6d2e0a9b4c73", "jean_mbarga", "AGENT_UNITE");
+        when(resolutionMontantService.resoudre(NatureEnum.RATION, SessionEnum.JOUR, LocalDate.of(2026, 7, 10)))
+                .thenReturn(ResolutionMontant.trouve(NatureEnum.RATION, SessionEnum.JOUR,
+                        LocalDate.of(2026, 7, 10),
+                        grilleActive(12L, NatureEnum.RATION, SessionEnum.JOUR, 1500,
+                                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31))));
+
+        mockMvc.perform(get("/grilles/active")
+                .header(HttpHeaders.AUTHORIZATION, JETON)
+                .param("nature", "RATION")
+                .param("session", "JOUR")
+                .param("date", "2026-07-10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.disponible").value(true))
+                .andExpect(jsonPath("$.montantFcfa").value(1500))
+                .andExpect(jsonPath("$.idGrille").value(12))
+                .andExpect(jsonPath("$.dateDebut").value("2026-07-01"))
+                .andExpect(jsonPath("$.dateFin").value("2026-07-31"))
+                .andExpect(jsonPath("$.date").value("2026-07-10"));
+    }
+
+    /**
+     * L'indisponibilite est un 200, comme {@code autorise: false} sur
+     * {@code GET /identite/habilitation} : un endpoint interne qui repond a une
+     * question metier ne code pas la reponse negative comme une erreur de
+     * transport. C'est ce qui permet au service Saisie de distinguer « pas de
+     * tarif » de « je n'ai pas pu demander ».
+     */
+    @Test
+    @DisplayName("16. GET /grilles/active hors de toute periode : 200 avec disponible=false et montant null")
+    void indisponibiliteRendueEn200() throws Exception {
+        keycloakEmet("f31c8b04-77aa-4f52-9c18-6d2e0a9b4c73", "jean_mbarga", "AGENT_UNITE");
+        when(resolutionMontantService.resoudre(any(), any(), any()))
+                .thenReturn(ResolutionMontant.indisponible(NatureEnum.RATION, SessionEnum.JOUR,
+                        LocalDate.of(2020, 1, 1)));
+
+        mockMvc.perform(get("/grilles/active")
+                .header(HttpHeaders.AUTHORIZATION, JETON)
+                .param("nature", "RATION")
+                .param("session", "JOUR")
+                .param("date", "2020-01-01"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.disponible").value(false))
+                // Le point de vigilance du sous-sprint : null, jamais 0. Un zero
+                // serait enregistre comme un tarif et partirait en comptabilite.
+                .andExpect(jsonPath("$.montantFcfa").doesNotExist())
+                .andExpect(jsonPath("$.idGrille").doesNotExist());
+    }
+
+    /**
+     * La date est obligatoire, sans valeur par defaut : un oubli doit echouer
+     * bruyamment plutot que produire le montant du jour pour une saisie
+     * retroactive. Encore faut-il que ce 400 soit au format uniforme et nomme le
+     * parametre manquant.
+     */
+    @Test
+    @DisplayName("17. GET /grilles/active sans date : 400 au format uniforme, aucun repli sur la date du jour")
+    void dateObligatoireSansValeurParDefaut() throws Exception {
+        keycloakEmet("f31c8b04-77aa-4f52-9c18-6d2e0a9b4c73", "jean_mbarga", "AGENT_UNITE");
+
+        mockMvc.perform(get("/grilles/active")
+                .header(HttpHeaders.AUTHORIZATION, JETON)
+                .param("nature", "RATION")
+                .param("session", "JOUR"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("REQUETE_INVALIDE"))
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("date")))
+                .andExpect(jsonPath("$.path").value("/grilles/active"));
+
+        verify(resolutionMontantService, never()).resoudre(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("18. GET /grilles/active avec une date mal formee : 400, pas de 500")
+    void dateMalFormeeRefusee() throws Exception {
+        keycloakEmet("f31c8b04-77aa-4f52-9c18-6d2e0a9b4c73", "jean_mbarga", "AGENT_UNITE");
+
+        mockMvc.perform(get("/grilles/active")
+                .header(HttpHeaders.AUTHORIZATION, JETON)
+                .param("nature", "RATION")
+                .param("session", "JOUR")
+                .param("date", "10-07-2026"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("REQUETE_INVALIDE"));
+
+        verify(resolutionMontantService, never()).resoudre(any(), any(), any());
+    }
+
+    /**
+     * Chevauchement de periodes : le refus doit sortir au format d'erreur
+     * uniforme, avec un code identifiable. Sans ce gestionnaire, l'appelant
+     * recevrait la reponse generique de Spring Boot et ne pourrait pas
+     * distinguer cet incident d'une panne quelconque.
+     */
+    @Test
+    @DisplayName("19. GET /grilles/active sur donnees incoherentes : 500 INCOHERENCE_GRILLE au format uniforme")
+    void incoherenceRendueAuFormatUniforme() throws Exception {
+        keycloakEmet("f31c8b04-77aa-4f52-9c18-6d2e0a9b4c73", "jean_mbarga", "AGENT_UNITE");
+        when(resolutionMontantService.resoudre(any(), any(), any()))
+                .thenThrow(new IncoherenceGrilleException(
+                        "Plusieurs grilles actives couvrent RATION / JOUR au 2026-07-10."));
+
+        mockMvc.perform(get("/grilles/active")
+                .header(HttpHeaders.AUTHORIZATION, JETON)
+                .param("nature", "RATION")
+                .param("session", "JOUR")
+                .param("date", "2026-07-10"))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.code").value("INCOHERENCE_GRILLE"))
+                .andExpect(jsonPath("$.status").value(500))
+                .andExpect(jsonPath("$.timestamp").exists())
+                .andExpect(jsonPath("$.path").value("/grilles/active"));
+    }
+
+    @Test
+    @DisplayName("20. GET /grilles/active avec une nature hors enumeration : 400")
+    void natureHorsEnumerationRefusee() throws Exception {
+        keycloakEmet("f31c8b04-77aa-4f52-9c18-6d2e0a9b4c73", "jean_mbarga", "AGENT_UNITE");
+
+        mockMvc.perform(get("/grilles/active")
+                .header(HttpHeaders.AUTHORIZATION, JETON)
+                .param("nature", "CARBURANT")
+                .param("session", "JOUR")
+                .param("date", "2026-07-10"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("REQUETE_INVALIDE"));
+    }
+
+    private static GrilleTarifaire grilleActive(Long id, NatureEnum nature, SessionEnum session,
+            int montant, LocalDate dateDebut, LocalDate dateFin) {
+        GrilleTarifaire grille = new GrilleTarifaire(nature, session, montant, dateDebut,
+                4L, "NKOLO Claire");
+        ReflectionTestUtils.setField(grille, "id", id);
+        ReflectionTestUtils.setField(grille, "dateFin", dateFin);
+        return grille;
     }
 
 }

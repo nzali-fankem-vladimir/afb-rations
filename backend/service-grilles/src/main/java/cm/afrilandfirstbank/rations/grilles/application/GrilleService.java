@@ -77,7 +77,7 @@ public class GrilleService {
      * intermediaire ou revenir.
      *
      * <p><b>Sans effet sur les saisies</b> (CT-25). Tant que la DRH n'a pas
-     * tranche, la grille reste invisible de {@code rechercherGrilleActive} : le
+     * tranche, la grille reste invisible de {@code rechercherGrillesCouvrant} : le
      * montant applique aux prestations du jour ne change pas d'un centime. C'est
      * ce qui protege la chaine de paiement d'un tarif errone saisi par
      * inadvertance.

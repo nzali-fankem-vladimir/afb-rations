@@ -37,7 +37,7 @@ public interface GrilleTarifaireRepository extends JpaRepository<GrilleTarifaire
     List<GrilleTarifaire> findByStatutValidation(StatutGrilleEnum statut);
 
     /**
-     * Grille ACTIVE couvrant le couple (nature, session) a la date fournie.
+     * Grilles ACTIVE couvrant le couple (nature, session) a la date fournie.
      *
      * <p>Bornes de dates, relues et validees au Sprint 2.1 (les deux inclusives) :
      * <ul>
@@ -50,10 +50,22 @@ public interface GrilleTarifaireRepository extends JpaRepository<GrilleTarifaire
      * </ul>
      *
      * <p>Tant que les periodes de deux grilles d'un meme couple ne se chevauchent
-     * pas, ce filtre renvoie au plus une ligne. Le non-chevauchement est garanti
-     * cote ecriture au Sprint 2.3 : la {@code dateFin} de l'ancienne grille sera
-     * posee a la veille de la {@code dateDebut} de la remplacante (question de
-     * bornage explicitement tranchee dans ce sous-sprint 2.3).
+     * pas, ce filtre renvoie <b>au plus une ligne</b>. Le non-chevauchement est
+     * garanti cote ecriture au Sprint 2.3 : la {@code dateFin} de l'ancienne
+     * grille est posee a la veille de la {@code dateDebut} de la remplacante.
+     *
+     * <p><b>Pourquoi une liste, et non un {@code Optional}</b> (Sprint 2.4). Un
+     * {@code Optional} traduirait « deux grilles se chevauchent » en la meme
+     * chose que « tout va bien » — il ne distingue que present et absent. Or
+     * c'est precisement le nombre de lignes que la resolution du montant doit
+     * connaitre : zero est une reponse d'indisponibilite legitime, une est le
+     * cas nominal, deux est une incoherence de donnees qui doit etre refusee et
+     * signalee, jamais arbitree en silence
+     * ({@code ResolutionMontantService}). Renvoyer la liste laisse l'appelant
+     * trancher ces trois cas ; un {@code Optional} lui en cacherait un.
+     *
+     * <p>Tri par {@code dateDebut} decroissante, pour que le message d'incoherence
+     * puisse nommer les grilles en conflit dans un ordre stable.
      */
     @Query("""
             select g from GrilleTarifaire g
@@ -62,10 +74,11 @@ public interface GrilleTarifaireRepository extends JpaRepository<GrilleTarifaire
               and g.statutValidation = cm.afrilandfirstbank.rations.grilles.domaine.StatutGrilleEnum.ACTIVE
               and g.dateDebut <= :date
               and (g.dateFin is null or g.dateFin >= :date)
+            order by g.dateDebut desc, g.id desc
             """)
-    Optional<GrilleTarifaire> rechercherGrilleActive(@Param("nature") NatureEnum nature,
-                                                     @Param("session") SessionEnum session,
-                                                     @Param("date") LocalDate date);
+    List<GrilleTarifaire> rechercherGrillesCouvrant(@Param("nature") NatureEnum nature,
+                                                    @Param("session") SessionEnum session,
+                                                    @Param("date") LocalDate date);
 
     /**
      * Vrai s'il existe une grille ACTIVE pour ce couple (nature, session), quelle
@@ -79,7 +92,7 @@ public interface GrilleTarifaireRepository extends JpaRepository<GrilleTarifaire
     /**
      * Grille COURANTE du couple : ACTIVE et sans date de fin.
      *
-     * <p>Distincte de {@link #rechercherGrilleActive} : celle-ci demande « quelle
+     * <p>Distincte de {@link #rechercherGrillesCouvrant} : celle-ci demande « quelle
      * grille s'applique a telle date », celle-la demande « quelle grille est en
      * vigueur, sans terme pose ». Les deux different des qu'une grille a ete
      * fermee : une grille close reste ACTIVE, mais n'est plus courante.
@@ -90,7 +103,7 @@ public interface GrilleTarifaireRepository extends JpaRepository<GrilleTarifaire
      *
      * <p>Sert au controle d'unicite du Sprint 2.2 : une nouvelle grille doit
      * debuter STRICTEMENT APRES la grille en vigueur. Comparer a
-     * {@code rechercherGrilleActive(date)} ne suffirait pas — une proposition
+     * {@code rechercherGrillesCouvrant(date)} ne suffirait pas — une proposition
      * anti-datee avant le debut de la grille en vigueur ne serait couverte par
      * aucune grille a sa propre date de debut, donc passerait inapercue, alors
      * qu'elle reecrirait une periode deja servie.

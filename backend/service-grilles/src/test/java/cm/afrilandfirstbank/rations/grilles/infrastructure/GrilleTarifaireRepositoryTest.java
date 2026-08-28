@@ -36,11 +36,34 @@ class GrilleTarifaireRepositoryTest {
     @Autowired
     private GrilleTarifaireRepository repository;
 
+    /**
+     * Grille applicable a une date, telle que la lit la resolution du montant.
+     *
+     * <p>Enveloppe {@code rechercherGrillesCouvrant} en verifiant au passage
+     * l'invariant que la requete ne garantit pas a elle seule : <b>jamais plus
+     * d'une grille ne couvre une date donnee</b>. C'est ce que le
+     * {@code Optional} du Sprint 2.1 laissait croire sans jamais le verifier — il
+     * ne distingue que present et absent, et aurait traduit un chevauchement en
+     * exception technique opaque, ou pire, en silence.
+     *
+     * <p>Chaque test de date qui passe par ici verifie donc aussi, gratuitement,
+     * que le partitionnement des periodes tient (Sprint 2.4).
+     */
+    private Optional<GrilleTarifaire> grilleActive(NatureEnum nature, SessionEnum session, LocalDate date) {
+        List<GrilleTarifaire> couvrantes = repository.rechercherGrillesCouvrant(nature, session, date);
+
+        assertThat(couvrantes)
+                .as("deux grilles couvrant %s / %s au %s : les periodes se chevauchent", nature, session, date)
+                .hasSizeLessThanOrEqualTo(1);
+
+        return couvrantes.stream().findFirst();
+    }
+
     @Test
     @DisplayName("10. la recherche de grille active retourne une grille pour RATION / JOUR aujourd'hui")
     void grilleActivePourRationJour() {
         Optional<GrilleTarifaire> trouvee =
-                repository.rechercherGrilleActive(NatureEnum.RATION, SessionEnum.JOUR, LocalDate.now());
+                grilleActive(NatureEnum.RATION, SessionEnum.JOUR, LocalDate.now());
 
         assertThat(trouvee).isPresent();
         assertThat(trouvee.get().getNature()).isEqualTo(NatureEnum.RATION);
@@ -55,7 +78,7 @@ class GrilleTarifaireRepositoryTest {
     void aucuneGrilleAvantDateDebut() {
         LocalDate avantToutHistorique = LocalDate.of(2000, 1, 1);
 
-        Optional<GrilleTarifaire> trouvee = repository.rechercherGrilleActive(
+        Optional<GrilleTarifaire> trouvee = grilleActive(
                 NatureEnum.RATION, SessionEnum.JOUR, avantToutHistorique);
 
         assertThat(trouvee).isEmpty();
@@ -81,9 +104,8 @@ class GrilleTarifaireRepositoryTest {
         LocalDate aujourdHui = LocalDate.now();
         LocalDate priseEffetFuture = aujourdHui.plusMonths(1);
 
-        GrilleTarifaire enVigueurAvant = repository
-                .rechercherGrilleActive(NatureEnum.RATION, SessionEnum.JOUR, aujourdHui)
-                .orElseThrow();
+        GrilleTarifaire enVigueurAvant =
+                grilleActive(NatureEnum.RATION, SessionEnum.JOUR, aujourdHui).orElseThrow();
         Long idAvant = enVigueurAvant.getId();
         Integer montantAvant = enVigueurAvant.getMontantFcfa();
 
@@ -96,7 +118,7 @@ class GrilleTarifaireRepositoryTest {
 
         // Aujourd'hui : la grille en vigueur est inchangee.
         Optional<GrilleTarifaire> aujourdHuiApres =
-                repository.rechercherGrilleActive(NatureEnum.RATION, SessionEnum.JOUR, aujourdHui);
+                grilleActive(NatureEnum.RATION, SessionEnum.JOUR, aujourdHui);
         assertThat(aujourdHuiApres).isPresent();
         assertThat(aujourdHuiApres.get().getId()).isEqualTo(idAvant);
         assertThat(aujourdHuiApres.get().getMontantFcfa()).isEqualTo(montantAvant);
@@ -105,7 +127,7 @@ class GrilleTarifaireRepositoryTest {
         // que la DRH n'a pas tranche, la proposition n'existe pas pour les saisies,
         // meme apres sa propre date de debut.
         Optional<GrilleTarifaire> aLaDateDemandee =
-                repository.rechercherGrilleActive(NatureEnum.RATION, SessionEnum.JOUR, priseEffetFuture);
+                grilleActive(NatureEnum.RATION, SessionEnum.JOUR, priseEffetFuture);
         assertThat(aLaDateDemandee).isPresent();
         assertThat(aLaDateDemandee.get().getId()).isEqualTo(idAvant);
         assertThat(aLaDateDemandee.get().getMontantFcfa())
@@ -236,7 +258,7 @@ class GrilleTarifaireRepositoryTest {
 
         // A la date de prise d'effet : la nouvelle grille, et son montant.
         Optional<GrilleTarifaire> aLaPriseEffet =
-                repository.rechercherGrilleActive(NatureEnum.TRANSPORT, SessionEnum.SOIR, priseEffet);
+                grilleActive(NatureEnum.TRANSPORT, SessionEnum.SOIR, priseEffet);
         assertThat(aLaPriseEffet).isPresent();
         assertThat(aLaPriseEffet.get().getId()).isEqualTo(remplacante.getId());
         assertThat(aLaPriseEffet.get().getMontantFcfa()).isEqualTo(montantNouveau);
@@ -245,7 +267,7 @@ class GrilleTarifaireRepositoryTest {
         // periodes, aucun chevauchement — c'est ce dont depend la resolution du
         // montant a une date passee.
         Optional<GrilleTarifaire> laVeille =
-                repository.rechercherGrilleActive(NatureEnum.TRANSPORT, SessionEnum.SOIR, veille);
+                grilleActive(NatureEnum.TRANSPORT, SessionEnum.SOIR, veille);
         assertThat(laVeille).isPresent();
         assertThat(laVeille.get().getId()).isEqualTo(ancienne.getId());
         assertThat(laVeille.get().getMontantFcfa()).isEqualTo(montantAncien);
