@@ -136,6 +136,32 @@ public class EtatModifiableService {
     }
 
     /**
+     * Vérifie qu'un utilisateur a le droit d'agir sur une unité <b>désignée
+     * explicitement</b>, sans passer par une fiche ni par le service Workflow.
+     *
+     * <p>Sert la consolidation mensuelle (Sprint 3.4), où le code unité est reçu
+     * <b>en paramètre</b> de l'appelant plutôt que lu sur une fiche. Motif : un
+     * processus dont aucune journée n'a encore été saisie n'a aucune fiche, donc
+     * aucun code unité à lire — la portée d'accès disparaîtrait silencieusement
+     * au moment précis où il n'y a rien à protéger. Le paramètre la rend
+     * applicable dans les deux cas.
+     *
+     * <p><b>Ce contrôle ne dit rien de la véracité du code unité déclaré.</b> Il
+     * répond à « cet utilisateur peut-il agir sur l'unité X ? », pas à « le
+     * processus demandé relève-t-il bien de X ? ». Le recoupement de la
+     * déclaration contre le code unité figé sur les fiches appartient à
+     * {@code ConsolidationService}, et il est indispensable : sans lui, déclarer
+     * une unité sur laquelle on est habilité suffirait à lire les lignes d'une
+     * autre.
+     *
+     * @throws AgentNonHabiliteException hors de la portée d'accès ({@code 403})
+     * @throws ServiceIdentiteIndisponibleException Identité muet ({@code 503})
+     */
+    public void exigerHabilitationSurUnite(String codeUnite, String enteteAutorisation) {
+        exigerHabilitation(codeUnite, enteteAutorisation);
+    }
+
+    /**
      * Traduit les trois issues de la vérification de processus en un contexte ou
      * en un refus.
      *

@@ -29,6 +29,7 @@ import cm.afrilandfirstbank.rations.saisie.domaine.exception.ProcessusIntrouvabl
 import cm.afrilandfirstbank.rations.saisie.domaine.exception.ServiceGrillesIndisponibleException;
 import cm.afrilandfirstbank.rations.saisie.domaine.exception.ServiceIdentiteIndisponibleException;
 import cm.afrilandfirstbank.rations.saisie.domaine.exception.ServiceWorkflowIndisponibleException;
+import cm.afrilandfirstbank.rations.saisie.domaine.exception.UniteNonConcordanteException;
 
 import jakarta.servlet.http.HttpServletRequest;
 
@@ -80,6 +81,23 @@ public class GestionnaireErreursApi {
             HttpServletRequest requete) {
         publierRefus(requete, "HABILITATION_ABSENTE", exception.getMessage());
         return reponse(requete, HttpStatus.FORBIDDEN, "UTILISATEUR_NON_HABILITE", exception.getMessage());
+    }
+
+    /**
+     * Le code unite declare par l'appelant de la consolidation ne correspond pas
+     * a celui fige sur les fiches du processus (Sprint 3.4).
+     *
+     * <p>Trace au meme titre que les autres refus : rien ne permet de distinguer
+     * un defaut du service appelant d'une tentative de debordement de perimetre,
+     * et la doctrine du refus conservateur (Sprint 1.3) tranche en faveur du
+     * refus trace. Le motif d'audit nomme les deux unites, ce qui rend un vrai
+     * defaut de Workflow immediatement diagnosticable.
+     */
+    @ExceptionHandler(UniteNonConcordanteException.class)
+    public ResponseEntity<ErreurApiDto> uniteNonConcordante(UniteNonConcordanteException exception,
+            HttpServletRequest requete) {
+        publierRefus(requete, "UNITE_NON_CONCORDANTE", exception.getMessage());
+        return reponse(requete, HttpStatus.FORBIDDEN, "UNITE_NON_CONCORDANTE", exception.getMessage());
     }
 
     @ExceptionHandler(ServiceIdentiteIndisponibleException.class)

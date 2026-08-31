@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.saisie.infrastructure;
 
+import java.util.Collection;
 import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -17,6 +18,23 @@ public interface LignePrestationRepository extends JpaRepository<LignePrestation
 
     /** Toutes les lignes d'une fiche journalière. Tri laissé à l'appelant. */
     List<LignePrestation> findByIdFicheJournaliere(Long idFicheJournaliere);
+
+    /**
+     * Toutes les lignes d'un lot de fiches, en <b>une seule requête</b>. Sert la
+     * consolidation mensuelle (RG-06, Sprint 3.4), qui agrège une trentaine de
+     * journées : la méthode précédente appelée en boucle produirait autant de
+     * requêtes que de jours.
+     *
+     * <p>Le critère est un {@code IN} sur {@code id_fiche_journaliere}, jamais une
+     * jointure vers {@code fiche_journaliere}. C'est délibéré et c'est une
+     * garantie de justesse du montant total : une jointure mal posée peut
+     * multiplier les lignes (produit cartésien) et donc <b>compter deux fois</b>
+     * un montant. Ici, chaque ligne de la table apparaît au plus une fois dans le
+     * résultat, quelle que soit la forme du lot d'identifiants.
+     *
+     * <p>Tri laissé à l'appelant, comme les autres méthodes de ce repository.
+     */
+    List<LignePrestation> findByIdFicheJournaliereIn(Collection<Long> idsFichesJournalieres);
 
     /**
      * Vrai s'il existe déjà une ligne pour cette combinaison
