@@ -18,6 +18,17 @@
     <description>Saisie - fiches journalieres, lignes de prestation, controle des doublons</description>
 
     <dependencies>
+        <!-- Publication des evenements d'audit sur rations.audit.evenement.
+             Bibliotheque partagee par les six services metier (decision Sprint
+             1.3) : le producteur, avec ses cinq couches de protection, vit a un
+             seul endroit. N'est PAS une dependance vers le service Audit, qui
+             reste joignable uniquement par le topic. Ne jamais reecrire un
+             producteur local ni surcharger max.block.ms (CLAUDE.md section 15). -->
+        <dependency>
+            <groupId>cm.afrilandfirstbank.rations</groupId>
+            <artifactId>rations-audit-commun</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
@@ -69,6 +80,16 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Spring Boot 4 a scinde les tranches de test : @DataJpaTest et
+             @AutoConfigureTestDatabase vivent dans ce starter dedie, pas dans
+             spring-boot-starter-test. Requis par les tests de repository de ce
+             service, qui tournent contre la vraie base rations_saisie
+             (decision Sprint 2.1, docs/decisions/2026-08-27-tests-repository-et-validation-schema.md). -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa-test</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>
