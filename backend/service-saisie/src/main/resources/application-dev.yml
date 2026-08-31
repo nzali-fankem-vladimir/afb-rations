@@ -36,6 +36,18 @@ app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
 
+  grilles:
+    # Adresse du service Grilles, interroge AVANT de figer chaque ligne de
+    # prestation pour connaitre le montant applicable (RG-03, GET /grilles/active).
+    # Appel direct en developpement ; en environnement partage, cette valeur
+    # passera par la passerelle ou par le nom de service Kubernetes, sans
+    # changement de code.
+    #
+    # L'appel passe par l'API du service Grilles, jamais par sa base : aucune
+    # source de donnees vers rations_grilles n'existe ici, et c'est verifie par
+    # la cartographie (Sprint 3.2).
+    url: ${GRILLES_URL:http://localhost:8083}
+
 logging:
   level:
     root: INFO
