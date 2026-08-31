@@ -82,6 +82,24 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Spring Boot 4 : la tranche @WebMvcTest vit dans son propre starter.
+             Requise par SaisieControllerIT (Sprint 3.3), qui traverse la chaine
+             jeton -> securite -> controleur. Meme dependance qu'a ajoutee
+             service-grilles au Sprint 2.2. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webmvc-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Fournit les utilitaires de test de Spring Security. Sans elle, la
+             tranche @WebMvcTest monte sans filtre de securite et tout endpoint
+             repondrait 200 : les tests de 401 et de 403 passeraient a cote de
+             ce qu'ils pretendent verifier. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
         <!-- Spring Boot 4 a scinde les tranches de test : @DataJpaTest et
              @AutoConfigureTestDatabase vivent dans ce starter dedie, pas dans
              spring-boot-starter-test. Requis par les tests de repository de ce

@@ -77,9 +77,9 @@ class ControleDoublonServiceTest {
                 new Beneficiaire("NKOULOU", "Estelle", "03702007776666", "00001")).getId(); // Siege Yaounde
 
         idFicheDu15 = ficheRepository.saveAndFlush(
-                new FicheJournaliere(ID_PROCESSUS, LE_15_AOUT)).getId();
+                new FicheJournaliere(ID_PROCESSUS, LE_15_AOUT, "00002", 8, 2026)).getId();
         idFicheDu16 = ficheRepository.saveAndFlush(
-                new FicheJournaliere(ID_PROCESSUS, LE_16_AOUT)).getId();
+                new FicheJournaliere(ID_PROCESSUS, LE_16_AOUT, "00002", 8, 2026)).getId();
 
         ligneRepository.saveAndFlush(new LignePrestation(
                 idFicheDu15, idMballa, NatureEnum.RATION, SessionEnum.JOUR, 2500, 12L));

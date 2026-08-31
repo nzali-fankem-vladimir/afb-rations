@@ -102,4 +102,27 @@ public class ControleDoublonService {
                         idFicheJournaliere, idBeneficiaire, nature, session);
     }
 
+    /**
+     * Même contrôle, pour une <b>modification</b> ({@code PUT /saisie/lignes/{id}},
+     * Sprint 3.3) : la ligne révisée est exclue de la comparaison.
+     *
+     * <p>Sans cette exclusion, une modification qui laisse la nature et la
+     * session inchangées se trouverait doublon d'elle-même — la ligne existe déjà
+     * avec cette combinaison, c'est elle. Le guide 3.3 est explicite : une
+     * modification de nature ou de session « traite la modification comme une
+     * création », donc rejoue RG-04 ; exclure la ligne visée est ce qui rend cette
+     * règle applicable sans faux positif systématique.
+     *
+     * @param idLigneRevisee la ligne en cours de modification, absente de la
+     *        comparaison
+     */
+    @Transactional(readOnly = true)
+    public boolean estDoublonSurLaJourneeHorsLigne(Long idFicheJournaliere, Long idBeneficiaire,
+                                                    NatureEnum nature, SessionEnum session,
+                                                    Long idLigneRevisee) {
+        return lignePrestationRepository
+                .existsByIdFicheJournaliereAndIdBeneficiaireAndNatureAndSessionAndIdNot(
+                        idFicheJournaliere, idBeneficiaire, nature, session, idLigneRevisee);
+    }
+
 }

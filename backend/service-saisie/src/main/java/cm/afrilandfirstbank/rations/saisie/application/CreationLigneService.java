@@ -115,6 +115,21 @@ public class CreationLigneService {
      */
     @Transactional
     public LignePrestation creer(CommandeCreationLigne commande, String enteteAutorisation) {
+        return creer(commande, enteteAutorisation, null);
+    }
+
+    /**
+     * Même opération, avec l'adresse d'origine de la requête pour la trace
+     * d'audit (Sprint 3.3 : {@code SaisieController} la connaît, l'appel de base
+     * ci-dessus continue de servir les tests du Sprint 3.2, écrits avant que ce
+     * service ait un contexte HTTP).
+     *
+     * @param adresseIp origine de la requête, ou {@code null} si inconnue de
+     *        l'appelant
+     */
+    @Transactional
+    public LignePrestation creer(CommandeCreationLigne commande, String enteteAutorisation,
+                                 String adresseIp) {
 
         // 1. La fiche porte la journee : sans elle, ni RG-04 ni RG-03 ne sont
         //    evaluables. Aucun repli sur la date du jour.
@@ -152,7 +167,7 @@ public class CreationLigneService {
                 fiche.getId(), beneficiaire.getId(), commande.nature(), commande.session(),
                 montant.montantFcfa(), montant.idGrille()));
 
-        tracer(ligne, beneficiaire, journee, montant);
+        tracer(ligne, beneficiaire, journee, montant, adresseIp);
         return ligne;
     }
 
@@ -201,23 +216,32 @@ public class CreationLigneService {
      * que cet appel ne leve jamais et n'attend rien : l'audit ne fait jamais
      * echouer le metier (CLAUDE.md section 9.2).
      *
-     * <p>{@code idUtilisateur} et {@code adresseIp} sont nuls : ce service n'a pas
-     * de contexte HTTP tant qu'aucun endpoint ne l'enveloppe. Le Sprint 3.3 les
-     * renseignera — meme situation qu'au Sprint 3.1 pour
-     * {@code INCOHERENCE_BENEFICIAIRE}.
+     * <p><b>{@code idUtilisateur} reste nul.</b> {@code GET /identite/habilitation}
+     * — la seule verification d'habilitation que ce service appelle — ne rend
+     * qu'un {@code login}, jamais l'identifiant numerique local
+     * ({@code docs/appel-habilitation.md} section 1). Le resoudre exigerait un
+     * quatrieme appel synchrone (vers {@code GET /identite/moi}) sur un chemin
+     * qui en empile deja trois, pour un seul besoin d'audit — cout juge excessif
+     * ici, a la difference du service Grilles ou cet appel a deja lieu pour
+     * remplir {@code id_createur} (colonne {@code NOT NULL}, Sprint 2.2).
+     * {@code ligne_prestation} ne porte d'ailleurs aucune colonne d'auteur au
+     * dictionnaire (CLAUDE.md section 4).
+     *
+     * <p>{@code adresseIp} est desormais renseignee (Sprint 3.3), quand
+     * l'appelant la connait.
      *
      * <p>Le delta porte la <b>grille</b> autant que le montant : c'est ce qui
      * permet de justifier a posteriori un montant conteste, en nommant la ligne
      * tarifaire qui l'a produit.
      */
     private void tracer(LignePrestation ligne, Beneficiaire beneficiaire, LocalDate journee,
-                        MontantResolu montant) {
+                        MontantResolu montant, String adresseIp) {
         publicateurAudit.publier(EvenementAudit.de(
                 null,
                 "CREATION_LIGNE_PRESTATION",
                 "ligne_prestation",
                 ligne.getId(),
-                null,
+                adresseIp,
                 DeltaAudit.nouveau()
                         .contexte("idFicheJournaliere", ligne.getIdFicheJournaliere())
                         .contexte("journee", journee)

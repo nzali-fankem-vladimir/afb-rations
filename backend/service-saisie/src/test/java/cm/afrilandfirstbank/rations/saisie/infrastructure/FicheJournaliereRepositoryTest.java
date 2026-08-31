@@ -38,8 +38,8 @@ class FicheJournaliereRepositoryTest {
     @Test
     @DisplayName("4. recherche par processus et date : retrouve la bonne fiche")
     void rechercheParProcessusEtDate_retrouveLaBonneFiche() {
-        repository.saveAndFlush(new FicheJournaliere(ID_PROCESSUS, LocalDate.of(2026, 8, 15)));
-        repository.saveAndFlush(new FicheJournaliere(ID_PROCESSUS, LocalDate.of(2026, 8, 16)));
+        repository.saveAndFlush(new FicheJournaliere(ID_PROCESSUS, LocalDate.of(2026, 8, 15), "00002", 8, 2026));
+        repository.saveAndFlush(new FicheJournaliere(ID_PROCESSUS, LocalDate.of(2026, 8, 16), "00002", 8, 2026));
 
         Optional<FicheJournaliere> trouvee =
                 repository.findByIdProcessusAndDateJour(ID_PROCESSUS, LocalDate.of(2026, 8, 15));
@@ -52,7 +52,7 @@ class FicheJournaliereRepositoryTest {
     @Test
     @DisplayName("5. recherche pour une date sans fiche : ne retourne rien")
     void rechercheParProcessusEtDate_sansFiche_neRetourneRien() {
-        repository.saveAndFlush(new FicheJournaliere(ID_PROCESSUS, LocalDate.of(2026, 8, 15)));
+        repository.saveAndFlush(new FicheJournaliere(ID_PROCESSUS, LocalDate.of(2026, 8, 15), "00002", 8, 2026));
 
         Optional<FicheJournaliere> trouvee =
                 repository.findByIdProcessusAndDateJour(ID_PROCESSUS, LocalDate.of(2026, 8, 20));

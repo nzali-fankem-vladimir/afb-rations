@@ -146,4 +146,27 @@ public class LignePrestation {
         return dateCreation;
     }
 
+    /**
+     * Révise la nature, la session, le montant et la grille d'une ligne
+     * <b>avant soumission</b> ({@code PUT /saisie/lignes/{id}}, Sprint 3.3).
+     *
+     * <p>Le commentaire « figé, jamais recalculé » porté sur
+     * {@code montant_applique} vise le recalcul automatique — un rapport qui
+     * réinterrogerait la grille au fil du temps — pas une révision explicite,
+     * tracée, décidée par l'agent avant soumission. C'est cette méthode qui porte
+     * la nuance : une seule mutation contrôlée, jamais un setter par champ.
+     *
+     * <p><b>N'appeler qu'après avoir rejoué RG-03 et RG-04</b> pour la nouvelle
+     * combinaison — c'est {@code LigneService} qui en a la charge, avant
+     * d'invoquer cette méthode. Changer la nature ou la session sans revalider
+     * les deux règles produirait une ligne au montant erroné, ou un doublon
+     * silencieux.
+     */
+    public void reviser(NatureEnum nature, SessionEnum session, Integer montantApplique, Long idGrille) {
+        this.nature = nature;
+        this.session = session;
+        this.montantApplique = montantApplique;
+        this.idGrille = idGrille;
+    }
+
 }

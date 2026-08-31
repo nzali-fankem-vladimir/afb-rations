@@ -32,4 +32,13 @@ public interface LignePrestationRepository extends JpaRepository<LignePrestation
     boolean existsByIdFicheJournaliereAndIdBeneficiaireAndNatureAndSession(
             Long idFicheJournaliere, Long idBeneficiaire, NatureEnum nature, SessionEnum session);
 
+    /**
+     * Même contrôle RG-04, en excluant une ligne précise. Sert la modification
+     * (Sprint 3.3) : sans l'exclusion, une ligne dont la nature et la session ne
+     * changent pas se trouverait doublon d'elle-même.
+     */
+    boolean existsByIdFicheJournaliereAndIdBeneficiaireAndNatureAndSessionAndIdNot(
+            Long idFicheJournaliere, Long idBeneficiaire, NatureEnum nature, SessionEnum session,
+            Long idExclu);
+
 }

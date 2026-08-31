@@ -55,7 +55,7 @@ class LignePrestationRepositoryTest {
         idBeneficiaire = beneficiaire.getId();
 
         FicheJournaliere fiche = ficheRepository.saveAndFlush(
-                new FicheJournaliere(ID_PROCESSUS, LocalDate.of(2026, 8, 15)));
+                new FicheJournaliere(ID_PROCESSUS, LocalDate.of(2026, 8, 15), "00002", 8, 2026));
         idFiche = fiche.getId();
 
         ligneRepository.saveAndFlush(new LignePrestation(

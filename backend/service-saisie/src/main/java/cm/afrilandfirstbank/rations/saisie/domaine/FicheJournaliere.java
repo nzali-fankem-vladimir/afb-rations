@@ -63,6 +63,29 @@ public class FicheJournaliere {
     @Column(name = "statut", nullable = false, length = 20)
     private StatutFicheEnum statut;
 
+    /**
+     * Unité supportant la charge, <b>recopiée du processus mensuel à l'ouverture
+     * et figée</b> (migration V3, décision Sprint 3.1). Ligne de <i>débit</i> — à
+     * ne pas confondre avec {@code beneficiaires.code_agence}, la ligne de
+     * crédit.
+     *
+     * <p>Elle sert deux besoins qu'un {@code id_processus} opaque ne peut pas
+     * servir localement : la vérification de portée d'accès (RG-12) et le
+     * regroupement des fiches par unité qu'exige RG-15 (Sprint 6bis), dont le
+     * contrôle porterait sinon un appel réseau vers Workflow par processus
+     * candidat, sur le chemin d'écriture d'une ligne.
+     */
+    @Column(name = "code_unite", length = 5)
+    private String codeUnite;
+
+    /** Mois du processus mensuel, recopié et figé (migration V3). */
+    @Column(name = "mois_paiement")
+    private Integer moisPaiement;
+
+    /** Année du processus mensuel, recopiée et figée (migration V3). */
+    @Column(name = "annee_paiement")
+    private Integer anneePaiement;
+
     /** Horodatage technique d'audit (convention transverse, Sprint 0.7). */
     @Column(name = "date_creation", nullable = false)
     private LocalDateTime dateCreation;
@@ -75,10 +98,27 @@ public class FicheJournaliere {
      * Ouvre la fiche d'un jour pour un processus mensuel. Statut initial
      * {@code EN_SAISIE} : les lignes de prestation restent modifiables tant que
      * la fiche n'est pas enregistrée.
+     *
+     * <p><b>Le triplet unité / mois / année est exigé à la construction</b>,
+     * plutôt que renseigné après coup par un second constructeur. Il vient de la
+     * réponse de {@code GET /processus/{id}}, obtenue avant toute écriture : une
+     * fiche ne peut pas naître sans que le processus ait été vérifié. Un
+     * constructeur qui s'en passerait laisserait une fiche muette sur son unité,
+     * donc hors de portée du contrôle d'accès et de RG-15 — sans qu'aucune
+     * contrainte de base ne le signale, les colonnes étant nullables pour
+     * l'historique.
+     *
+     * <p>Le {@code statut} du processus, lui, n'est <b>jamais</b> copié : il est
+     * mutable, et c'est pourquoi il est redemandé à chaque écriture
+     * ({@code docs/rattachement-processus.md} §4 et §5).
      */
-    public FicheJournaliere(Long idProcessus, LocalDate dateJour) {
+    public FicheJournaliere(Long idProcessus, LocalDate dateJour, String codeUnite,
+                            Integer moisPaiement, Integer anneePaiement) {
         this.idProcessus = idProcessus;
         this.dateJour = dateJour;
+        this.codeUnite = codeUnite;
+        this.moisPaiement = moisPaiement;
+        this.anneePaiement = anneePaiement;
         this.statut = StatutFicheEnum.EN_SAISIE;
     }
 
@@ -105,6 +145,18 @@ public class FicheJournaliere {
 
     public StatutFicheEnum getStatut() {
         return statut;
+    }
+
+    public String getCodeUnite() {
+        return codeUnite;
+    }
+
+    public Integer getMoisPaiement() {
+        return moisPaiement;
+    }
+
+    public Integer getAnneePaiement() {
+        return anneePaiement;
     }
 
     public LocalDateTime getDateCreation() {
