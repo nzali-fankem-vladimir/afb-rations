@@ -124,6 +124,7 @@ oubliée ni comptée deux fois par la requête, ce qu'un mock ne peut pas montre
 | E-03 | **`BouchonVerificationProcessus` toujours actif** (dispositif provisoire du Sprint 3.3, profil `bouchon-workflow`). | Connu, déjà tracé | Suppression obligatoire au Sprint 4 — `docs/dispositifs_provisoires.md`, actions B-01 à B-04. |
 | E-04 | **Fiches antérieures à la migration V3 (`code_unite` nul) non recoupables.** Une valeur absente ne peut pas contredire la déclaration ; le fait est journalisé en `WARN` nommant le processus. | Transitoire | Ne concerne que les lignes créées lors des essais manuels des Sprints 3.1/3.2. Toute fiche ouverte depuis le 3.3 porte la valeur. |
 | E-05 | `graphify` signale 2 fichiers sans nœud (`realm-afb-rations-dev.json`, `realm-export.json`). | Outillage | Préexistant, sans rapport avec ce sprint. |
+| E-06 | **Message de `PublicateurAuditKafka` sur échec d'envoi** : se termine par « L'operation metier a abouti », inexact pour un événement de refus. N'apparaît que Kafka éteint. | Cosmétique | Dans `rations-audit-commun`, périmètre verrouillé. À traiter lors d'une évolution de ce module. Voir « Chaîne d'audit » ci-dessous. |
 
 **Les trois vérifications demandées sont vertes :**
 
@@ -258,18 +259,53 @@ GET     /saisie/processus/{id}/etat    ← 1 endpoint interne
 
 Aucun endpoint créé par anticipation pour le Sprint 4.
 
-### Observation annexe
+### Chaîne d'audit (producteur) — vérifiée avec Kafka démarré
 
-Kafka n'étant pas démarré, les 13 événements d'audit émis pendant la
-vérification (dont les `ACCES_REFUSE` des scénarios 11 et du recoupement) sont
-tombés en `AUDIT PERDU` — dégradation **voulue** : l'audit ne fait jamais échouer
-le métier (doctrine 1.3). Le message générique de `rations-audit-commun` se
-termine par « L'operation metier a abouti », formulation inexacte pour un
-événement de refus : cosmétique, dans un module dont le périmètre est verrouillé,
-non corrigé ici (**E-06**).
+Premier passage sans Kafka : les événements `ACCES_REFUSE` tombaient en
+`AUDIT PERDU` (dégradation voulue, doctrine 1.3). À la demande de l'utilisateur,
+la vérification a été reprise avec l'infrastructure complète :
+`docker compose up -d kafka`, topics créés par `infra/docker/kafka-topics.sh`,
+un `kafka-console-consumer` branché sur `rations.audit.evenement`, puis les trois
+scénarios de refus rejoués.
 
-Les trois services ont été arrêtés proprement après vérification ;
-`rations-postgres` et `dottel-keycloak` laissés actifs.
+| Contrôle | Résultat |
+|---|---|
+| `AUDIT PERDU` sur identite / grilles / saisie | **0 / 0 / 0** |
+| Événements `service-saisie / ACCES_REFUSE` sur le topic | **3**, un par scénario |
+| Consultation autorisée (`200`) | **n'émet aucun événement** — voulu : une lecture autorisée n'est pas une action sensible |
+
+Les trois `detailJson` reçus sur le topic, complets et conformes à CT-04 :
+
+| Scénario | `motif` | `detail` |
+|---|---|---|
+| DRH hors circuit | `ROLE_INSUFFISANT` | « Le role de l'utilisateur ne permet pas cette action. » |
+| Agent, unité déclarée hors portée | `HABILITATION_ABSENTE` | « Vous n'avez pas de droit sur l'unite 00007… » |
+| DR, unité déclarée ≠ unité des fiches | `UNITE_NON_CONCORDANTE` | « Le processus 740 ne releve pas de l'unite 00007 declaree, mais de 00002. » |
+
+Chaque événement porte `serviceEmetteur`, `action`, `entiteCible: acces`,
+`dateAction`, `adresseIp`, et `login` dans le `detailJson`. `idUtilisateur` est
+`null` — décision Sprint 3.3 (`docs/decisions/2026-08-31-idutilisateur-non-renseigne-en-saisie.md`),
+`GET /identite/habilitation` ne rend qu'un `login`.
+
+**Ce que cette vérification ne couvre pas.** La chaîne s'arrête au topic : le
+consommateur qui écrit dans `audit_log` (`service-audit`) n'est encore qu'un
+squelette (`ServiceAuditApplication`, `SecurityConfig`, `RoleJwtConverter`,
+`RoleEnum` — dernier commit `sprint-0.6`). La trace de bout en bout
+`événement → audit_log` sera vérifiable au sprint qui construit ce consommateur.
+
+**E-06 (cosmétique, non corrigé).** Le message de `PublicateurAuditKafka` sur le
+chemin d'échec se termine par « L'operation metier a abouti », inexact pour un
+événement de refus. Il n'apparaît que Kafka éteint ; avec Kafka démarré, il ne
+sort pas. Dans `rations-audit-commun`, au périmètre verrouillé — à traiter lors
+d'une évolution de ce module.
+
+### Nettoyage
+
+Les trois services applicatifs ont été arrêtés après vérification. `rations-kafka`
+a été **ré-arrêté** pour restaurer l'état antérieur à la session (il n'était pas
+lancé) — le relancer :
+`docker compose -f infra/docker/docker-compose.yml up -d kafka`. `rations-postgres`
+et `dottel-keycloak` laissés actifs.
 
 ---
 
