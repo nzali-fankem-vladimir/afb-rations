@@ -100,7 +100,7 @@ ETAT_NON_MODIFIABLE` sans écrire une ligne de code.
 |---|---|---|
 | **B-01** | Supprimer `BouchonVerificationProcessus.java` et l'annotation `@Profile("!bouchon-workflow")` de `VerificationProcessusHttpClient` | **Fait (4.1)** — la classe et son test sont supprimés |
 | **B-02** | Retirer le bloc `app.workflow.bouchon` de `application-dev.yml` et le mode d'emploi qui l'accompagne | **Fait (4.1)** |
-| **B-03** | Vérifier en intégration réelle ce que le bouchon ne prouve pas : URL, mapping JSON de `GET /processus/{id}`, traduction des statuts, comportement au timeout | **En cours (4.1)** — objet de la vérification manuelle du sous-sprint, services Identité, Saisie et Workflow démarrés ensemble. À passer à « Fait » une fois la vérification passée. |
+| **B-03** | Vérifier en intégration réelle ce que le bouchon ne prouve pas : URL, mapping JSON de `GET /processus/{id}`, traduction des statuts, comportement au timeout | **Fait (4.1)** — vérification manuelle passée : `POST /saisie/fiches` sur un processus réel du service Workflow répond `201`, l'unité et la période sont correctement recopiées sur la fiche, et l'état consolidé remonte la ligne valorisée. Le bouchon ne prouvait rien de tout cela. |
 | **B-04** | Conformer la réponse de `GET /processus/{id}` aux cinq champs lus par `ProcessusReponse` : `idProcessus`, `statut`, `codeUnite`, `moisPaiement`, `anneePaiement` | **Fait (4.1)** — tenu par `ProcessusResponse`, verrouillé par le test 11 de `ProcessusControllerIT` |
 
 Voir `docs/decisions/2026-08-31-domaine-du-workflow-et-machine-a-etats.md` §9.

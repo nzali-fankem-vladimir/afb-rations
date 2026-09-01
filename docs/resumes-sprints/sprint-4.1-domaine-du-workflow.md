@@ -5,10 +5,11 @@
 **Config :** Sonnet / Moyen pour les étapes 0 à 3, **Opus / Élevé** à partir de
 l'étape 4, comme le prescrit le guide §1.
 
-**Statut :** livré. `mvn -pl service-workflow test` → **BUILD SUCCESS, 53 tests,
-0 échec**. Build complet du backend → **BUILD SUCCESS, 11 modules**, aucune
-régression. Cartographie relancée : **3393 nœuds, 7034 liens, 197 communautés**
-(contre 3073 / 6122 / 181 en début de sous-sprint).
+**Statut :** livré et **vérifié à la main**, services réellement démarrés.
+`mvn -pl service-workflow test` → **BUILD SUCCESS, 53 tests, 0 échec**. Build
+complet du backend séquentiel → **exit 0**, aucune régression (`service-saisie`
+76 → 73 tests, les 3 du bouchon supprimé). Cartographie relancée : **3393 nœuds,
+7034 liens, 197 communautés** (contre 3073 / 6122 / 181 en début de sous-sprint).
 
 ---
 
@@ -250,6 +251,71 @@ retire ces trois lignes en croyant nettoyer.
 | **C-04** | Fiches antérieures à la migration V3 côté Saisie (`code_unite` nul) : non recoupables. Nettoyage ou renoncement explicite. **Non traité au 4.1.** | Sprint 4 ou nettoyage de données |
 | **W-01** | `HttpStatus.UNPROCESSABLE_ENTITY` est déprécié depuis Spring 7. Utilisé ici comme dans service-grilles et service-saisie : à traiter d'un coup sur les trois services, pas dans un seul. | Dette technique |
 | **W-02** | Aucune règle métier n'interdit d'ouvrir un état sur une période **future** (août 2030 est accepté). Non spécifié par le cahier des charges — à confirmer avec le métier. | Métier |
+
+---
+
+## Vérification manuelle réelle — cinq services démarrés, jetons Keycloak réels
+
+Faite par l'assistant à la demande de l'utilisateur (« effectue les étapes de la
+vérification visuelle toi-même et si tout est ok tu commit »). PostgreSQL,
+`dottel-keycloak` et Kafka démarrés (topics créés par `infra/docker/kafka-topics.sh`).
+Services Identité (8081), Saisie (8082), Grilles (8083), Workflow (8084) lancés
+réellement, jetons obtenus par grant `password` sur le realm `afb-rations-dev`
+(`jean_mbarga` AGENT_UNITE/00002, `paul_essama` CHEF_UNITE_DA/00002,
+`sylvie_atangana` DR national, `agnes_tchinda` DRH).
+
+### Les scénarios du guide (§8, §9)
+
+| # | Scénario | Résultat obtenu | Conforme |
+|---|---|---|---|
+| 1 | `POST /processus` nominal (agent, 09/2026, 00002) | `201`, `EN_COURS_SAISIE`, `Location: /processus/109`, `montantTotal:0`, `transmisComptabilite:false`, `typeProcessus:NORMAL` | ✅ |
+| 2 | Rejouer le même appel | `409 PROCESSUS_EXISTANT` — *« processus n° 109, statut EN_COURS_SAISIE. Rejoignez ce dossier plutôt que d'en ouvrir un second. »* | ✅ le refus vient du service, nomme le dossier |
+| 3 | `typeProcessus: COMPLEMENTAIRE` | `422 FONCTIONNALITE_NON_OUVERTE` — renvoie à la DRH | ✅ |
+| 4 | Agent 00002 déclenche sur `codeUnite:00007` | `403 UTILISATEUR_NON_HABILITE` | ✅ hors portée |
+| 5 | `GET /processus/109` (agent) | `200`, les **cinq champs B-04** présents (`idProcessus`, `statut`, `codeUnite`, `moisPaiement`, `anneePaiement`) | ✅ |
+| 6 | `GET /processus/109/etat` (agent) | `200`, **`montantTotalPorte:0` ET `montantTotalFcfa:0`**, `journees:[]` | ✅ les deux montants distincts |
+| 7 | Même appel, `CHEF_UNITE_DA` | `200` | ✅ rôle du circuit |
+| 8 | Même appel, `DRH` (hors circuit) | `403 ACCES_REFUSE` | ✅ |
+| 9 | `GET /processus/999999` | `404 PROCESSUS_INTROUVABLE` | ✅ |
+| 10 | `POST /processus` sans jeton | `401` | ✅ |
+| 11 | `/etat` avec **service Saisie éteint** | `503 SERVICE_SAISIE_INDISPONIBLE` — *« Aucun montant n'est supposé ni repris d'une lecture antérieure. »* | ✅ refus conservateur, jamais un zéro |
+| 12 | `POST /processus` avec Saisie éteint | `201` | ✅ le déclenchement ne dépend pas de Saisie |
+| 13 | `POST /processus` avec **service Identité éteint** | **`503 SERVICE_IDENTITE_INDISPONIBLE`, pas `403`** | ✅ la panne reste visible |
+| 14 | `GET /processus/109` avec Identité éteint | `503 SERVICE_IDENTITE_INDISPONIBLE` | ✅ |
+| 15 | Swagger `/v3/api-docs` | **exactement 3 opérations** : `POST /processus`, `GET /processus/{id}`, `GET /processus/{id}/etat` | ✅ rien créé par anticipation |
+
+### B-03 — l'intégration réelle Saisie → Workflow, que le bouchon ne prouvait pas
+
+| Contrôle | Résultat |
+|---|---|
+| `POST /saisie/fiches` `{idProcessus:109, dateJour:"2026-09-03"}` | **`201`** — fiche 651 créée. Le vrai `GET /processus/109` de Workflow est lu correctement par le client de Saisie : URL, mapping JSON, statut `EN_COURS_SAISIE` reconnu comme modifiable. |
+| Recopie unité / période sur la fiche | `codeUnite:00002`, `moisPaiement:9`, `anneePaiement:2026` — propagés depuis la réponse de Workflow |
+| `POST /saisie/lignes` (RATION/JOUR) puis `GET /processus/109/etat` | `montantApplique:1500` (grille active), puis **`montantTotalFcfa:1500` / `montantTotalPorte:0`** — RG-06 partagée, les deux moitiés assemblées, montants **entiers** |
+
+Le premier essai de la ligne, service Grilles éteint, a rendu `503
+SERVICE_GRILLES_INDISPONIBLE` côté Saisie — confirmation incidente que Saisie
+refuse une ligne sans montant connu.
+
+### Chaîne d'audit — Kafka démarré, consommateur sur `rations.audit.evenement`
+
+**9 événements `service-workflow`**, aucun `AUDIT PERDU` :
+
+| Événement | Nombre | Contenu vérifié |
+|---|---|---|
+| `DECLENCHEMENT_PROCESSUS` | 3 | `entiteCible:processus_mensuel`, `idEntite` renseigné, `adresseIp`, delta avant/après complet (`statut` null→`EN_COURS_SAISIE`, type, mois, année, `codeUnite`), contexte `auteur` + `role` |
+| `ACCES_REFUSE` / `ROLE_INSUFFISANT` | 2 | DRH sur `/etat` — `login`, `chemin`, `methode`, `detail` |
+| `ACCES_REFUSE` / `HABILITATION_ABSENTE` | 2 | agent hors unité |
+| `ACCES_REFUSE` / `IDENTITE_INDISPONIBLE` | 2 | service Identité éteint, sur `POST /processus` **et** `GET /processus/{id}` |
+
+`idUtilisateur` est `null` (décision Sprint 3.3 : `/identite/habilitation` ne rend
+qu'un `login`). Une **consultation autorisée (`200`) n'émet aucun événement** —
+une lecture n'est pas une action sensible.
+
+### Nettoyage
+
+Services applicatifs arrêtés après vérification. `rations-kafka` **ré-arrêté**
+pour restaurer l'état antérieur à la session (il n'était pas lancé). `rations-postgres`
+et `dottel-keycloak` laissés actifs. **Commit `5dbc639` créé.**
 
 ---
 
