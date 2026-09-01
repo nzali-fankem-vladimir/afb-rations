@@ -63,26 +63,13 @@ app:
     # l'etat mensuel est encore modifiable, et pour obtenir le code unite et la
     # periode du processus (docs/rattachement-processus.md sections 3 et 4).
     #
-    # ATTENTION : ce service n'existe qu'au Sprint 4. Tant qu'il n'ecoute pas,
-    # toute ecriture est refusee en 503 — refus conservateur. Pour travailler ou
-    # verifier le module a la main d'ici la, demarrer avec le profil
-    # bouchon-workflow EN PLUS du profil dev :
+    # Ce service existe depuis le Sprint 4.1 : il doit tourner pour que la saisie
+    # fonctionne. S'il n'ecoute pas, toute ecriture est refusee en 503 — refus
+    # conservateur, et c'est le comportement voulu.
     #
-    #   mvn -pl service-saisie spring-boot:run \
-    #       -Dspring-boot.run.profiles=dev,bouchon-workflow
-    #
-    # Le bouchon refuse de demarrer si le profil dev n'est pas actif, et
-    # journalise un avertissement a chaque appel. A supprimer au Sprint 4.
+    # Le bouchon de developpement (profil bouchon-workflow, Sprint 3.3) a ete
+    # supprime au Sprint 4.1, sa raison d'etre ayant disparu.
     url: ${WORKFLOW_URL:http://localhost:8084}
-
-    bouchon:
-      # Lues uniquement sous le profil bouchon-workflow. Le code unite doit
-      # correspondre a celui de l'agent de test, sans quoi la verification
-      # d'habilitation refusera l'ecriture — c'est bien ce qu'elle doit faire.
-      code-unite: ${WORKFLOW_BOUCHON_CODE_UNITE:00002}
-      mois-paiement: ${WORKFLOW_BOUCHON_MOIS:8}
-      annee-paiement: ${WORKFLOW_BOUCHON_ANNEE:2026}
-      statut: ${WORKFLOW_BOUCHON_STATUT:EN_COURS_SAISIE}
 
 logging:
   level:

@@ -94,14 +94,29 @@ ETAT_NON_MODIFIABLE` sans écrire une ligne de code.
 
 ---
 
-## 5. Action obligatoire au Sprint 4
+## 5. Action obligatoire au Sprint 4 — **soldée au Sprint 4.1**
 
 | Réf | Action | État |
 |---|---|---|
-| **B-01** | Supprimer `BouchonVerificationProcessus.java` et l'annotation `@Profile("!bouchon-workflow")` de `VerificationProcessusHttpClient` | **Ouvert** |
-| **B-02** | Retirer le bloc `app.workflow.bouchon` de `application-dev.yml` et le mode d'emploi qui l'accompagne | **Ouvert** |
-| **B-03** | Vérifier en intégration réelle ce que le bouchon ne prouve pas : URL, mapping JSON de `GET /processus/{id}`, traduction des statuts, comportement au timeout | **Ouvert** |
-| **B-04** | Conformer la réponse de `GET /processus/{id}` aux cinq champs lus par `ProcessusReponse` : `idProcessus`, `statut`, `codeUnite`, `moisPaiement`, `anneePaiement` | **Ouvert** |
+| **B-01** | Supprimer `BouchonVerificationProcessus.java` et l'annotation `@Profile("!bouchon-workflow")` de `VerificationProcessusHttpClient` | **Fait (4.1)** — la classe et son test sont supprimés |
+| **B-02** | Retirer le bloc `app.workflow.bouchon` de `application-dev.yml` et le mode d'emploi qui l'accompagne | **Fait (4.1)** |
+| **B-03** | Vérifier en intégration réelle ce que le bouchon ne prouve pas : URL, mapping JSON de `GET /processus/{id}`, traduction des statuts, comportement au timeout | **En cours (4.1)** — objet de la vérification manuelle du sous-sprint, services Identité, Saisie et Workflow démarrés ensemble. À passer à « Fait » une fois la vérification passée. |
+| **B-04** | Conformer la réponse de `GET /processus/{id}` aux cinq champs lus par `ProcessusReponse` : `idProcessus`, `statut`, `codeUnite`, `moisPaiement`, `anneePaiement` | **Fait (4.1)** — tenu par `ProcessusResponse`, verrouillé par le test 11 de `ProcessusControllerIT` |
+
+Voir `docs/decisions/2026-08-31-domaine-du-workflow-et-machine-a-etats.md` §9.
+
+**Le pari de la voie C a tenu.** Le dispositif a été retiré au sous-sprint où sa
+raison d'être a disparu, et non « un jour ». Ce n'est pas un hasard : les trois
+garde-fous — profil explicite, refus de démarrer hors `dev`, bannière `WARN` — le
+rendaient impossible à oublier, et le présent tableau le rendait impossible à
+ignorer.
+
+**Ce que B-04 aurait coûté s'il avait été manqué**, puisque c'était le risque
+identifié : `ProcessusReponse` étant un *tolerant reader*, un renommage de champ
+n'aurait produit aucune erreur de compilation. Le service Saisie aurait refusé
+**toute écriture de ligne de prestation** en `503` « réponse 200 sans unité ni
+période exploitables ». Le contrat est désormais tenu par un test qui nomme cette
+conséquence.
 
 La suppression est conçue pour tenir en deux gestes : rien d'autre que le port ne
 référence le bouchon.

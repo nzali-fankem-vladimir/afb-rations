@@ -1,8 +1,24 @@
 spring:
+  kafka:
+    # Seule l'adresse des brokers est reprise par le producteur d'audit
+    # (rations-audit-commun) : ses bornes de securite -- max.block.ms en tete --
+    # sont fixees par le module et ne doivent pas etre surchargees ici, sous
+    # peine de rompre la garantie « l'audit ne fait jamais echouer le metier »
+    # (Sprint 1.3, CLAUDE.md section 15).
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+
   datasource:
     url: ${DB_WORKFLOW_URL:jdbc:postgresql://localhost:5433/rations_workflow}
     username: ${DB_WORKFLOW_USERNAME:rations_workflow}
     password: ${DB_WORKFLOW_PASSWORD:changeme-in-development}
+  jpa:
+    hibernate:
+      # Le schema est produit par Flyway (une migration versionnee par service).
+      # Hibernate ne fait que verifier la concordance entite <-> table au
+      # demarrage : jamais de generation ni de modification automatique
+      # (Sprint 2.1, docs/decisions/2026-08-27-tests-repository-et-validation-schema.md).
+      ddl-auto: validate
+    open-in-view: false
   flyway:
     enabled: true
     locations: classpath:db/migration
@@ -20,6 +36,29 @@ spring:
 app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+
+  identite:
+    # Adresse du service Identite, interroge AVANT toute operation sur un
+    # processus pour verifier la portee d'acces de l'acteur sur le code unite du
+    # dossier (RG-12, GET /identite/habilitation, Sprint 1.3).
+    #
+    # Le service Workflow est le premier consommateur reel de cet endpoint. Le
+    # code_unite n'etant pas dans le jeton Keycloak, ce service ne peut pas
+    # trancher seul le cas d'un role a portee locale : l'appel est impose par le
+    # modele, pas choisi (docs/appel-habilitation.md section 2).
+    #
+    # Refus conservateur : si ce service ne repond pas, l'operation est refusee
+    # en 503, jamais autorisee par defaut, et jamais servie depuis un cache.
+    url: ${IDENTITE_URL:http://localhost:8081}
+
+  saisie:
+    # Adresse du service Saisie, interroge pour l'etat mensuel consolide
+    # (RG-06, GET /saisie/processus/{id}/etat, docs/appel-consolidation.md).
+    #
+    # L'appel passe par l'API du service Saisie, jamais par sa base : aucune
+    # source de donnees vers rations_saisie n'existe ici, et c'est verifie par
+    # la cartographie (critere du guide 4.1).
+    url: ${SAISIE_URL:http://localhost:8082}
 
 logging:
   level:

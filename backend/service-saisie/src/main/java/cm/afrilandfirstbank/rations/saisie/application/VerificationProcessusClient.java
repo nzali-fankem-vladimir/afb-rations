@@ -13,10 +13,11 @@ package cm.afrilandfirstbank.rations.saisie.application;
  * {@code ResultatVerificationProcessus.ServiceWorkflowIndisponible} ferait
  * entrer une notion de panne reseau dans le domaine.
  *
- * <p>L'implantation reelle est {@code VerificationProcessusHttpClient}. Une
- * seconde implantation, {@code BouchonVerificationProcessus}, n'existe que sous
- * le profil {@code bouchon-workflow} tant que le service Workflow n'est pas
- * ecrit (Sprint 4).
+ * <p>L'unique implantation est {@code VerificationProcessusHttpClient}. Une
+ * seconde, {@code BouchonVerificationProcessus}, a existe sous le profil
+ * {@code bouchon-workflow} tant que le service Workflow n'etait pas ecrit ; elle
+ * a ete <b>supprimee au Sprint 4.1</b>, ou ce service est entre en fonction
+ * (actions B-01 a B-03, {@code docs/dispositifs_provisoires.md}).
  *
  * @see ResultatVerificationProcessus
  */

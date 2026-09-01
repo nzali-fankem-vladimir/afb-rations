@@ -5,7 +5,6 @@ import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -23,20 +22,27 @@ import cm.afrilandfirstbank.rations.saisie.domaine.StatutProcessusEnum;
 /**
  * Interroge {@code GET /processus/{id}} du service Workflow.
  *
- * <h2>Ce client est écrit contre un service qui n'existe pas encore</h2>
+ * <h2>Le service appelé existe depuis le Sprint 4.1</h2>
  *
- * <p>L'ordre d'implémentation place Saisie au Sprint 3 et Workflow au Sprint 4.
- * Ce client est donc <b>codé selon un contrat écrit, non vérifié en
- * intégration</b> : l'URL, le mapping JSON, la traduction des codes d'erreur ne
- * seront confrontés au vrai service qu'au Sprint 4
- * ({@code docs/rattachement-processus.md} §6). Aucun document du Sprint 3 ne doit
- * affirmer le contraire.
+ * <p>Ce client avait été <b>codé selon un contrat écrit, non vérifié en
+ * intégration</b> : l'ordre d'implémentation place Saisie au Sprint 3 et Workflow
+ * au Sprint 4 ({@code docs/rattachement-processus.md} §6). Le service Workflow
+ * ayant été livré au Sprint 4.1, {@code ProcessusResponse} y expose exactement
+ * les cinq champs lus ici — {@code idProcessus}, {@code statut},
+ * {@code codeUnite}, {@code moisPaiement}, {@code anneePaiement} — et un test
+ * d'intégration de ce service les verrouille (action B-04,
+ * {@code docs/dispositifs_provisoires.md}).
  *
- * <p>C'est pourquoi il est testé contre {@code MockRestServiceServer} et non par
- * un mock de sa propre classe : mocker le client ne testerait rien de ce qui peut
- * casser. D'où le {@code RestClient.Builder} <b>injecté</b> — un builder
- * construit en dur, comme le fait {@code ClientIdentite} du service Grilles,
- * rendrait le bouchon impossible à attacher.
+ * <p>Le bouchon de développement {@code BouchonVerificationProcessus}, qui
+ * rendait la Saisie utilisable tant que le port 8084 ne répondait à personne, a
+ * été <b>supprimé au Sprint 4.1</b> : sa raison d'être a disparu, et un
+ * dispositif provisoire qu'on laisse en place cesse de l'être.
+ *
+ * <p>Il est testé contre {@code MockRestServiceServer} et non par un mock de sa
+ * propre classe : mocker le client ne testerait rien de ce qui peut casser. D'où
+ * le {@code RestClient.Builder} <b>injecté</b> — un builder construit en dur,
+ * comme le fait {@code ClientIdentite} du service Grilles, ne pourrait pas s'y
+ * attacher.
  *
  * <h2>Traduction des réponses</h2>
  *
@@ -59,7 +65,6 @@ import cm.afrilandfirstbank.rations.saisie.domaine.StatutProcessusEnum;
  * qui en empile déjà trois.
  */
 @Component
-@Profile("!" + BouchonVerificationProcessus.PROFIL)
 public class VerificationProcessusHttpClient implements VerificationProcessusClient {
 
     private static final Logger journal =
