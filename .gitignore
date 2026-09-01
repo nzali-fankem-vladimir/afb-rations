@@ -65,3 +65,8 @@ docs/initialisation projet/
 sprint actuel.md
 # Sortie generee par la cartographie graphify (non versionnee)
 graphify-out/
+
+# Pieces jointes produites a l'execution (PDF des etats mensuels, Sprint 4.2).
+# Ce sont des donnees, pas du code : le repertoire est recree au demarrage et son
+# contenu depend de la base locale.
+backend/*/donnees/

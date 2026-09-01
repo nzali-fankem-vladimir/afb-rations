@@ -17,27 +17,30 @@ import cm.afrilandfirstbank.rations.workflow.api.dto.DeclenchementProcessusReque
 import cm.afrilandfirstbank.rations.workflow.api.dto.EtatProcessusResponse;
 import cm.afrilandfirstbank.rations.workflow.api.dto.ProcessusResponse;
 import cm.afrilandfirstbank.rations.workflow.api.dto.SoumissionResponse;
+import cm.afrilandfirstbank.rations.workflow.api.dto.ValidationResponse;
 import cm.afrilandfirstbank.rations.workflow.application.ProcessusService;
 import cm.afrilandfirstbank.rations.workflow.application.SoumissionService;
+import cm.afrilandfirstbank.rations.workflow.application.ValidationService;
 import cm.afrilandfirstbank.rations.workflow.domaine.ProcessusMensuel;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 
 /**
- * Les trois endpoints du processus mensuel livres au Sprint 4.1 (contrat d'API
- * section 5).
+ * Les endpoints du processus mensuel (contrat d'API section 5).
  *
  * <pre>
- *   POST /processus              declenchement          AGENT_UNITE
- *   GET  /processus/{id}         detail et statut       roles du circuit
- *   GET  /processus/{id}/etat    etat consolide         roles du circuit
+ *   POST /processus                        declenchement       AGENT_UNITE        (4.1)
+ *   GET  /processus/{id}                   detail et statut    roles du circuit   (4.1)
+ *   GET  /processus/{id}/etat              etat consolide      roles du circuit   (4.1)
+ *   POST /processus/{id}/soumission        soumission          AGENT_UNITE        (4.2)
+ *   POST /processus/{id}/validation        validation DA       CHEF_UNITE_DA      (4.3)
  * </pre>
  *
- * <p><b>Les trois autres endpoints de la section 5 n'existent pas encore</b> —
- * {@code /soumission}, {@code /validation}, {@code /retour} sont les sous-sprints
- * 4.2 a 4.4. Aucun n'est cree par anticipation : un endpoint declare mais
- * inoperant est pire qu'un endpoint absent, il se decouvre a l'usage.
+ * <p><b>{@code POST /processus/{id}/retour} n'existe pas encore</b>, et la
+ * validation n'est pas encore ouverte au directeur reseau : ce sont le sous-sprint
+ * 4.4. Rien n'est cree par anticipation — un endpoint declare mais inoperant est
+ * pire qu'un endpoint absent, il se decouvre a l'usage.
  *
  * <h2>Les roles ne sont pas les memes selon l'endpoint</h2>
  *
@@ -66,11 +69,14 @@ public class ProcessusController {
 
     private final ProcessusService processusService;
     private final SoumissionService soumissionService;
+    private final ValidationService validationService;
 
     public ProcessusController(ProcessusService processusService,
-            SoumissionService soumissionService) {
+            SoumissionService soumissionService,
+            ValidationService validationService) {
         this.processusService = processusService;
         this.soumissionService = soumissionService;
+        this.validationService = validationService;
     }
 
     /**
@@ -170,6 +176,41 @@ public class ProcessusController {
 
         return ResponseEntity.ok(SoumissionResponse.depuis(
                 soumissionService.soumettre(id, enteteAutorisation, requeteHttp.getRemoteAddr())));
+    }
+
+    /**
+     * Validation de premier niveau par le Chef d'Unite, avec aiguillage au seuil
+     * (US-08, US-09, CT-14, CT-15).
+     *
+     * <p><b>Reserve a {@code CHEF_UNITE_DA} au sous-sprint 4.3.</b> Le contrat
+     * d'API destine cet endpoint aux deux valideurs, « DA ou DR selon le niveau » ;
+     * le second niveau est le sous-sprint 4.4, et le role du directeur reseau y sera
+     * ajoute avec le code qui le sert. Ouvrir le role avant d'avoir la transition
+     * {@code EN_ATTENTE_DR -> CLOTURE} laisserait le directeur reseau devant un
+     * refus de statut incomprehensible.
+     *
+     * <p>Le role n'est que le premier filtre : la portee d'acces est verifiee en
+     * plus, sur l'unite <i>du processus</i>, aupres du service Identite.
+     *
+     * <p><b>Aucun corps de requete.</b> Le montant vient du processus, le seuil de
+     * {@code parametre_systeme} : rien n'est laisse au choix de l'appelant, et
+     * surtout pas la valeur qui decide du niveau d'approbation requis.
+     *
+     * <p>{@code 200} et non {@code 201} : la validation ne cree pas la ressource
+     * adressee, elle en change l'etat. Refus possibles : {@code 422
+     * TRANSITION_INTERDITE} hors statut {@code EN_ATTENTE_DA} ; {@code 403} hors
+     * role ou hors portee ; {@code 500 SEUIL_INDISPONIBLE} si le seuil RG-08 n'est
+     * pas lisible ; {@code 503} si le service Identite ne repond pas.
+     */
+    @PostMapping("/{id}/validation")
+    @PreAuthorize("hasRole('CHEF_UNITE_DA')")
+    public ResponseEntity<ValidationResponse> valider(
+            @PathVariable Long id,
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String enteteAutorisation,
+            HttpServletRequest requeteHttp) {
+
+        return ResponseEntity.ok(ValidationResponse.depuis(
+                validationService.valider(id, enteteAutorisation, requeteHttp.getRemoteAddr())));
     }
 
 }

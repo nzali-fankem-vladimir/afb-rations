@@ -99,3 +99,39 @@ enrichissement du document, comme l'est déjà l'apposition des mentions ; la
 géométrie de la page des visas, la convention de nommage et la discipline
 d'écriture confirmée ne sont pas à reprendre. C'est la chaîne de confiance qui
 manque, pas le code.
+
+---
+
+## `SEUIL_AIGUILLAGE_DR` — point de défaillance unique du circuit de validation
+
+**Ouvert au Sprint 4.3. À surveiller en priorité en production.**
+
+**La décision prise.** Si le paramètre `SEUIL_AIGUILLAGE_DR` est absent, désactivé
+ou porte une valeur illisible, le service Workflow **refuse la validation**
+(`500 SEUIL_INDISPONIBLE`) au lieu d'appliquer une valeur de repli. Une valeur par
+défaut dans le code réintroduirait exactement ce que RG-08 interdit, et un
+aiguillage sur un seuil inventé serait invisible : le circuit continuerait de
+tourner en appliquant un niveau d'approbation que personne n'a décidé.
+
+**Le compromis assumé, et sa conséquence.** Une seule ligne de
+`parametre_systeme` conditionne **tout** le circuit de validation du module. Une
+suppression accidentelle, une désactivation, une valeur mal saisie — `100 000` avec
+une espace, une valeur avec décimale — bloque toutes les validations de toutes les
+unités, immédiatement et en même temps. Ce n'est pas un défaut de conception : c'est
+le prix explicitement accepté pour qu'une erreur de configuration soit visible tout
+de suite plutôt que de produire des aiguillages faux pendant des semaines. Mais
+c'est un point de fragilité qu'il faut connaître avant de le découvrir.
+
+**Ce qui est demandé à l'exploitation.**
+
+| Mesure | Pourquoi |
+| --- | --- |
+| **Supervision du log au préfixe `SEUIL INDISPONIBLE`** | C'est le signal unique et immédiat. Chaque échec de lecture le journalise en `error` avec la valeur trouvée. Une alerte sur ce préfixe transforme une panne de circuit en incident détecté en quelques secondes. |
+| **Contrôle de la ligne au déploiement et après toute migration** | La ligne vient de la migration V2. Un rejeu de base, une restauration partielle ou une intervention manuelle peuvent la faire disparaître sans que rien ne le signale tant que personne ne valide. |
+| **Restreindre l'écriture sur `parametre_systeme`** | La table n'a aujourd'hui aucun endpoint d'administration : elle se modifie en SQL direct. Tant qu'il en est ainsi, l'accès en écriture à cette table est un accès au niveau d'approbation requis par la banque, et devrait être tracé au même titre. |
+| **Journaliser toute modification du seuil** | Le module trace le seuil **appliqué** à chaque validation (audit `VALIDATION_PROCESSUS`, champ `seuilApplique`), donc l'effet du changement. Il ne trace pas le changement lui-même : `parametre_systeme` n'a ni horodatage ni auteur (CLAUDE.md §4). Un contrôle interne qui voudrait savoir *qui* a abaissé le seuil et *quand* ne le trouvera nulle part dans ce module. |
+
+**Piste, si le métier le demande un jour.** Un endpoint d'administration du seuil,
+réservé à `ADMIN` ou à la DRH, publiant un événement d'audit — ce qui fermerait la
+dernière ligne du tableau. Hors périmètre du module tel que spécifié : il n'existe
+aucun endpoint `/parametres` au contrat d'API.

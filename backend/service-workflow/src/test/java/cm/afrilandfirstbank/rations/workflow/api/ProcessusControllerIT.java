@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.workflow.api;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
 import static org.mockito.ArgumentMatchers.any;
@@ -7,6 +8,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -25,6 +27,7 @@ import java.util.Map;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
@@ -41,8 +44,12 @@ import cm.afrilandfirstbank.rations.commun.audit.PublicateurAudit;
 import cm.afrilandfirstbank.rations.workflow.application.EtatConsolide;
 import cm.afrilandfirstbank.rations.workflow.application.ManqueCompletude;
 import cm.afrilandfirstbank.rations.workflow.application.ProcessusService;
+import cm.afrilandfirstbank.rations.workflow.application.DecisionAiguillage;
+import cm.afrilandfirstbank.rations.workflow.application.ResultatAiguillage;
 import cm.afrilandfirstbank.rations.workflow.application.ResultatSoumission;
+import cm.afrilandfirstbank.rations.workflow.application.ResultatValidation;
 import cm.afrilandfirstbank.rations.workflow.application.SoumissionService;
+import cm.afrilandfirstbank.rations.workflow.application.ValidationService;
 import cm.afrilandfirstbank.rations.workflow.application.ProcessusService.EtatProcessus;
 import cm.afrilandfirstbank.rations.workflow.domaine.CodeManqueEnum;
 import cm.afrilandfirstbank.rations.workflow.domaine.EtapeWorkflow;
@@ -58,6 +65,7 @@ import cm.afrilandfirstbank.rations.workflow.domaine.exception.FonctionnaliteNon
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.PieceJointeExistanteException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ProcessusExistantException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ProcessusIntrouvableException;
+import cm.afrilandfirstbank.rations.workflow.domaine.exception.SeuilIndisponibleException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.TransitionProcessusInterditeException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ServiceIdentiteIndisponibleException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ServiceSaisieIndisponibleException;
@@ -102,6 +110,9 @@ class ProcessusControllerIT {
 
     @MockitoBean
     private SoumissionService soumissionService;
+
+    @MockitoBean
+    private ValidationService validationService;
 
     /** Empreinte de reference : 8 caracteres de prefixe plus 64 de SHA-256. */
     private static final String EMPREINTE =
@@ -461,15 +472,14 @@ class ProcessusControllerIT {
     }
 
     @Test
-    @DisplayName("17. Aucun endpoint de validation ni de retour : ils relevent des sous-sprints 4.3 et 4.4")
+    @DisplayName("17. Aucun endpoint de retour : il releve du sous-sprint 4.4")
     void endpointsDesSousSprintsSuivantsAbsents() throws Exception {
         keycloakEmet("AGENT_UNITE");
 
-        // Revise au Sprint 4.2 : /soumission EXISTE desormais et sort donc de cette
-        // liste. Les deux autres viendront aux sous-sprints 4.3 et 4.4. Un endpoint
-        // declare mais inoperant est pire qu'un endpoint absent : il se decouvre a
-        // l'usage.
-        for (String chemin : List.of("/processus/740/validation", "/processus/740/retour")) {
+        // Revise au Sprint 4.3 : /soumission existe depuis le 4.2, /validation depuis
+        // le 4.3. Seul /retour reste a venir, au sous-sprint 4.4. Un endpoint declare
+        // mais inoperant est pire qu'un endpoint absent : il se decouvre a l'usage.
+        for (String chemin : List.of("/processus/740/retour")) {
             mockMvc.perform(post(chemin)
                             .header(HttpHeaders.AUTHORIZATION, JETON)
                             .contentType(MediaType.APPLICATION_JSON)
@@ -634,6 +644,185 @@ class ProcessusControllerIT {
                 .andExpect(jsonPath("$.code").value("DOCUMENT_NON_PRODUIT"))
                 .andExpect(jsonPath("$.message",
                         containsString("Aucune soumission n'est enregistree")));
+    }
+
+    // --- Validation du chef d'unite (Sprint 4.3) ----------------------------------
+
+    /**
+     * Le seuil du jeu d'essai n'est <b>pas</b> celui de la configuration : il est
+     * choisi different pour que ces tests ne puissent pas passer par coincidence si
+     * la reponse rendait une constante au lieu de la valeur reellement appliquee.
+     */
+    private static final long SEUIL_ESSAI = 73_500L;
+
+    /**
+     * Une validation aboutie : l'etat a change de statut, le document porte deux
+     * visas, et la decision d'aiguillage accompagne le tout.
+     */
+    private static ResultatValidation uneValidation(StatutEnum statutFinal,
+            DecisionAiguillage decision, long montant, long seuil) {
+
+        ProcessusMensuel processus = unProcessus();
+        processus.reporterMontantTotal(Math.toIntExact(montant));
+        TransitionProcessus.soumettre(processus);
+        TransitionProcessus.transfererAuChefUnite(processus);
+        if (statutFinal == StatutEnum.CLOTURE) {
+            TransitionProcessus.cloturerApresValidationChefUnite(processus);
+        } else {
+            TransitionProcessus.aiguillerVersDirecteurReseau(processus);
+        }
+
+        EtapeWorkflow etape = new EtapeWorkflow(ID, 9L, 2, NomEtapeEnum.VALIDATION_DA);
+        etape.validerAvecSignature(EMPREINTE);
+        ReflectionTestUtils.setField(etape, "id", 32L);
+        ReflectionTestUtils.setField(etape, "dateCreation", LocalDateTime.of(2026, 9, 2, 8, 15));
+
+        PieceJointe pieceJointe = new PieceJointe(ID, "2026/08/etat-rations-00002-202608-p740.pdf");
+        ReflectionTestUtils.setField(pieceJointe, "id", 12L);
+        ReflectionTestUtils.setField(pieceJointe, "dateCreation", LocalDateTime.of(2026, 9, 1, 10, 24));
+        pieceJointe.enregistrerSignatureSupplementaire();
+
+        return new ResultatValidation(processus, pieceJointe, etape,
+                new ResultatAiguillage(decision, montant, seuil));
+    }
+
+    @Test
+    @DisplayName("27. Validation sous le seuil : 200, statut CLOTURE, aiguillage et seuil rendus")
+    void validationSousLeSeuil() throws Exception {
+        keycloakEmet("CHEF_UNITE_DA");
+        when(validationService.valider(eq(ID), anyString(), anyString()))
+                .thenReturn(uneValidation(StatutEnum.CLOTURE,
+                        DecisionAiguillage.SOUS_SEUIL_CLOTURE_DIRECTE, SEUIL_ESSAI, SEUIL_ESSAI));
+
+        mockMvc.perform(post("/processus/{id}/validation", ID)
+                        .header(HttpHeaders.AUTHORIZATION, JETON))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                // Les cinq champs de l'exemple du contrat d'API section 5.
+                .andExpect(jsonPath("$.idProcessus").value(740))
+                .andExpect(jsonPath("$.statut").value("CLOTURE"))
+                .andExpect(jsonPath("$.montantTotal").value(SEUIL_ESSAI))
+                .andExpect(jsonPath("$.aiguillage").value("SOUS_SEUIL_CLOTURE_DIRECTE"))
+                .andExpect(jsonPath("$.seuilApplique").value(SEUIL_ESSAI))
+                // Les deux blocs de temoignage, ajoutes sans rien retirer du contrat.
+                .andExpect(jsonPath("$.pieceJointe.nombreSignatures").value(2))
+                .andExpect(jsonPath("$.etape.nomEtape").value("VALIDATION_DA"))
+                .andExpect(jsonPath("$.etape.statutEtape").value("VALIDEE"))
+                .andExpect(jsonPath("$.etape.ordreEtape").value(2))
+                .andExpect(jsonPath("$.etape.signatureNumerique").value(EMPREINTE));
+    }
+
+    @Test
+    @DisplayName("28. Validation au-dessus du seuil : 200, statut EN_ATTENTE_DR")
+    void validationAuDessusDuSeuil() throws Exception {
+        keycloakEmet("CHEF_UNITE_DA");
+        when(validationService.valider(eq(ID), anyString(), anyString()))
+                .thenReturn(uneValidation(StatutEnum.EN_ATTENTE_DR,
+                        DecisionAiguillage.ENVOI_DIRECTEUR_RESEAU, SEUIL_ESSAI + 1, SEUIL_ESSAI));
+
+        mockMvc.perform(post("/processus/{id}/validation", ID)
+                        .header(HttpHeaders.AUTHORIZATION, JETON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.statut").value("EN_ATTENTE_DR"))
+                .andExpect(jsonPath("$.aiguillage").value("ENVOI_DIRECTEUR_RESEAU"))
+                .andExpect(jsonPath("$.seuilApplique").value(SEUIL_ESSAI));
+    }
+
+    /**
+     * Test 13 du guide 4.3. Les autres roles sont refuses, y compris l'agent qui a
+     * soumis le dossier — c'est le premier etage de RG-12, avant meme la separation
+     * des taches du sous-sprint 4.4.
+     *
+     * <p>Le directeur reseau est refuse lui aussi <b>a ce sous-sprint</b> : la
+     * transition {@code EN_ATTENTE_DR -> CLOTURE} n'est pas encore servie, et lui
+     * ouvrir le role le placerait devant un refus de statut incomprehensible. Le
+     * sous-sprint 4.4 ajoutera les deux ensemble.
+     */
+    @Test
+    @DisplayName("29. Validation par un role autre que CHEF_UNITE_DA : 403, et refus trace")
+    void validationRoleInsuffisant() throws Exception {
+        for (String role : List.of("AGENT_UNITE", "DIRECTEUR_RESEAU_DR", "ARH")) {
+            keycloakEmet(role);
+
+            mockMvc.perform(post("/processus/{id}/validation", ID)
+                            .header(HttpHeaders.AUTHORIZATION, JETON))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.code").value("ACCES_REFUSE"));
+        }
+
+        verifyNoInteractions(validationService);
+
+        // CT-04 : le refus de role est publie en audit, une fois par tentative.
+        ArgumentCaptor<EvenementAudit> capture = ArgumentCaptor.forClass(EvenementAudit.class);
+        verify(publicateurAudit, times(3)).publier(capture.capture());
+        assertThat(capture.getAllValues())
+                .allSatisfy(evenement -> assertThat(evenement.detailJson())
+                        .contains("ROLE_INSUFFISANT")
+                        .contains("/processus/740/validation"));
+    }
+
+    @Test
+    @DisplayName("30. Validation hors portee d'acces : 403 UTILISATEUR_NON_HABILITE")
+    void validationHorsPortee() throws Exception {
+        keycloakEmet("CHEF_UNITE_DA");
+        when(validationService.valider(eq(ID), anyString(), anyString()))
+                .thenThrow(new AgentNonHabiliteException(
+                        "Vous n'avez pas de droit sur l'unite 00007."));
+
+        mockMvc.perform(post("/processus/{id}/validation", ID)
+                        .header(HttpHeaders.AUTHORIZATION, JETON))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("UTILISATEUR_NON_HABILITE"));
+    }
+
+    @Test
+    @DisplayName("31. Validation hors statut : 422 TRANSITION_INTERDITE")
+    void validationHorsStatut() throws Exception {
+        keycloakEmet("CHEF_UNITE_DA");
+        when(validationService.valider(eq(ID), anyString(), anyString()))
+                .thenThrow(new TransitionProcessusInterditeException(
+                        "L'etat 08/2026 de l'unite 00002 ne peut pas etre valide par le chef "
+                                + "d'unite : son statut est CLOTURE."));
+
+        mockMvc.perform(post("/processus/{id}/validation", ID)
+                        .header(HttpHeaders.AUTHORIZATION, JETON))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("TRANSITION_INTERDITE"));
+    }
+
+    /**
+     * Le seuil illisible se rend en {@code 500}, pas en refus metier : le chef
+     * d'unite n'a rien fait de faux et n'a rien a corriger dans son dossier.
+     */
+    @Test
+    @DisplayName("32. Seuil illisible : 500 SEUIL_INDISPONIBLE, et non un refus metier")
+    void validationSeuilIndisponible() throws Exception {
+        keycloakEmet("CHEF_UNITE_DA");
+        when(validationService.valider(eq(ID), anyString(), anyString()))
+                .thenThrow(new SeuilIndisponibleException(
+                        "Le seuil d'aiguillage n'est pas configure : aucun parametre actif de "
+                                + "code SEUIL_AIGUILLAGE_DR n'existe dans parametre_systeme."));
+
+        mockMvc.perform(post("/processus/{id}/validation", ID)
+                        .header(HttpHeaders.AUTHORIZATION, JETON))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.code").value("SEUIL_INDISPONIBLE"))
+                .andExpect(jsonPath("$.message", containsString("SEUIL_AIGUILLAGE_DR")));
+    }
+
+    @Test
+    @DisplayName("33. Le jeton du chef d'unite est relaye tel quel")
+    void jetonRelayeALaValidation() throws Exception {
+        keycloakEmet("CHEF_UNITE_DA");
+        when(validationService.valider(eq(ID), anyString(), anyString()))
+                .thenReturn(uneValidation(StatutEnum.CLOTURE,
+                        DecisionAiguillage.SOUS_SEUIL_CLOTURE_DIRECTE, 9_000L, SEUIL_ESSAI));
+
+        mockMvc.perform(post("/processus/{id}/validation", ID)
+                        .header(HttpHeaders.AUTHORIZATION, JETON))
+                .andExpect(status().isOk());
+
+        verify(validationService).valider(eq(ID), eq(JETON), anyString());
     }
 
 }

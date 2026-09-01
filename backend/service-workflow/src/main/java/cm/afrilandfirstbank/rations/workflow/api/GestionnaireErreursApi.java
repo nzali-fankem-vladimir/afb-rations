@@ -32,6 +32,7 @@ import cm.afrilandfirstbank.rations.workflow.domaine.exception.ProcessusExistant
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ProcessusIntrouvableException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ServiceIdentiteIndisponibleException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ServiceSaisieIndisponibleException;
+import cm.afrilandfirstbank.rations.workflow.domaine.exception.SeuilIndisponibleException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.TransitionProcessusInterditeException;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -229,6 +230,26 @@ public class GestionnaireErreursApi {
         journal.error("DOCUMENT NON PRODUIT sur {} : {}",
                 requete.getRequestURI(), exception.getMessage(), exception);
         return reponse(requete, HttpStatus.INTERNAL_SERVER_ERROR, "DOCUMENT_NON_PRODUIT",
+                exception.getMessage());
+    }
+
+    /**
+     * Le seuil d'aiguillage (RG-08) n'a pas pu etre lu.
+     *
+     * <p>{@code 500} et non {@code 422} : le chef d'unite n'a commis aucune erreur
+     * et n'a rien a corriger, c'est la configuration du module qui est en defaut.
+     * Le presenter comme un refus metier l'enverrait chercher une faute dans un
+     * dossier qui n'en a pas.
+     *
+     * <p>Aucune valeur de repli n'est appliquee : le service refuse plutot que
+     * d'aiguiller sur un seuil qu'il aurait invente (CLAUDE.md section 15). Le
+     * detail est deja journalise au prefixe {@code SEUIL INDISPONIBLE} par
+     * {@code SeuilService} ; on ne le redit pas ici.
+     */
+    @ExceptionHandler(SeuilIndisponibleException.class)
+    public ResponseEntity<ErreurApiDto> seuilIndisponible(SeuilIndisponibleException exception,
+            HttpServletRequest requete) {
+        return reponse(requete, HttpStatus.INTERNAL_SERVER_ERROR, "SEUIL_INDISPONIBLE",
                 exception.getMessage());
     }
 
