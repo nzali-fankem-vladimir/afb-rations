@@ -1,5 +1,7 @@
 package cm.afrilandfirstbank.rations.workflow.api;
 
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.hasSize;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -37,15 +39,26 @@ import org.springframework.test.web.servlet.MockMvc;
 import cm.afrilandfirstbank.rations.commun.audit.EvenementAudit;
 import cm.afrilandfirstbank.rations.commun.audit.PublicateurAudit;
 import cm.afrilandfirstbank.rations.workflow.application.EtatConsolide;
+import cm.afrilandfirstbank.rations.workflow.application.ManqueCompletude;
 import cm.afrilandfirstbank.rations.workflow.application.ProcessusService;
+import cm.afrilandfirstbank.rations.workflow.application.ResultatSoumission;
+import cm.afrilandfirstbank.rations.workflow.application.SoumissionService;
 import cm.afrilandfirstbank.rations.workflow.application.ProcessusService.EtatProcessus;
+import cm.afrilandfirstbank.rations.workflow.domaine.CodeManqueEnum;
+import cm.afrilandfirstbank.rations.workflow.domaine.EtapeWorkflow;
+import cm.afrilandfirstbank.rations.workflow.domaine.NomEtapeEnum;
+import cm.afrilandfirstbank.rations.workflow.domaine.PieceJointe;
 import cm.afrilandfirstbank.rations.workflow.domaine.ProcessusMensuel;
 import cm.afrilandfirstbank.rations.workflow.domaine.StatutEnum;
 import cm.afrilandfirstbank.rations.workflow.domaine.TransitionProcessus;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.AgentNonHabiliteException;
+import cm.afrilandfirstbank.rations.workflow.domaine.exception.DocumentNonProduitException;
+import cm.afrilandfirstbank.rations.workflow.domaine.exception.EtatIncompletException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.FonctionnaliteNonOuverteException;
+import cm.afrilandfirstbank.rations.workflow.domaine.exception.PieceJointeExistanteException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ProcessusExistantException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ProcessusIntrouvableException;
+import cm.afrilandfirstbank.rations.workflow.domaine.exception.TransitionProcessusInterditeException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ServiceIdentiteIndisponibleException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ServiceSaisieIndisponibleException;
 import cm.afrilandfirstbank.rations.workflow.infrastructure.config.RoleJwtConverter;
@@ -86,6 +99,39 @@ class ProcessusControllerIT {
 
     @MockitoBean
     private ProcessusService processusService;
+
+    @MockitoBean
+    private SoumissionService soumissionService;
+
+    /** Empreinte de reference : 8 caracteres de prefixe plus 64 de SHA-256. */
+    private static final String EMPREINTE =
+            "SHA-256:3f2a91c70b8d4e6a15c9d82f4b7e0a36d51c8f92a4e7b30c6d18f5a9e2c4b7d03";
+
+    /**
+     * Une soumission aboutie : les trois ecritures qu'elle produit.
+     *
+     * <p>Les identifiants sont poses par reflexion : ils sont normalement attribues
+     * par la persistance, absente sous {@code @WebMvcTest}. Ouvrir un mutateur
+     * d'identifiant sur les entites pour les seuls besoins du test creerait une
+     * porte que rien n'oblige a garder fermee.
+     */
+    private static ResultatSoumission uneSoumission() {
+        ProcessusMensuel processus = unProcessus();
+        processus.reporterMontantTotal(9000);
+        TransitionProcessus.soumettre(processus);
+        TransitionProcessus.transfererAuChefUnite(processus);
+
+        EtapeWorkflow etape = new EtapeWorkflow(ID, 7L, 1, NomEtapeEnum.SOUMISSION_AGENT);
+        etape.validerAvecSignature(EMPREINTE);
+        ReflectionTestUtils.setField(etape, "id", 31L);
+        ReflectionTestUtils.setField(etape, "dateCreation", LocalDateTime.of(2026, 9, 1, 10, 24));
+
+        PieceJointe pieceJointe = new PieceJointe(ID, "2026/08/etat-rations-00002-202608-p740.pdf");
+        ReflectionTestUtils.setField(pieceJointe, "id", 12L);
+        ReflectionTestUtils.setField(pieceJointe, "dateCreation", LocalDateTime.of(2026, 9, 1, 10, 24));
+
+        return new ResultatSoumission(processus, pieceJointe, etape);
+    }
 
     private void keycloakEmet(String role) {
         when(jwtDecoder.decode(anyString())).thenReturn(Jwt.withTokenValue("jeton-de-test")
@@ -415,20 +461,179 @@ class ProcessusControllerIT {
     }
 
     @Test
-    @DisplayName("17. Aucun endpoint de soumission, de validation ni de retour")
+    @DisplayName("17. Aucun endpoint de validation ni de retour : ils relevent des sous-sprints 4.3 et 4.4")
     void endpointsDesSousSprintsSuivantsAbsents() throws Exception {
         keycloakEmet("AGENT_UNITE");
 
-        // Ils viendront aux sous-sprints 4.2 a 4.4. Un endpoint declare mais
-        // inoperant est pire qu'un endpoint absent : il se decouvre a l'usage.
-        for (String chemin : List.of("/processus/740/soumission", "/processus/740/validation",
-                "/processus/740/retour")) {
+        // Revise au Sprint 4.2 : /soumission EXISTE desormais et sort donc de cette
+        // liste. Les deux autres viendront aux sous-sprints 4.3 et 4.4. Un endpoint
+        // declare mais inoperant est pire qu'un endpoint absent : il se decouvre a
+        // l'usage.
+        for (String chemin : List.of("/processus/740/validation", "/processus/740/retour")) {
             mockMvc.perform(post(chemin)
                             .header(HttpHeaders.AUTHORIZATION, JETON)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{}"))
                     .andExpect(status().isNotFound());
         }
+    }
+
+    // --- Soumission (Sprint 4.2) --------------------------------------------------
+
+    @Test
+    @DisplayName("18. Soumission par l'agent : 200, avec le statut, le montant, la piece jointe et l'etape")
+    void soumissionNominale() throws Exception {
+        keycloakEmet("AGENT_UNITE");
+        when(soumissionService.soumettre(eq(ID), anyString(), anyString()))
+                .thenReturn(uneSoumission());
+
+        mockMvc.perform(post("/processus/{id}/soumission", ID)
+                        .header(HttpHeaders.AUTHORIZATION, JETON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.idProcessus").value(ID))
+                .andExpect(jsonPath("$.statut").value("EN_ATTENTE_DA"))
+                .andExpect(jsonPath("$.codeUnite").value(UNITE))
+                .andExpect(jsonPath("$.montantTotalFcfa").value(9000))
+                // CT-12 : la reponse temoigne des TROIS effets du geste.
+                .andExpect(jsonPath("$.pieceJointe.nombreSignatures").value(1))
+                .andExpect(jsonPath("$.pieceJointe.typeMime").value("application/pdf"))
+                .andExpect(jsonPath("$.etape.nomEtape").value("SOUMISSION_AGENT"))
+                .andExpect(jsonPath("$.etape.statutEtape").value("VALIDEE"))
+                .andExpect(jsonPath("$.etape.signatureNumerique").value(EMPREINTE));
+    }
+
+    @Test
+    @DisplayName("19. Le jeton est relaye tel quel au service, jamais reforge")
+    void jetonRelayeALaSoumission() throws Exception {
+        keycloakEmet("AGENT_UNITE");
+        when(soumissionService.soumettre(eq(ID), anyString(), anyString()))
+                .thenReturn(uneSoumission());
+
+        mockMvc.perform(post("/processus/{id}/soumission", ID)
+                        .header(HttpHeaders.AUTHORIZATION, JETON))
+                .andExpect(status().isOk());
+
+        verify(soumissionService).soumettre(eq(ID), eq(JETON), anyString());
+    }
+
+    @Test
+    @DisplayName("20. Soumission par un CHEF_UNITE_DA : 403, et le refus est publie en audit")
+    void soumissionParUnAutreRole() throws Exception {
+        keycloakEmet("CHEF_UNITE_DA");
+
+        // RG-12 : un chef d'unite ne soumet pas a la place de son agent, ce serait
+        // un cumul saisie / validation sur un meme dossier.
+        mockMvc.perform(post("/processus/{id}/soumission", ID)
+                        .header(HttpHeaders.AUTHORIZATION, JETON))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCES_REFUSE"));
+
+        verify(soumissionService, never()).soumettre(anyLong(), anyString(), anyString());
+        verify(publicateurAudit).publier(any());
+    }
+
+    @Test
+    @DisplayName("21. Soumission sans jeton : 401, service jamais appele, AUCUN audit")
+    void soumissionSansJeton() throws Exception {
+        mockMvc.perform(post("/processus/{id}/soumission", ID))
+                .andExpect(status().isUnauthorized());
+
+        verify(soumissionService, never()).soumettre(anyLong(), anyString(), anyString());
+        // Un 401 n'est pas une tentative d'acces : c'est une absence
+        // d'authentification, refusee en amont par le filtre (doctrine Sprint 1.3).
+        verify(publicateurAudit, never()).publier(any());
+    }
+
+    @Test
+    @DisplayName("22. CT-13 : etat incomplet, 422 ETAT_INCOMPLET avec la LISTE des manques")
+    void soumissionEtatIncomplet() throws Exception {
+        keycloakEmet("AGENT_UNITE");
+        when(soumissionService.soumettre(eq(ID), anyString(), anyString()))
+                .thenThrow(new EtatIncompletException(
+                        "L'etat 08/2026 de l'unite 00002 ne peut pas etre soumis : 2 point(s) a corriger.",
+                        List.of(
+                                new ManqueCompletude(CodeManqueEnum.LIGNE_HORS_PERIODE,
+                                        "1 ligne(s) hors de la periode 08/2026 : 05/03/2026."),
+                                new ManqueCompletude(CodeManqueEnum.BENEFICIAIRE_SANS_COMPTE,
+                                        "1 ligne(s) sans numero de compte courant."))));
+
+        mockMvc.perform(post("/processus/{id}/soumission", ID)
+                        .header(HttpHeaders.AUTHORIZATION, JETON))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("ETAT_INCOMPLET"))
+                // Les cinq champs du contrat restent presents.
+                .andExpect(jsonPath("$.timestamp").exists())
+                .andExpect(jsonPath("$.status").value(422))
+                .andExpect(jsonPath("$.message").exists())
+                .andExpect(jsonPath("$.path").value("/processus/740/soumission"))
+                // Et le champ ajoute au Sprint 4.2 porte la liste, pas de la prose.
+                .andExpect(jsonPath("$.manques", hasSize(2)))
+                .andExpect(jsonPath("$.manques[0].code").value("LIGNE_HORS_PERIODE"))
+                .andExpect(jsonPath("$.manques[0].message",
+                        containsString("05/03/2026")))
+                .andExpect(jsonPath("$.manques[1].code").value("BENEFICIAIRE_SANS_COMPTE"));
+    }
+
+    @Test
+    @DisplayName("23. Le champ manques est ABSENT des autres erreurs : le format reste uniforme")
+    void champManquesAbsentDesAutresErreurs() throws Exception {
+        keycloakEmet("AGENT_UNITE");
+        when(soumissionService.soumettre(eq(ID), anyString(), anyString()))
+                .thenThrow(new ProcessusIntrouvableException(ID));
+
+        mockMvc.perform(post("/processus/{id}/soumission", ID)
+                        .header(HttpHeaders.AUTHORIZATION, JETON))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.manques").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("24. Etat deja soumis : 422 TRANSITION_INTERDITE")
+    void soumissionEtatDejaSoumis() throws Exception {
+        keycloakEmet("AGENT_UNITE");
+        when(soumissionService.soumettre(eq(ID), anyString(), anyString()))
+                .thenThrow(new TransitionProcessusInterditeException(
+                        "L'etat 08/2026 de l'unite 00002 ne peut pas etre soumis : son statut est "
+                                + "EN_ATTENTE_DA. Il est deja dans le circuit de validation."));
+
+        mockMvc.perform(post("/processus/{id}/soumission", ID)
+                        .header(HttpHeaders.AUTHORIZATION, JETON))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("TRANSITION_INTERDITE"));
+    }
+
+    @Test
+    @DisplayName("25. Piece jointe deja generee : 409, quelque chose est bien duplique")
+    void soumissionPieceJointeExistante() throws Exception {
+        keycloakEmet("AGENT_UNITE");
+        when(soumissionService.soumettre(eq(ID), anyString(), anyString()))
+                .thenThrow(new PieceJointeExistanteException(
+                        "Un document a deja ete genere pour l'etat 08/2026 de l'unite 00002."));
+
+        mockMvc.perform(post("/processus/{id}/soumission", ID)
+                        .header(HttpHeaders.AUTHORIZATION, JETON))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PIECE_JOINTE_EXISTANTE"));
+    }
+
+    @Test
+    @DisplayName("26. Document non produit : 500, et non un refus metier")
+    void soumissionDocumentNonProduit() throws Exception {
+        keycloakEmet("AGENT_UNITE");
+        when(soumissionService.soumettre(eq(ID), anyString(), anyString()))
+                .thenThrow(new DocumentNonProduitException(
+                        "Le document n'a pas pu etre ecrit (disque plein). "
+                                + "Aucune soumission n'est enregistree."));
+
+        // Ce n'est ni une maladresse de l'agent ni une regle de gestion : c'est une
+        // defaillance du serveur. Le presenter en 422 enverrait l'agent corriger une
+        // saisie qui n'a rien de faux.
+        mockMvc.perform(post("/processus/{id}/soumission", ID)
+                        .header(HttpHeaders.AUTHORIZATION, JETON))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.code").value("DOCUMENT_NON_PRODUIT"))
+                .andExpect(jsonPath("$.message",
+                        containsString("Aucune soumission n'est enregistree")));
     }
 
 }

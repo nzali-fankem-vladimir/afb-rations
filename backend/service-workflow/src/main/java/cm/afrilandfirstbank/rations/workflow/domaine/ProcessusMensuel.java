@@ -163,6 +163,42 @@ public class ProcessusMensuel {
         this.statut = nouveauStatut;
     }
 
+    /**
+     * Reporte sur le processus le montant total rendu par le service Saisie, a la
+     * soumission (Sprint 4.2).
+     *
+     * <p><b>Report, jamais calcul.</b> Le nom de la methode le dit : la valeur
+     * vient telle quelle de {@code EtatConsolide.montantTotalFcfa}, qui est la
+     * somme des sous-totaux journaliers, eux-memes sommes des lignes affichees
+     * (RG-06 partagee, decision Sprint 3.4). Readditionner ici creerait un second
+     * chemin de calcul, et donc une divergence possible entre le detail affiche a
+     * l'agent et le montant qui commande l'aiguillage au seuil (RG-08).
+     *
+     * <h2>Pourquoi ce mutateur est public alors que appliquerStatut ne l'est pas</h2>
+     *
+     * <p>{@link #appliquerStatut(StatutEnum)} est ferme parce que le statut a une
+     * machine a etats : toute transition doit passer par {@link TransitionProcessus},
+     * et le compilateur le garantit. Le montant n'en a pas. Sa legalite tient a
+     * des regles que le service de soumission verifie avant d'appeler : etat
+     * complet, etat non vide, montant reellement obtenu du service Saisie. Faire
+     * passer le montant par la machine a etats lui donnerait au contraire quelque
+     * chose a arbitrer, ce que la decision 3 du Sprint 4.1 interdit explicitement.
+     *
+     * @param montantConsolide total en FCFA entiers, tel que rendu par le service
+     *        Saisie
+     * @throws IllegalArgumentException sur un montant negatif. Un etat ne peut pas
+     *         couter moins que rien, et un negatif signalerait une lecture fausse
+     *         plutot qu'un cas metier
+     */
+    public void reporterMontantTotal(int montantConsolide) {
+        if (montantConsolide < 0) {
+            throw new IllegalArgumentException(
+                    "Montant total negatif (" + montantConsolide + ") pour le processus " + id
+                            + " : refus plutot que report d'une valeur qui ne peut pas etre juste.");
+        }
+        this.montantTotal = montantConsolide;
+    }
+
     // --- Lecture ---------------------------------------------------------------
 
     public Long getId() {

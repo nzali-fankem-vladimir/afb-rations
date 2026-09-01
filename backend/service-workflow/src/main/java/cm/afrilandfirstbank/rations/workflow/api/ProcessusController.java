@@ -16,7 +16,9 @@ import org.springframework.web.bind.annotation.RestController;
 import cm.afrilandfirstbank.rations.workflow.api.dto.DeclenchementProcessusRequest;
 import cm.afrilandfirstbank.rations.workflow.api.dto.EtatProcessusResponse;
 import cm.afrilandfirstbank.rations.workflow.api.dto.ProcessusResponse;
+import cm.afrilandfirstbank.rations.workflow.api.dto.SoumissionResponse;
 import cm.afrilandfirstbank.rations.workflow.application.ProcessusService;
+import cm.afrilandfirstbank.rations.workflow.application.SoumissionService;
 import cm.afrilandfirstbank.rations.workflow.domaine.ProcessusMensuel;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -63,9 +65,12 @@ import jakarta.validation.Valid;
 public class ProcessusController {
 
     private final ProcessusService processusService;
+    private final SoumissionService soumissionService;
 
-    public ProcessusController(ProcessusService processusService) {
+    public ProcessusController(ProcessusService processusService,
+            SoumissionService soumissionService) {
         this.processusService = processusService;
+        this.soumissionService = soumissionService;
     }
 
     /**
@@ -137,6 +142,34 @@ public class ProcessusController {
 
         return ResponseEntity.ok(EtatProcessusResponse.depuis(
                 processusService.consulterEtat(id, enteteAutorisation)));
+    }
+
+    /**
+     * Soumission de l'etat mensuel par l'agent d'unite (US-07, CT-12, CT-13).
+     *
+     * <p><b>Reserve a {@code AGENT_UNITE}.</b> Le role n'est ici que le premier
+     * filtre : la portee d'acces est verifiee en plus, sur l'unite <i>du
+     * processus</i>, aupres du service Identite. Un chef d'unite ne soumet pas a la
+     * place de son agent : ce serait un cumul saisie / validation que RG-12
+     * interdit.
+     *
+     * <p><b>Aucun corps de requete.</b> Tout ce qui est necessaire se deduit du
+     * processus et du jeton : rien n'est laisse au choix de l'appelant, et surtout
+     * pas le montant, qui vient de l'etat consolide et de nulle part ailleurs.
+     *
+     * <p>{@code 200} et non {@code 201} : la soumission ne cree pas la ressource
+     * adressee, elle en change l'etat. La piece jointe, elle, est bien creee, et
+     * la reponse en rend compte.
+     */
+    @PostMapping("/{id}/soumission")
+    @PreAuthorize("hasRole('AGENT_UNITE')")
+    public ResponseEntity<SoumissionResponse> soumettre(
+            @PathVariable Long id,
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String enteteAutorisation,
+            HttpServletRequest requeteHttp) {
+
+        return ResponseEntity.ok(SoumissionResponse.depuis(
+                soumissionService.soumettre(id, enteteAutorisation, requeteHttp.getRemoteAddr())));
     }
 
 }

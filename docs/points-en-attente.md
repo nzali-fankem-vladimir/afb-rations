@@ -50,3 +50,52 @@ d'un incident de sécurité, par exemple), la réponse est à chercher côté
 configuration du realm Keycloak (durée de vie courte des jetons,
 introspection systématique) — pas dans ce service, qui ne stocke ni
 n'émet de jeton.
+
+## Intégration au service de signature électronique de la banque
+
+Sprint 4.2, décision du 1er septembre 2026 (`SignatureService`,
+`docs/controles-completude.md`). **À arbitrer avec la DSI**, pas avec le métier :
+la question n'est pas de savoir si le métier veut une signature, mais de quelle
+infrastructure de confiance la banque dispose et à quelles conditions ce module
+peut s'y raccorder.
+
+**Ce que le module fait aujourd'hui.** RG-09 est tenue par une **mention signée
+horodatée** imprimée sur la pièce jointe (login, rôle figé au moment de l'acte,
+date et heure), doublée d'une **empreinte SHA-256** du fichier enregistrée dans
+`etape_workflow.signature_numerique`.
+
+**Ce que cela prouve.** Que le document archivé n'a pas été altéré depuis la
+dernière signature : on recalcule l'empreinte du fichier et on la compare.
+
+**Ce que cela ne prouve pas, et qu'il ne faut pas laisser croire.**
+
+- Ce n'est **pas une signature électronique au sens juridique**. Aucune clé,
+  aucun certificat, aucune autorité de certification, aucun horodatage qualifié.
+- L'empreinte vit **dans la même base** que le reste du module : elle ne protège
+  pas de quelqu'un qui peut y écrire. Elle détecte une altération du fichier, pas
+  une falsification coordonnée.
+- Seule la **dernière** empreinte reste vérifiable contre le fichier. Le document
+  étant enrichi à chaque validation, les empreintes intermédiaires documentent ce
+  qu'était le document à leur étape sans pouvoir être recontrôlées. C'est
+  l'empreinte finale, après clôture, qui scelle le justificatif archivé.
+
+**La question posée à la DSI.** La banque dispose-t-elle d'un service de
+signature électronique — autorité de certification interne, HSM, horodatage
+qualifié — auquel ce module devrait se raccorder ? Et si oui, sous quelle forme :
+
+| Variante | Ce qu'elle signifie | Ce qu'elle suppose |
+| --- | --- | --- |
+| **Cachet serveur** | Une clé unique du module scelle le document. Prouve que *le module* a produit et scellé la pièce, **pas** qu'une personne l'a signée. | Un certificat de service et sa garde. |
+| **Signature personnelle** | Chaque agent, chef d'unité et directeur réseau signe avec sa propre clé. Seule variante qui honore vraiment « une signature par validation ». | Un certificat par acteur, une conservation des clés (HSM ou carte), une gestion de la révocation. |
+
+**Le point de tension à signaler.** Les spécifications parlent d'une signature
+numérique « **automatique** ». Ce mot exclut la variante *signature personnelle*,
+qui suppose par nature un geste de la personne. Si le contrôle interne exige une
+valeur probante opposable, c'est donc la spécification elle-même qu'il faut
+rouvrir, pas seulement l'implémentation.
+
+**Coût du report : faible.** Le passage à une signature PAdES est un
+enrichissement du document, comme l'est déjà l'apposition des mentions ; la
+géométrie de la page des visas, la convention de nommage et la discipline
+d'écriture confirmée ne sont pas à reprendre. C'est la chaîne de confiance qui
+manque, pas le code.

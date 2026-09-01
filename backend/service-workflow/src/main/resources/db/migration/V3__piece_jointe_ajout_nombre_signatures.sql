@@ -1,0 +1,61 @@
+-- Sprint 4.2 : compteur de signatures reellement apposees sur la piece jointe.
+--
+-- POURQUOI CETTE COLONNE N'ETAIT PAS LA. La table piece_jointe date de la
+-- migration V1 (Sprint 0.5) et suit le dictionnaire (CLAUDE.md section 4), qui
+-- decrit un document « enrichi progressivement des signatures » sans compter ces
+-- signatures. Le guide 4.2 s'appuie pourtant sur nombre_signatures a son etape 5
+-- et dans son controle SQL de la section 8.
+--
+-- POURQUOI ON L'AJOUTE, alors qu'au Sprint 4.1 les cinq colonnes annoncees par le
+-- guide avaient ete REFUSEES (date_declenchement, date_cloture, id_createur,
+-- date_action, date_modification). Le motif du refus etait que ces colonnes
+-- dupliquaient une information deja portee ailleurs : le journal d'audit sait
+-- qui a declenche et quand. Ici, c'est l'inverse : ce compteur porte une
+-- information que RIEN d'autre ne porte.
+--
+-- CE QU'IL MESURE, ET CE QU'IL NE MESURE PAS. Il ne compte pas les etapes du
+-- circuit -- etape_workflow s'en charge deja, et un compteur derive de cette
+-- table serait TOUJOURS d'accord avec elle, donc incapable de reveler quoi que
+-- ce soit. Il compte les signatures REELLEMENT ECRITES DANS LE FICHIER PDF.
+--
+-- L'ecriture disque et le commit de la transaction sont deux evenements
+-- independants : un disque plein, une erreur d'ecriture ou un arret de la JVM
+-- peuvent faire echouer l'un sans l'autre. Le compteur n'a de valeur que s'il
+-- constate l'ecriture, pas l'intention d'ecrire.
+--
+-- REGLE D'INCREMENTATION, A NE JAMAIS RELACHER (decision Sprint 4.2, tranchee
+-- avec l'utilisateur) :
+--
+--   nombre_signatures n'est incremente qu'APRES confirmation d'ecriture du
+--   fichier : ecriture dans un temporaire, flush, FileChannel.force(true) --
+--   fsync reel --, verification de la taille sur disque, puis renommage
+--   atomique. L'ecriture a lieu HORS TRANSACTION et AVANT elle ; si elle
+--   echoue, la transaction ne s'ouvre pas et aucune ligne etape_workflow n'est
+--   creee non plus.
+--
+--   L'incrementer dans la meme transaction que etape_workflow, sans preuve
+--   d'ecriture, viderait cette colonne de son sens et recreerait exactement le
+--   defaut que la decision du Sprint 3.4 ecarte pour le montant total : deux
+--   chemins pour une meme verite.
+--
+-- ASYMETRIE ASSUMEE : fichier ecrit puis transaction en echec laisse un fichier
+-- ORPHELIN sur disque, sans ligne en base. C'est le sens voulu. Mieux vaut un
+-- fichier que rien ne reclame qu'un compteur affirmant une signature absente du
+-- document -- meme raisonnement que la doctrine d'audit du Sprint 1.3, ou la
+-- trace manquante est preferee a la trace fausse.
+--
+-- nom_fichier N'EST PAS AJOUTE : chemin_fichier existe depuis V1 (VARCHAR(500))
+-- et le nom en est le dernier segment. Deux colonnes pour la meme donnee
+-- divergent tot ou tard -- c'est le motif meme du refus du Sprint 4.1.
+--
+-- Migration purement additive et versionnee (CLAUDE.md section 12), sur le
+-- modele de V4 cote Grilles et V2 cote Saisie. La migration V1 n'est pas
+-- modifiee. DEFAULT 0 : les lignes existantes -- il n'y en a aucune, aucune
+-- piece jointe n'ayant ete creee avant ce sous-sprint -- seraient reputees sans
+-- signature, ce qui est la lecture prudente.
+
+ALTER TABLE piece_jointe
+    ADD COLUMN nombre_signatures INTEGER NOT NULL DEFAULT 0;
+
+COMMENT ON COLUMN piece_jointe.nombre_signatures IS
+    'Signatures reellement ecrites dans le fichier PDF (RG-09), au plus trois : agent, chef d''unite, directeur reseau. Incremente UNIQUEMENT apres confirmation d''ecriture disque (fsync + renommage atomique), jamais dans la meme transaction que etape_workflow : sinon il ne mesurerait que le circuit, que etape_workflow decrit deja.';

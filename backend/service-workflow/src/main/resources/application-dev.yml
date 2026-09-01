@@ -51,6 +51,21 @@ app:
     # en 503, jamais autorisee par defaut, et jamais servie depuis un cache.
     url: ${IDENTITE_URL:http://localhost:8081}
 
+  pieces-jointes:
+    # Racine du stockage des documents de l'etat mensuel (Sprint 4.2, RG-09).
+    #
+    # LA BASE NE PORTE QUE DES CHEMINS RELATIFS a cette racine
+    # (piece_jointe.chemin_fichier). Une racine absolue en base rendrait toute la
+    # table fausse le jour ou le volume change de point de montage entre ce poste
+    # et Kubernetes ; ici, seule cette ligne change.
+    #
+    # En production, ce repertoire doit etre un volume PERSISTANT et SAUVEGARDE :
+    # il porte les etats signes, seules pieces justificatives des paiements. Le
+    # perdre ne casse aucun traitement -- la base garde tout le detail -- mais
+    # laisse des lignes piece_jointe qui referencent des fichiers absents.
+    # Point a arreter avec la DSI, au meme titre que les Secrets Kubernetes.
+    repertoire: ${PIECES_JOINTES_REPERTOIRE:./donnees/pieces-jointes}
+
   saisie:
     # Adresse du service Saisie, interroge pour l'etat mensuel consolide
     # (RG-06, GET /saisie/processus/{id}/etat, docs/appel-consolidation.md).

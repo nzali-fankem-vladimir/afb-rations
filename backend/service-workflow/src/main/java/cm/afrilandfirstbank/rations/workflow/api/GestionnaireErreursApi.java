@@ -3,6 +3,8 @@ package cm.afrilandfirstbank.rations.workflow.api;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -21,8 +23,11 @@ import cm.afrilandfirstbank.rations.commun.audit.DeltaAudit;
 import cm.afrilandfirstbank.rations.commun.audit.EvenementAudit;
 import cm.afrilandfirstbank.rations.commun.audit.PublicateurAudit;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.AgentNonHabiliteException;
+import cm.afrilandfirstbank.rations.workflow.domaine.exception.DocumentNonProduitException;
+import cm.afrilandfirstbank.rations.workflow.domaine.exception.EtatIncompletException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.FonctionnaliteNonOuverteException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.MotifRetourRequisException;
+import cm.afrilandfirstbank.rations.workflow.domaine.exception.PieceJointeExistanteException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ProcessusExistantException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ProcessusIntrouvableException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ServiceIdentiteIndisponibleException;
@@ -62,6 +67,8 @@ import jakarta.servlet.http.HttpServletRequest;
  */
 @RestControllerAdvice
 public class GestionnaireErreursApi {
+
+    private static final Logger journal = LoggerFactory.getLogger(GestionnaireErreursApi.class);
 
     private static final String ACTION_ACCES_REFUSE = "ACCES_REFUSE";
     private static final String ENTITE_ACCES = "acces";
@@ -157,6 +164,71 @@ public class GestionnaireErreursApi {
     public ResponseEntity<ErreurApiDto> fonctionnaliteNonOuverte(
             FonctionnaliteNonOuverteException exception, HttpServletRequest requete) {
         return reponse(requete, HttpStatus.UNPROCESSABLE_ENTITY, "FONCTIONNALITE_NON_OUVERTE",
+                exception.getMessage());
+    }
+
+    /**
+     * CT-13 : une soumission incomplete est refusee <b>en listant les manques</b>.
+     *
+     * <p>C'est le seul endroit du module ou le champ {@code manques} du format
+     * d'erreur est renseigne. Un message generique du type « etat incomplet »
+     * obligerait l'agent a chercher lui-meme ce qui cloche, ce que l'etape 2 du
+     * guide 4.2 refuse explicitement.
+     *
+     * <p>{@code 422} et non {@code 409} : rien n'est duplique, c'est une regle de
+     * gestion qui refuse (meme raisonnement qu'au Sprint 2.3 pour
+     * {@code TRANSITION_INTERDITE}).
+     */
+    @ExceptionHandler(EtatIncompletException.class)
+    public ResponseEntity<ErreurApiDto> etatIncomplet(EtatIncompletException exception,
+            HttpServletRequest requete) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(new ErreurApiDto(
+                LocalDateTime.now(),
+                HttpStatus.UNPROCESSABLE_ENTITY.value(),
+                "ETAT_INCOMPLET",
+                exception.getMessage(),
+                requete.getRequestURI(),
+                exception.getManques()));
+    }
+
+    /**
+     * Un document a deja ete genere pour ce processus : il a donc deja ete soumis.
+     *
+     * <p>{@code 409} comme {@code PROCESSUS_EXISTANT} au Sprint 4.1 : quelque chose
+     * est bien duplique. Le refus vient du service, dont le message est lisible ;
+     * la contrainte {@code id_processus UNIQUE} reste le filet en cas de course,
+     * traduite en {@code 409} par le gestionnaire de violation d'integrite.
+     */
+    @ExceptionHandler(PieceJointeExistanteException.class)
+    public ResponseEntity<ErreurApiDto> pieceJointeExistante(PieceJointeExistanteException exception,
+            HttpServletRequest requete) {
+        return reponse(requete, HttpStatus.CONFLICT, "PIECE_JOINTE_EXISTANTE",
+                exception.getMessage());
+    }
+
+    // --- Defaillance du serveur (500) ------------------------------------------
+
+    /**
+     * Le document n'a pas pu etre produit : composition ou ecriture en echec.
+     *
+     * <p>{@code 500} et non {@code 422} : ce n'est ni une maladresse de l'agent, ni
+     * une regle de gestion, c'est une defaillance du serveur. Le presenter comme un
+     * refus metier enverrait l'agent corriger une saisie qui n'a rien de faux.
+     *
+     * <p>Le message affirme que <b>rien n'a ete enregistre</b>, et c'est vrai par
+     * construction : la generation et l'ecriture precedent l'ouverture de la
+     * transaction (decision Sprint 4.2). L'agent peut donc simplement recommencer.
+     *
+     * <p>Journalise en {@code error} avec la pile : contrairement aux refus metier,
+     * celui-ci appelle une intervention d'exploitation (disque plein, volume non
+     * monte, droits d'ecriture).
+     */
+    @ExceptionHandler(DocumentNonProduitException.class)
+    public ResponseEntity<ErreurApiDto> documentNonProduit(DocumentNonProduitException exception,
+            HttpServletRequest requete) {
+        journal.error("DOCUMENT NON PRODUIT sur {} : {}",
+                requete.getRequestURI(), exception.getMessage(), exception);
+        return reponse(requete, HttpStatus.INTERNAL_SERVER_ERROR, "DOCUMENT_NON_PRODUIT",
                 exception.getMessage());
     }
 

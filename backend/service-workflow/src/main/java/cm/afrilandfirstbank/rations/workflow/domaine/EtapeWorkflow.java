@@ -103,6 +103,33 @@ public class EtapeWorkflow {
         }
     }
 
+    /**
+     * Marque l'etape validee et y inscrit la signature (RG-09).
+     *
+     * <p>A la soumission, l'agent ouvre et valide son etape dans le meme geste :
+     * soumettre <i>est</i> l'acte. Aux sous-sprints 4.3 et 4.4, une etape peut en
+     * revanche rester {@link StatutEtapeEnum#EN_ATTENTE} entre son ouverture et la
+     * decision du valideur.
+     *
+     * <p><b>A n'appeler qu'apres confirmation d'ecriture du document.</b> La
+     * signature passee ici est l'empreinte du fichier tel qu'il existe reellement
+     * sur le stockage ; l'inscrire avant l'ecriture ferait affirmer a la base une
+     * signature qui n'est peut-etre nulle part.
+     *
+     * @param signatureNumerique empreinte rendue par le service de signature
+     * @throws IllegalArgumentException sur une signature absente : une etape
+     *         validee sans signature contredirait RG-09 en silence
+     */
+    public void validerAvecSignature(String signatureNumerique) {
+        if (signatureNumerique == null || signatureNumerique.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Aucune signature a inscrire sur l'etape " + nomEtape + " du processus "
+                            + idProcessus + " : RG-09 exige une signature a chaque validation.");
+        }
+        this.statutEtape = StatutEtapeEnum.VALIDEE;
+        this.signatureNumerique = signatureNumerique;
+    }
+
     // --- Lecture ---------------------------------------------------------------
 
     public Long getId() {

@@ -72,6 +72,25 @@
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
         </dependency>
+        <!-- Generation du document mensuel (RG-09, Sprint 4.2). iText 8 se
+             declare par ses deux artefacts kernel et layout : itext-core est un
+             agregat, pas une dependance directe (decision Sprint 0.2,
+             CLAUDE.md section 17). Les versions viennent du dependencyManagement
+             du pom parent.
+
+             kernel : le document PDF lui-meme, l'ecriture et surtout la RELECTURE
+                      (PdfReader) dont dependra l'enrichissement du document par
+                      les signatures des sous-sprints 4.3 et 4.4.
+             layout : la mise en page de haut niveau (paragraphes, tableaux,
+                      canevas positionnes) qui porte la charte section 8.2. -->
+        <dependency>
+            <groupId>com.itextpdf</groupId>
+            <artifactId>kernel</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.itextpdf</groupId>
+            <artifactId>layout</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
