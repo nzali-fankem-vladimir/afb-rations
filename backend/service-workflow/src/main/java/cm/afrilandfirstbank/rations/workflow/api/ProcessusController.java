@@ -16,9 +16,12 @@ import org.springframework.web.bind.annotation.RestController;
 import cm.afrilandfirstbank.rations.workflow.api.dto.DeclenchementProcessusRequest;
 import cm.afrilandfirstbank.rations.workflow.api.dto.EtatProcessusResponse;
 import cm.afrilandfirstbank.rations.workflow.api.dto.ProcessusResponse;
+import cm.afrilandfirstbank.rations.workflow.api.dto.RetourRequest;
+import cm.afrilandfirstbank.rations.workflow.api.dto.RetourResponse;
 import cm.afrilandfirstbank.rations.workflow.api.dto.SoumissionResponse;
 import cm.afrilandfirstbank.rations.workflow.api.dto.ValidationResponse;
 import cm.afrilandfirstbank.rations.workflow.application.ProcessusService;
+import cm.afrilandfirstbank.rations.workflow.application.RetourService;
 import cm.afrilandfirstbank.rations.workflow.application.SoumissionService;
 import cm.afrilandfirstbank.rations.workflow.application.ValidationService;
 import cm.afrilandfirstbank.rations.workflow.domaine.ProcessusMensuel;
@@ -34,13 +37,13 @@ import jakarta.validation.Valid;
  *   GET  /processus/{id}                   detail et statut    roles du circuit   (4.1)
  *   GET  /processus/{id}/etat              etat consolide      roles du circuit   (4.1)
  *   POST /processus/{id}/soumission        soumission          AGENT_UNITE        (4.2)
- *   POST /processus/{id}/validation        validation DA       CHEF_UNITE_DA      (4.3)
+ *   POST /processus/{id}/validation        validation DA et DR DA, DR            (4.3, 4.4)
+ *   POST /processus/{id}/retour            retour motive       DA, DR             (4.4)
  * </pre>
  *
- * <p><b>{@code POST /processus/{id}/retour} n'existe pas encore</b>, et la
- * validation n'est pas encore ouverte au directeur reseau : ce sont le sous-sprint
- * 4.4. Rien n'est cree par anticipation — un endpoint declare mais inoperant est
- * pire qu'un endpoint absent, il se decouvre a l'usage.
+ * <p>Les six endpoints du contrat d'API sont desormais tous servis, et il n'y en a
+ * pas un de plus. La reprise d'un etat retourne n'en ajoute aucun : elle est portee
+ * par la resoumission (voir {@code SoumissionService}).
  *
  * <h2>Les roles ne sont pas les memes selon l'endpoint</h2>
  *
@@ -70,13 +73,16 @@ public class ProcessusController {
     private final ProcessusService processusService;
     private final SoumissionService soumissionService;
     private final ValidationService validationService;
+    private final RetourService retourService;
 
     public ProcessusController(ProcessusService processusService,
             SoumissionService soumissionService,
-            ValidationService validationService) {
+            ValidationService validationService,
+            RetourService retourService) {
         this.processusService = processusService;
         this.soumissionService = soumissionService;
         this.validationService = validationService;
+        this.retourService = retourService;
     }
 
     /**
@@ -122,9 +128,8 @@ public class ProcessusController {
             @PathVariable Long id,
             @RequestHeader(HttpHeaders.AUTHORIZATION) String enteteAutorisation) {
 
-        ProcessusMensuel processus = processusService.consulter(id, enteteAutorisation);
-
-        return ResponseEntity.ok(ProcessusResponse.depuis(processus));
+        return ResponseEntity.ok(
+                ProcessusResponse.depuis(processusService.consulter(id, enteteAutorisation)));
     }
 
     /**
@@ -179,18 +184,23 @@ public class ProcessusController {
     }
 
     /**
-     * Validation de premier niveau par le Chef d'Unite, avec aiguillage au seuil
-     * (US-08, US-09, CT-14, CT-15).
+     * Validation d'un etat, aux deux niveaux du circuit (US-08, US-09, US-10, CT-14,
+     * CT-15, CT-19).
      *
-     * <p><b>Reserve a {@code CHEF_UNITE_DA} au sous-sprint 4.3.</b> Le contrat
-     * d'API destine cet endpoint aux deux valideurs, « DA ou DR selon le niveau » ;
-     * le second niveau est le sous-sprint 4.4, et le role du directeur reseau y sera
-     * ajoute avec le code qui le sert. Ouvrir le role avant d'avoir la transition
-     * {@code EN_ATTENTE_DR -> CLOTURE} laisserait le directeur reseau devant un
-     * refus de statut incomprehensible.
+     * <p><b>Ouvert aux deux valideurs</b>, comme le veut le contrat d'API — « DA ou
+     * DR selon le niveau ». Le role du directeur reseau est ajoute au sous-sprint 4.4
+     * en meme temps que la transition {@code EN_ATTENTE_DR -> CLOTURE} qui le sert :
+     * l'ouvrir plus tot l'aurait place devant un refus de statut incomprehensible.
      *
-     * <p>Le role n'est que le premier filtre : la portee d'acces est verifiee en
-     * plus, sur l'unite <i>du processus</i>, aupres du service Identite.
+     * <p><b>C'est le statut du dossier qui designe le niveau traite</b>, pas le role
+     * de l'appelant ; le role est ensuite verifie contre ce niveau. Le raisonnement
+     * est dans {@code NiveauValidation}. Consequence visible ici : le
+     * {@code @PreAuthorize} ne peut pas trancher seul, il ne fait qu'ecarter les
+     * roles etrangers au circuit de validation.
+     *
+     * <p>Le role n'est donc que le premier filtre. La portee d'acces est verifiee en
+     * plus, sur l'unite <i>du processus</i>, aupres du service Identite, puis la
+     * separation des taches (RG-12) sur les etapes deja realisees.
      *
      * <p><b>Aucun corps de requete.</b> Le montant vient du processus, le seuil de
      * {@code parametre_systeme} : rien n'est laisse au choix de l'appelant, et
@@ -198,12 +208,15 @@ public class ProcessusController {
      *
      * <p>{@code 200} et non {@code 201} : la validation ne cree pas la ressource
      * adressee, elle en change l'etat. Refus possibles : {@code 422
-     * TRANSITION_INTERDITE} hors statut {@code EN_ATTENTE_DA} ; {@code 403} hors
-     * role ou hors portee ; {@code 500 SEUIL_INDISPONIBLE} si le seuil RG-08 n'est
-     * pas lisible ; {@code 503} si le service Identite ne repond pas.
+     * TRANSITION_INTERDITE} si le dossier n'attend aucune validation ; {@code 403
+     * ACCES_REFUSE} si le role ne tient pas le niveau attendu ; {@code 403
+     * SEPARATION_TACHES} si l'appelant a deja agi sur cette version du dossier ;
+     * {@code 403 UTILISATEUR_NON_HABILITE} hors portee ; {@code 500
+     * SEUIL_INDISPONIBLE} si le seuil RG-08 n'est pas lisible au premier niveau ;
+     * {@code 503} si le service Identite ne repond pas.
      */
     @PostMapping("/{id}/validation")
-    @PreAuthorize("hasRole('CHEF_UNITE_DA')")
+    @PreAuthorize("hasAnyRole('CHEF_UNITE_DA', 'DIRECTEUR_RESEAU_DR')")
     public ResponseEntity<ValidationResponse> valider(
             @PathVariable Long id,
             @RequestHeader(HttpHeaders.AUTHORIZATION) String enteteAutorisation,
@@ -211,6 +224,47 @@ public class ProcessusController {
 
         return ResponseEntity.ok(ValidationResponse.depuis(
                 validationService.valider(id, enteteAutorisation, requeteHttp.getRemoteAddr())));
+    }
+
+    /**
+     * Retour motive de l'etat a l'agent d'unite (US-10, US-11, CT-16, CT-20, CT-23).
+     *
+     * <p><b>Ouvert aux deux valideurs</b>, comme le veut le contrat d'API. Comme pour
+     * la validation, c'est le <b>statut du dossier</b> qui designe le niveau qui
+     * retourne, et le role de l'appelant est verifie contre lui : retourner et valider
+     * sont les deux issues d'un meme geste, offertes au meme acteur au meme moment.
+     *
+     * <p><b>RG-11 : le retour ramene toujours a l'agent</b>, jamais au niveau
+     * precedent. Un retour du directeur reseau ne repasse pas par le chef d'unite : le
+     * statut atteint est {@code RETOURNE} dans les deux cas, et la reponse le montre a
+     * cote du niveau d'origine pour que ce soit lisible sans documentation.
+     *
+     * <p><b>RG-10 : le motif est obligatoire</b>, et une suite d'espaces n'en est pas
+     * un — {@code @NotBlank} sur {@link RetourRequest} refuse les deux en {@code 400
+     * REQUETE_INVALIDE}, et la regle est redite en {@code 422 MOTIF_OBLIGATOIRE} par le
+     * service et par la machine a etats.
+     *
+     * <p>{@code 200} et non {@code 201} : le retour ne cree pas la ressource adressee,
+     * il en change l'etat. Refus possibles : {@code 400 REQUETE_INVALIDE} motif vide ;
+     * {@code 422 MOTIF_OBLIGATOIRE} ; {@code 422 TRANSITION_INTERDITE} si le dossier
+     * n'est pas en attente de decision ; {@code 403 ACCES_REFUSE} si le role ne tient
+     * pas le niveau attendu ; {@code 403 UTILISATEUR_NON_HABILITE} hors portee ;
+     * {@code 503} si le service Identite ne repond pas.
+     *
+     * <p><b>Aucun controle de separation des taches ici</b> : RG-12 interdit de
+     * <i>valider</i> un dossier qu'on a soutenu, pas de le refuser. Voir
+     * {@code RetourService}.
+     */
+    @PostMapping("/{id}/retour")
+    @PreAuthorize("hasAnyRole('CHEF_UNITE_DA', 'DIRECTEUR_RESEAU_DR')")
+    public ResponseEntity<RetourResponse> retourner(
+            @PathVariable Long id,
+            @Valid @RequestBody RetourRequest requete,
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String enteteAutorisation,
+            HttpServletRequest requeteHttp) {
+
+        return ResponseEntity.ok(RetourResponse.depuis(retourService.retourner(
+                id, requete.motif(), enteteAutorisation, requeteHttp.getRemoteAddr())));
     }
 
 }

@@ -7,7 +7,7 @@ import cm.afrilandfirstbank.rations.commun.audit.DeltaAudit;
 import cm.afrilandfirstbank.rations.commun.audit.EvenementAudit;
 import cm.afrilandfirstbank.rations.commun.audit.PublicateurAudit;
 import cm.afrilandfirstbank.rations.workflow.domaine.EtapeWorkflow;
-import cm.afrilandfirstbank.rations.workflow.domaine.NomEtapeEnum;
+import cm.afrilandfirstbank.rations.workflow.domaine.NiveauValidation;
 import cm.afrilandfirstbank.rations.workflow.domaine.PieceJointe;
 import cm.afrilandfirstbank.rations.workflow.domaine.ProcessusMensuel;
 import cm.afrilandfirstbank.rations.workflow.domaine.StatutEnum;
@@ -20,7 +20,7 @@ import cm.afrilandfirstbank.rations.workflow.infrastructure.PieceJointeRepositor
 import cm.afrilandfirstbank.rations.workflow.infrastructure.ProcessusMensuelRepository;
 
 /**
- * Le seul bloc transactionnel de la validation du Chef d'Unite.
+ * Le seul bloc transactionnel de la validation, aux deux niveaux du circuit.
  *
  * <p>Classe a part pour les deux raisons du Sprint 4.2, dans le meme ordre.
  * <b>Technique</b> : Spring pose ses transactions par mandataire, et
@@ -33,6 +33,14 @@ import cm.afrilandfirstbank.rations.workflow.infrastructure.ProcessusMensuelRepo
  * commence, le document estampe est deja sur le stockage, {@code fsync} effectue et
  * renomme atomiquement : incrementer {@code piece_jointe.nombre_signatures}
  * <i>constate</i> donc une ecriture, il ne l'anticipe pas (migration V3).
+ *
+ * <h2>Le niveau vient d'en haut, il n'est pas rededuit ici</h2>
+ *
+ * <p>{@link NiveauValidation} est passe en parametre par {@link ValidationService},
+ * qui l'a lu sur le statut du dossier. Le rededuire ici a partir du role de l'acteur
+ * ou du statut relu creerait un second endroit ou le niveau se decide, donc une
+ * divergence possible sur la regle qui commande le niveau d'approbation de la
+ * banque — la meme faute que d'ecrire une seconde comparaison au seuil.
  *
  * <h2>La cloture ne transmet rien a la comptabilite</h2>
  *
@@ -67,12 +75,16 @@ public class EnregistrementValidation {
      * Enregistre la validation : etape signee, compteur de signatures, transition
      * d'aiguillage, audit.
      *
+     * @param niveau le niveau valide, designe par le statut du dossier
      * @param signature preuve d'ecriture rendue par {@link SignatureService}
-     * @param aiguillage la decision RG-08, deja prise hors transaction
+     * @param aiguillage la decision RG-08 au premier niveau, <b>nulle au second</b> :
+     *        apres le visa du directeur reseau il n'y a plus d'echelon, donc rien a
+     *        arbitrer
      */
     @Transactional
-    public ResultatValidation enregistrer(Long idProcessus, ActeurSignataire acteur,
-            ResultatSignature signature, ResultatAiguillage aiguillage, String adresseIp) {
+    public ResultatValidation enregistrer(Long idProcessus, NiveauValidation niveau,
+            ActeurSignataire acteur, ResultatSignature signature, ResultatAiguillage aiguillage,
+            String adresseIp) {
 
         // Relecture dans la transaction. Entre le controle de ValidationService et cet
         // instant, deux appels reseau et une ecriture disque se sont ecoules : une
@@ -80,7 +92,7 @@ public class EnregistrementValidation {
         ProcessusMensuel processus = processusMensuelRepository.findById(idProcessus)
                 .orElseThrow(() -> new ProcessusIntrouvableException(idProcessus));
 
-        exigerStatutEncoreValidable(processus);
+        exigerStatutEncoreValidable(processus, niveau);
         exigerMontantInchange(processus, aiguillage);
 
         PieceJointe pieceJointe = pieceJointeRepository.findByIdProcessus(idProcessus)
@@ -92,43 +104,66 @@ public class EnregistrementValidation {
         StatutEnum statutAvant = processus.getStatut();
 
         EtapeWorkflow etape = new EtapeWorkflow(idProcessus, acteur.id(),
-                ordreEtapeSuivant(idProcessus), NomEtapeEnum.VALIDATION_DA);
+                ordreEtapeSuivant(idProcessus), niveau.nomEtape());
         etape.validerAvecSignature(signature.empreinte());
 
         // Le fichier porte desormais une signature de plus, et son ecriture est
-        // confirmee : le compteur passe a deux. Il ne repart jamais a un — le document
-        // est enrichi, jamais regenere.
+        // confirmee : le compteur avance d'un cran.
         pieceJointe.enregistrerSignatureSupplementaire();
 
-        appliquerAiguillage(processus, aiguillage);
+        appliquerTransition(processus, niveau, aiguillage);
 
         ProcessusMensuel enregistre = processusMensuelRepository.save(processus);
         EtapeWorkflow etapeEnregistree = etapeWorkflowRepository.save(etape);
         PieceJointe pieceEnregistree = pieceJointeRepository.save(pieceJointe);
 
-        publierValidation(enregistre, acteur, signature, aiguillage, statutAvant, adresseIp);
+        publierValidation(enregistre, niveau, acteur, signature, aiguillage, statutAvant,
+                adresseIp);
 
         return new ResultatValidation(
-                enregistre, pieceEnregistree, etapeEnregistree, aiguillage);
+                enregistre, pieceEnregistree, etapeEnregistree, niveau, aiguillage);
     }
 
     // --- Application de la decision ---------------------------------------------
 
     /**
-     * Applique la transition correspondant a la decision d'aiguillage.
+     * Applique la transition d'ET01 qui correspond au niveau valide.
      *
-     * <p><b>Cette methode ne compare rien.</b> Elle traduit une decision deja prise
-     * par {@link AiguillageService} en l'une des deux transitions d'ET01 qui partent
-     * de {@link StatutEnum#EN_ATTENTE_DA}. C'est ce qui garantit qu'il n'existe,
-     * dans tout le module, qu'un seul endroit ou un montant est compare a un seuil :
+     * <p><b>Cette methode ne compare rien.</b> Au premier niveau, elle traduit une
+     * decision deja prise par {@link AiguillageService} en l'une des deux transitions
+     * qui partent de {@code EN_ATTENTE_DA}. C'est ce qui garantit qu'il n'existe, dans
+     * tout le module, qu'un seul endroit ou un montant est compare a un seuil :
      * refaire la comparaison ici — ne serait-ce que « pour verifier » — creerait un
      * second chemin, donc une divergence possible.
      *
-     * <p>Le {@code switch} sur l'enumeration est exhaustif : ajouter une troisieme
-     * issue a {@link DecisionAiguillage} un jour ferait echouer la compilation ici,
-     * plutot que de laisser une decision sans effet.
+     * <p>Au second niveau, <b>il n'y a rien a arbitrer</b> : apres le visa du
+     * directeur reseau, il n'y a plus d'echelon, et la seule issue est la cloture. Le
+     * service d'aiguillage n'est meme pas appele en amont, donc {@code aiguillage} est
+     * nul — un nul qui signifie « aucune decision a prendre », et non « decision
+     * inconnue » : c'est le niveau qui le determine, pas l'inverse.
+     *
+     * <p>Les deux {@code switch} sont exhaustifs sur leurs enumerations : ajouter un
+     * troisieme niveau ou une troisieme issue d'aiguillage ferait echouer la
+     * compilation ici, plutot que de laisser une decision sans effet.
      */
+    private void appliquerTransition(ProcessusMensuel processus, NiveauValidation niveau,
+            ResultatAiguillage aiguillage) {
+
+        switch (niveau) {
+            case CHEF_UNITE -> appliquerAiguillage(processus, aiguillage);
+            case DIRECTEUR_RESEAU ->
+                    TransitionProcessus.cloturerApresValidationDirecteurReseau(processus);
+        }
+    }
+
     private void appliquerAiguillage(ProcessusMensuel processus, ResultatAiguillage aiguillage) {
+        if (aiguillage == null) {
+            throw new IllegalStateException(
+                    "Aucune decision d'aiguillage pour la validation de premier niveau du "
+                            + "processus " + processus.getId() + " : RG-08 exige que le montant "
+                            + "ait ete confronte au seuil avant la transition.");
+        }
+
         switch (aiguillage.decision()) {
             case SOUS_SEUIL_CLOTURE_DIRECTE ->
                     TransitionProcessus.cloturerApresValidationChefUnite(processus);
@@ -162,13 +197,15 @@ public class EnregistrementValidation {
      * assumee du Sprint 4.2, transposee. Un visa en trop sur un PDF se constate et
      * s'explique ; un compteur affirmant une signature absente du fichier, non.
      */
-    private void exigerStatutEncoreValidable(ProcessusMensuel processus) {
-        if (processus.getStatut() != StatutEnum.EN_ATTENTE_DA) {
+    private void exigerStatutEncoreValidable(ProcessusMensuel processus,
+            NiveauValidation niveau) {
+        if (processus.getStatut() != niveau.statutRequis()) {
             throw new TransitionProcessusInterditeException(
                     "L'etat " + processus.getId() + " a change de statut pendant la preparation "
                             + "de la validation : il est passe a " + processus.getStatut()
-                            + ". Il a vraisemblablement ete valide par ailleurs. Rechargez le "
-                            + "dossier avant toute nouvelle action.");
+                            + ", alors que la validation du " + niveau.libelle() + " exige "
+                            + niveau.statutRequis() + ". Il a vraisemblablement ete traite par "
+                            + "ailleurs. Rechargez le dossier avant toute nouvelle action.");
         }
     }
 
@@ -184,6 +221,11 @@ public class EnregistrementValidation {
      * fragile a la prochaine evolution du circuit.
      */
     private void exigerMontantInchange(ProcessusMensuel processus, ResultatAiguillage aiguillage) {
+        if (aiguillage == null) {
+            // Second niveau : aucun montant n'a servi a decider quoi que ce soit, il
+            // n'y a donc rien a confronter.
+            return;
+        }
         if (processus.getMontantTotal() != aiguillage.montantTotalFcfa()) {
             throw new TransitionProcessusInterditeException(
                     "Le montant de l'etat " + processus.getId() + " a change pendant la validation ("
@@ -208,9 +250,29 @@ public class EnregistrementValidation {
      * par {@code rations-audit-commun} (doctrine Sprint 1.3). Un rollback ne laisse
      * donc jamais la trace d'une validation annulee.
      */
-    private void publierValidation(ProcessusMensuel processus, ActeurSignataire acteur,
-            ResultatSignature signature, ResultatAiguillage aiguillage, StatutEnum statutAvant,
-            String adresseIp) {
+    private void publierValidation(ProcessusMensuel processus, NiveauValidation niveau,
+            ActeurSignataire acteur, ResultatSignature signature, ResultatAiguillage aiguillage,
+            StatutEnum statutAvant, String adresseIp) {
+
+        DeltaAudit delta = DeltaAudit.nouveau()
+                .champ("statut", statutAvant, processus.getStatut())
+                .contexte("niveau", niveau)
+                .contexte("etape", niveau.nomEtape())
+                .contexte("auteur", acteur.login())
+                .contexte("role", acteur.role())
+                .contexte("codeUnite", processus.getCodeUnite())
+                .contexte("moisPaiement", processus.getMoisPaiement())
+                .contexte("anneePaiement", processus.getAnneePaiement())
+                .contexte("montantTotal", processus.getMontantTotal())
+                .contexte("pieceJointe", signature.document().cheminRelatif())
+                .contexte("empreinte", signature.empreinte());
+
+        // Le seuil et la decision n'existent qu'au premier niveau. Les inscrire a
+        // vide au second laisserait croire qu'une comparaison a eu lieu.
+        if (aiguillage != null) {
+            delta.contexte("seuilApplique", aiguillage.seuilApplique())
+                    .contexte("aiguillage", aiguillage.decision());
+        }
 
         publicateurAudit.publier(EvenementAudit.de(
                 acteur.id(),
@@ -218,20 +280,7 @@ public class EnregistrementValidation {
                 ENTITE_CIBLE,
                 processus.getId(),
                 adresseIp,
-                DeltaAudit.nouveau()
-                        .champ("statut", statutAvant, processus.getStatut())
-                        .contexte("etape", NomEtapeEnum.VALIDATION_DA)
-                        .contexte("auteur", acteur.login())
-                        .contexte("role", acteur.role())
-                        .contexte("codeUnite", processus.getCodeUnite())
-                        .contexte("moisPaiement", processus.getMoisPaiement())
-                        .contexte("anneePaiement", processus.getAnneePaiement())
-                        .contexte("montantTotal", aiguillage.montantTotalFcfa())
-                        .contexte("seuilApplique", aiguillage.seuilApplique())
-                        .contexte("aiguillage", aiguillage.decision())
-                        .contexte("pieceJointe", signature.document().cheminRelatif())
-                        .contexte("empreinte", signature.empreinte())
-                        .enJson()));
+                delta.enJson()));
     }
 
 }

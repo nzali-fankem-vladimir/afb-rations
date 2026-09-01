@@ -30,6 +30,8 @@ import cm.afrilandfirstbank.rations.workflow.domaine.exception.MotifRetourRequis
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.PieceJointeExistanteException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ProcessusExistantException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ProcessusIntrouvableException;
+import cm.afrilandfirstbank.rations.workflow.domaine.exception.RoleNonAttenduException;
+import cm.afrilandfirstbank.rations.workflow.domaine.exception.SeparationTachesException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ServiceIdentiteIndisponibleException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ServiceSaisieIndisponibleException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.SeuilIndisponibleException;
@@ -97,6 +99,43 @@ public class GestionnaireErreursApi {
         publierRefus(requete, "HABILITATION_ABSENTE", exception.getMessage());
         return reponse(requete, HttpStatus.FORBIDDEN, "UTILISATEUR_NON_HABILITE",
                 exception.getMessage());
+    }
+
+    /**
+     * Le role de l'appelant n'est pas celui que le dossier attend a ce stade (RG-07).
+     *
+     * <p>{@code 403 ACCES_REFUSE}, comme le refus de role de Spring Security : c'est
+     * la meme nature de refus. Seul le message differe, et c'est tout l'objet de ce
+     * gestionnaire — dire quel niveau le dossier attend, plutot que « votre role ne
+     * permet pas cette action », qui serait faux pour un valideur du circuit.
+     */
+    @ExceptionHandler(RoleNonAttenduException.class)
+    public ResponseEntity<ErreurApiDto> roleNonAttendu(RoleNonAttenduException exception,
+            HttpServletRequest requete) {
+        publierRefus(requete, "ROLE_INSUFFISANT", exception.getMessage());
+        return reponse(requete, HttpStatus.FORBIDDEN, "ACCES_REFUSE", exception.getMessage());
+    }
+
+    /**
+     * Separation des taches (RG-12) : {@code 403 SEPARATION_TACHES}, code du contrat
+     * d'API section 5.
+     *
+     * <p><b>Un troisieme code de refus en 403, et ce n'est pas une redondance.</b>
+     * Celui-ci dit a l'utilisateur qu'il a le bon role et la bonne portee, mais qu'il
+     * a deja agi sur ce dossier : rien ne lui manque, c'est le dossier qui doit
+     * changer de mains. Le confondre avec {@code ACCES_REFUSE} ou
+     * {@code UTILISATEUR_NON_HABILITE} enverrait un chef d'unite reclamer une
+     * habilitation qu'il possede deja.
+     *
+     * <p>Trace en audit comme les deux autres refus (CT-04), avec son propre motif :
+     * un controle interne doit pouvoir compter les tentatives de cumul separement des
+     * tentatives d'acces hors perimetre.
+     */
+    @ExceptionHandler(SeparationTachesException.class)
+    public ResponseEntity<ErreurApiDto> separationTaches(SeparationTachesException exception,
+            HttpServletRequest requete) {
+        publierRefus(requete, "SEPARATION_TACHES", exception.getMessage());
+        return reponse(requete, HttpStatus.FORBIDDEN, "SEPARATION_TACHES", exception.getMessage());
     }
 
     @ExceptionHandler(ServiceIdentiteIndisponibleException.class)

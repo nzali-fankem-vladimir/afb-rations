@@ -8,13 +8,17 @@ import cm.afrilandfirstbank.rations.commun.audit.EvenementAudit;
 import cm.afrilandfirstbank.rations.commun.audit.PublicateurAudit;
 import cm.afrilandfirstbank.rations.workflow.api.dto.DeclenchementProcessusRequest;
 import cm.afrilandfirstbank.rations.workflow.application.ResultatHabilitationUnite.AgentHabilite;
+import cm.afrilandfirstbank.rations.workflow.domaine.EtapeWorkflow;
 import cm.afrilandfirstbank.rations.workflow.domaine.ProcessusMensuel;
+import cm.afrilandfirstbank.rations.workflow.domaine.StatutEnum;
+import cm.afrilandfirstbank.rations.workflow.domaine.StatutEtapeEnum;
 import cm.afrilandfirstbank.rations.workflow.domaine.TransitionProcessus;
 import cm.afrilandfirstbank.rations.workflow.domaine.TypeProcessusEnum;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.FonctionnaliteNonOuverteException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ProcessusExistantException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ProcessusIntrouvableException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ServiceSaisieIndisponibleException;
+import cm.afrilandfirstbank.rations.workflow.infrastructure.EtapeWorkflowRepository;
 import cm.afrilandfirstbank.rations.workflow.infrastructure.ProcessusMensuelRepository;
 
 /**
@@ -32,15 +36,18 @@ public class ProcessusService {
     private static final String ACTION_DECLENCHEMENT = "DECLENCHEMENT_PROCESSUS";
 
     private final ProcessusMensuelRepository processusMensuelRepository;
+    private final EtapeWorkflowRepository etapeWorkflowRepository;
     private final HabilitationService habilitationService;
     private final ConsolidationClient consolidationClient;
     private final PublicateurAudit publicateurAudit;
 
     public ProcessusService(ProcessusMensuelRepository processusMensuelRepository,
+            EtapeWorkflowRepository etapeWorkflowRepository,
             HabilitationService habilitationService,
             ConsolidationClient consolidationClient,
             PublicateurAudit publicateurAudit) {
         this.processusMensuelRepository = processusMensuelRepository;
+        this.etapeWorkflowRepository = etapeWorkflowRepository;
         this.habilitationService = habilitationService;
         this.consolidationClient = consolidationClient;
         this.publicateurAudit = publicateurAudit;
@@ -116,13 +123,50 @@ public class ProcessusService {
      * aucune association paresseuse : l'entite est complete des le
      * {@code findById}.
      */
-    public ProcessusMensuel consulter(Long idProcessus, String enteteAutorisation) {
+    public DetailProcessus consulter(Long idProcessus, String enteteAutorisation) {
         ProcessusMensuel processus = processusMensuelRepository.findById(idProcessus)
                 .orElseThrow(() -> new ProcessusIntrouvableException(idProcessus));
 
         habilitationService.exigerHabilitationSurUnite(processus.getCodeUnite(), enteteAutorisation);
 
-        return processus;
+        return new DetailProcessus(processus, motifDuRetourEnCours(processus));
+    }
+
+    /**
+     * Le motif du dernier retour, <b>tant que l'etat est effectivement retourne</b>
+     * (US-11 : « le motif de retour est visible par l'agent »).
+     *
+     * <p>Nul des que l'agent a resoumis : le motif serait alors une correction deja
+     * faite, affichee sur un dossier reparti dans le circuit — un valideur pourrait le
+     * lire comme un reproche en cours. L'historique complet des retours releve de
+     * {@code GET /reporting/processus/{id}/historique} (Sprint 6), qui est fait pour
+     * cela.
+     *
+     * <p>Une seule lecture, sur un index par processus, et seulement dans le cas
+     * {@code RETOURNE} : les autres statuts ne paient rien.
+     */
+    private String motifDuRetourEnCours(ProcessusMensuel processus) {
+        if (processus.getStatut() != StatutEnum.RETOURNE) {
+            return null;
+        }
+        return etapeWorkflowRepository
+                .findFirstByIdProcessusAndStatutEtapeOrderByOrdreEtapeDesc(
+                        processus.getId(), StatutEtapeEnum.RETOURNEE)
+                .map(EtapeWorkflow::getMotifRetour)
+                .orElse(null);
+    }
+
+    /**
+     * Le detail rendu par {@code GET /processus/{id}} : le processus, et le motif du
+     * retour en cours s'il y en a un.
+     *
+     * <p>Le motif ne vit pas sur {@code processus_mensuel} mais sur
+     * {@code etape_workflow} (CLAUDE.md section 4) : il faut donc les rapprocher
+     * quelque part, et ce quelque part est ici plutot que dans le controleur — la
+     * regle « visible tant que l'etat est retourne » est une regle, pas une question
+     * de presentation.
+     */
+    public record DetailProcessus(ProcessusMensuel processus, String motifRetour) {
     }
 
     /**
@@ -153,7 +197,7 @@ public class ProcessusService {
      *         si Saisie est muet — refus conservateur, jamais un total suppose
      */
     public EtatProcessus consulterEtat(Long idProcessus, String enteteAutorisation) {
-        ProcessusMensuel processus = consulter(idProcessus, enteteAutorisation);
+        ProcessusMensuel processus = consulter(idProcessus, enteteAutorisation).processus();
 
         ResultatConsolidation resultat = consolidationClient.consolider(
                 processus.getId(), processus.getCodeUnite(), enteteAutorisation);

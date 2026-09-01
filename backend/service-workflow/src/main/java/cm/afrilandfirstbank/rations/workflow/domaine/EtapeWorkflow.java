@@ -130,6 +130,33 @@ public class EtapeWorkflow {
         this.signatureNumerique = signatureNumerique;
     }
 
+    /**
+     * Marque l'etape retournee a l'agent et y inscrit le motif (RG-10).
+     *
+     * <p><b>Aucune signature.</b> RG-09 exige une signature « a chaque validation » ;
+     * un retour n'en est pas une — le valideur refuse d'engager la banque, il ne
+     * l'engage pas. Le document n'est donc pas estampe, et il sera de toute facon
+     * regenere a la resoumission, les montants ayant change.
+     *
+     * <p><b>Le motif est exige non vide ici aussi</b>, en plus du {@code @NotBlank}
+     * du DTO et du controle de {@link TransitionProcessus#retournerParChefUnite}.
+     * Trois etages pour la meme regle, parce qu'une etape {@code RETOURNEE} sans
+     * motif ne serait detectee par personne : l'agent lirait « votre etat vous est
+     * retourne » sans savoir quoi corriger, et RG-10 serait enfreinte en silence.
+     *
+     * @param motif ce que l'agent doit corriger ; une chaine d'espaces n'est pas un
+     *        motif
+     */
+    public void retournerAvecMotif(String motif) {
+        if (motif == null || motif.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Aucun motif a inscrire sur l'etape " + nomEtape + " du processus "
+                            + idProcessus + " : RG-10 exige un motif pour tout retour.");
+        }
+        this.statutEtape = StatutEtapeEnum.RETOURNEE;
+        this.motifRetour = motif.strip();
+    }
+
     // --- Lecture ---------------------------------------------------------------
 
     public Long getId() {

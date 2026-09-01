@@ -38,6 +38,7 @@ import cm.afrilandfirstbank.rations.workflow.domaine.exception.FonctionnaliteNon
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ProcessusExistantException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ProcessusIntrouvableException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ServiceSaisieIndisponibleException;
+import cm.afrilandfirstbank.rations.workflow.infrastructure.EtapeWorkflowRepository;
 import cm.afrilandfirstbank.rations.workflow.infrastructure.ProcessusMensuelRepository;
 
 /**
@@ -68,6 +69,9 @@ class ProcessusServiceTest {
     @Autowired
     private ProcessusMensuelRepository processusRepository;
 
+    @Autowired
+    private EtapeWorkflowRepository etapeRepository;
+
     private HabilitationClient habilitationClient;
     private ConsolidationClient consolidationClient;
     private PublicateurAudit publicateurAudit;
@@ -85,6 +89,7 @@ class ProcessusServiceTest {
 
         processusService = new ProcessusService(
                 processusRepository,
+                etapeRepository,
                 new HabilitationService(habilitationClient),
                 consolidationClient,
                 publicateurAudit);
@@ -285,7 +290,7 @@ class ProcessusServiceTest {
         // vide pour n'observer que l'appel de la consultation.
         clearInvocations(habilitationClient);
 
-        ProcessusMensuel relu = processusService.consulter(processus.getId(), JETON);
+        ProcessusMensuel relu = processusService.consulter(processus.getId(), JETON).processus();
 
         assertThat(relu.getId()).isEqualTo(processus.getId());
         verify(habilitationClient).verifier(processus.getCodeUnite(), JETON);

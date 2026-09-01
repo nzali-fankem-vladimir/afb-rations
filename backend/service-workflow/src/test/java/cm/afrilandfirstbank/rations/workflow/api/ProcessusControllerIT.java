@@ -44,6 +44,7 @@ import cm.afrilandfirstbank.rations.commun.audit.PublicateurAudit;
 import cm.afrilandfirstbank.rations.workflow.application.EtatConsolide;
 import cm.afrilandfirstbank.rations.workflow.application.ManqueCompletude;
 import cm.afrilandfirstbank.rations.workflow.application.ProcessusService;
+import cm.afrilandfirstbank.rations.workflow.application.RetourService;
 import cm.afrilandfirstbank.rations.workflow.application.DecisionAiguillage;
 import cm.afrilandfirstbank.rations.workflow.application.ResultatAiguillage;
 import cm.afrilandfirstbank.rations.workflow.application.ResultatSoumission;
@@ -53,10 +54,13 @@ import cm.afrilandfirstbank.rations.workflow.application.ValidationService;
 import cm.afrilandfirstbank.rations.workflow.application.ProcessusService.EtatProcessus;
 import cm.afrilandfirstbank.rations.workflow.domaine.CodeManqueEnum;
 import cm.afrilandfirstbank.rations.workflow.domaine.EtapeWorkflow;
+import cm.afrilandfirstbank.rations.workflow.application.ResultatRetour;
+import cm.afrilandfirstbank.rations.workflow.domaine.NiveauValidation;
 import cm.afrilandfirstbank.rations.workflow.domaine.NomEtapeEnum;
 import cm.afrilandfirstbank.rations.workflow.domaine.PieceJointe;
 import cm.afrilandfirstbank.rations.workflow.domaine.ProcessusMensuel;
 import cm.afrilandfirstbank.rations.workflow.domaine.StatutEnum;
+import cm.afrilandfirstbank.rations.workflow.domaine.exception.SeparationTachesException;
 import cm.afrilandfirstbank.rations.workflow.domaine.TransitionProcessus;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.AgentNonHabiliteException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.DocumentNonProduitException;
@@ -113,6 +117,9 @@ class ProcessusControllerIT {
 
     @MockitoBean
     private ValidationService validationService;
+
+    @MockitoBean
+    private RetourService retourService;
 
     /** Empreinte de reference : 8 caracteres de prefixe plus 64 de SHA-256. */
     private static final String EMPREINTE =
@@ -374,7 +381,8 @@ class ProcessusControllerIT {
     @DisplayName("11. Les cinq champs lus par le service Saisie sont presents (action B-04)")
     void contratInterServicesRespecte() throws Exception {
         keycloakEmet("AGENT_UNITE");
-        when(processusService.consulter(anyLong(), anyString())).thenReturn(unProcessus());
+        when(processusService.consulter(anyLong(), anyString()))
+                .thenReturn(new ProcessusService.DetailProcessus(unProcessus(), null));
 
         mockMvc.perform(get("/processus/740").header(HttpHeaders.AUTHORIZATION, JETON))
                 .andExpect(status().isOk())
@@ -391,7 +399,8 @@ class ProcessusControllerIT {
     @Test
     @DisplayName("12. Les trois roles du circuit peuvent consulter")
     void lesTroisRolesDuCircuitConsultent() throws Exception {
-        when(processusService.consulter(anyLong(), anyString())).thenReturn(unProcessus());
+        when(processusService.consulter(anyLong(), anyString()))
+                .thenReturn(new ProcessusService.DetailProcessus(unProcessus(), null));
 
         for (String role : List.of("AGENT_UNITE", "CHEF_UNITE_DA", "DIRECTEUR_RESEAU_DR")) {
             keycloakEmet(role);
@@ -472,14 +481,15 @@ class ProcessusControllerIT {
     }
 
     @Test
-    @DisplayName("17. Aucun endpoint de retour : il releve du sous-sprint 4.4")
-    void endpointsDesSousSprintsSuivantsAbsents() throws Exception {
+    @DisplayName("17. Six endpoints au contrat, ni plus ni moins : aucun chemin en trop")
+    void aucunEndpointHorsContrat() throws Exception {
         keycloakEmet("AGENT_UNITE");
 
-        // Revise au Sprint 4.3 : /soumission existe depuis le 4.2, /validation depuis
-        // le 4.3. Seul /retour reste a venir, au sous-sprint 4.4. Un endpoint declare
-        // mais inoperant est pire qu'un endpoint absent : il se decouvre a l'usage.
-        for (String chemin : List.of("/processus/740/retour")) {
+        // Revise au Sprint 4.4 : les six endpoints du contrat sont tous servis. Ce test
+        // garde l'autre bord — aucun chemin n'a ete ajoute au passage, et surtout pas
+        // un endpoint de reprise, que la resoumission porte deja (US-11, CT-24).
+        for (String chemin : List.of("/processus/740/reprise", "/processus/740/rejet",
+                "/processus/740/cloture", "/processus/740/transmission")) {
             mockMvc.perform(post(chemin)
                             .header(HttpHeaders.AUTHORIZATION, JETON)
                             .contentType(MediaType.APPLICATION_JSON)
@@ -683,7 +693,7 @@ class ProcessusControllerIT {
         pieceJointe.enregistrerSignatureSupplementaire();
 
         return new ResultatValidation(processus, pieceJointe, etape,
-                new ResultatAiguillage(decision, montant, seuil));
+                NiveauValidation.CHEF_UNITE, new ResultatAiguillage(decision, montant, seuil));
     }
 
     @Test
@@ -729,19 +739,21 @@ class ProcessusControllerIT {
     }
 
     /**
-     * Test 13 du guide 4.3. Les autres roles sont refuses, y compris l'agent qui a
-     * soumis le dossier — c'est le premier etage de RG-12, avant meme la separation
-     * des taches du sous-sprint 4.4.
+     * Test 13 du guide 4.3, revise au 4.4. Les roles etrangers au circuit de validation
+     * sont refuses des le filtre du controleur, y compris l'agent qui a soumis le
+     * dossier — c'est le premier etage de RG-12, avant meme la separation des taches.
      *
-     * <p>Le directeur reseau est refuse lui aussi <b>a ce sous-sprint</b> : la
-     * transition {@code EN_ATTENTE_DR -> CLOTURE} n'est pas encore servie, et lui
-     * ouvrir le role le placerait devant un refus de statut incomprehensible. Le
-     * sous-sprint 4.4 ajoutera les deux ensemble.
+     * <p><b>Le directeur reseau n'en fait plus partie</b> : le sous-sprint 4.4 lui
+     * ouvre le role en meme temps qu'il sert la transition
+     * {@code EN_ATTENTE_DR -> CLOTURE}. S'il se presente devant un etat qui attend le
+     * chef d'unite, il est refuse plus loin, par le service, avec un message qui nomme
+     * le niveau attendu — et non par un « votre role ne permet pas cette action » qui
+     * serait faux.
      */
     @Test
-    @DisplayName("29. Validation par un role autre que CHEF_UNITE_DA : 403, et refus trace")
+    @DisplayName("29. Validation par un role etranger au circuit de validation : 403, et refus trace")
     void validationRoleInsuffisant() throws Exception {
-        for (String role : List.of("AGENT_UNITE", "DIRECTEUR_RESEAU_DR", "ARH")) {
+        for (String role : List.of("AGENT_UNITE", "ARH")) {
             keycloakEmet(role);
 
             mockMvc.perform(post("/processus/{id}/validation", ID)
@@ -754,7 +766,7 @@ class ProcessusControllerIT {
 
         // CT-04 : le refus de role est publie en audit, une fois par tentative.
         ArgumentCaptor<EvenementAudit> capture = ArgumentCaptor.forClass(EvenementAudit.class);
-        verify(publicateurAudit, times(3)).publier(capture.capture());
+        verify(publicateurAudit, times(2)).publier(capture.capture());
         assertThat(capture.getAllValues())
                 .allSatisfy(evenement -> assertThat(evenement.detailJson())
                         .contains("ROLE_INSUFFISANT")
@@ -823,6 +835,185 @@ class ProcessusControllerIT {
                 .andExpect(status().isOk());
 
         verify(validationService).valider(eq(ID), eq(JETON), anyString());
+    }
+
+    // =====================================================================
+    // Sous-sprint 4.4 : second niveau, retour motive, separation des taches
+    // =====================================================================
+
+    /**
+     * Test 5 du guide 4.4. <b>Trois refus en {@code 403}, trois codes distincts.</b>
+     *
+     * <p>Ils demandent trois gestes differents a qui les recoit : changer d'ecran,
+     * demander une habilitation, ou passer la main. Les confondre laisserait un chef
+     * d'unite reclamer indefiniment une habilitation qu'il possede deja.
+     */
+    @Test
+    @DisplayName("36. SEPARATION_TACHES : un 403 distinct de ACCES_REFUSE et UTILISATEUR_NON_HABILITE")
+    void separationTachesEstUnRefusDistinct() throws Exception {
+        keycloakEmet("CHEF_UNITE_DA");
+        when(validationService.valider(eq(ID), anyString(), anyString()))
+                .thenThrow(new SeparationTachesException(
+                        "Vous avez soumis cet etat : vous ne pouvez pas le valider vous-meme "
+                                + "(RG-12, separation des taches)."));
+
+        mockMvc.perform(post("/processus/{id}/validation", ID)
+                        .header(HttpHeaders.AUTHORIZATION, JETON))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("SEPARATION_TACHES"))
+                .andExpect(jsonPath("$.message").value(
+                        org.hamcrest.Matchers.containsString("separation des taches")));
+
+        // CT-04 : le refus est trace, avec son propre motif — un controle interne doit
+        // pouvoir compter les tentatives de cumul separement des acces hors perimetre.
+        ArgumentCaptor<EvenementAudit> capture = ArgumentCaptor.forClass(EvenementAudit.class);
+        verify(publicateurAudit).publier(capture.capture());
+        assertThat(capture.getValue().detailJson())
+                .contains("SEPARATION_TACHES")
+                .doesNotContain("HABILITATION_ABSENTE");
+    }
+
+    @Test
+    @DisplayName("37. Le directeur reseau a desormais acces a l'endpoint de validation")
+    void leDirecteurReseauValide() throws Exception {
+        keycloakEmet("DIRECTEUR_RESEAU_DR");
+        when(validationService.valider(eq(ID), anyString(), anyString()))
+                .thenReturn(uneValidationDeSecondNiveau());
+
+        mockMvc.perform(post("/processus/{id}/validation", ID)
+                        .header(HttpHeaders.AUTHORIZATION, JETON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.statut").value("CLOTURE"))
+                // Pas d'aiguillage au second niveau : les deux champs restent presents,
+                // au meme nom, mais ne portent aucune valeur.
+                .andExpect(jsonPath("$.aiguillage").doesNotExist())
+                .andExpect(jsonPath("$.seuilApplique").doesNotExist())
+                .andExpect(jsonPath("$.pieceJointe.nombreSignatures").value(3))
+                .andExpect(jsonPath("$.etape.nomEtape").value("VALIDATION_DR"));
+    }
+
+    // --- Retour motive (RG-10, RG-11) ---------------------------------------------
+
+    @Test
+    @DisplayName("38. Retour du directeur reseau : 200, statut RETOURNE, motif rendu")
+    void retourNominal() throws Exception {
+        keycloakEmet("DIRECTEUR_RESEAU_DR");
+        when(retourService.retourner(eq(ID), anyString(), anyString(), anyString()))
+                .thenReturn(unRetour(NiveauValidation.DIRECTEUR_RESEAU));
+
+        mockMvc.perform(post("/processus/{id}/retour", ID)
+                        .header(HttpHeaders.AUTHORIZATION, JETON)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"motif\":\"Montant du 12 aout incoherent avec la grille\"}"))
+                .andExpect(status().isOk())
+                // RG-11 : le statut et le niveau d'origine cote a cote, pour que le
+                // directeur reseau voie que le dossier repart a l'agent.
+                .andExpect(jsonPath("$.statut").value("RETOURNE"))
+                .andExpect(jsonPath("$.niveauOrigine").value("DIRECTEUR_RESEAU"))
+                .andExpect(jsonPath("$.etape.nomEtape").value("VALIDATION_DR"))
+                .andExpect(jsonPath("$.etape.statutEtape").value("RETOURNEE"))
+                .andExpect(jsonPath("$.etape.motifRetour")
+                        .value("Montant du 12 aout incoherent avec la grille"));
+    }
+
+    @Test
+    @DisplayName("39. Retour sans motif : 400, la regle est appliquee des le DTO (RG-10)")
+    void retourSansMotif() throws Exception {
+        keycloakEmet("CHEF_UNITE_DA");
+
+        mockMvc.perform(post("/processus/{id}/retour", ID)
+                        .header(HttpHeaders.AUTHORIZATION, JETON)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("REQUETE_INVALIDE"));
+
+        verifyNoInteractions(retourService);
+    }
+
+    @Test
+    @DisplayName("40. Retour avec un motif d'espaces : 400 aussi, le contenu utile fait foi")
+    void retourAvecMotifDEspaces() throws Exception {
+        keycloakEmet("CHEF_UNITE_DA");
+
+        // @NotBlank et non @NotNull : un champ present et un motif absent.
+        mockMvc.perform(post("/processus/{id}/retour", ID)
+                        .header(HttpHeaders.AUTHORIZATION, JETON)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"motif\":\"     \"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("REQUETE_INVALIDE"));
+
+        verifyNoInteractions(retourService);
+    }
+
+    @Test
+    @DisplayName("41. Retour par un role etranger au circuit de validation : 403")
+    void retourRoleInsuffisant() throws Exception {
+        for (String role : List.of("AGENT_UNITE", "ARH")) {
+            keycloakEmet(role);
+
+            mockMvc.perform(post("/processus/{id}/retour", ID)
+                            .header(HttpHeaders.AUTHORIZATION, JETON)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"motif\":\"Journee du 12 en double\"}"))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.code").value("ACCES_REFUSE"));
+        }
+
+        verifyNoInteractions(retourService);
+    }
+
+    @Test
+    @DisplayName("42. Le motif du retour est visible dans le detail du processus (US-11)")
+    void motifVisibleDansLeDetail() throws Exception {
+        keycloakEmet("AGENT_UNITE");
+        ProcessusMensuel retourne = unProcessus();
+        ReflectionTestUtils.setField(retourne, "statut", StatutEnum.RETOURNE);
+
+        when(processusService.consulter(anyLong(), anyString())).thenReturn(
+                new ProcessusService.DetailProcessus(retourne, "Journee du 12 saisie deux fois."));
+
+        mockMvc.perform(get("/processus/740").header(HttpHeaders.AUTHORIZATION, JETON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.statut").value("RETOURNE"))
+                .andExpect(jsonPath("$.motifRetour").value("Journee du 12 saisie deux fois."));
+    }
+
+    // --- Fabriques du sous-sprint 4.4 ----------------------------------------------
+
+    /** Une validation de second niveau : cloture, trois signatures, aucun aiguillage. */
+    private ResultatValidation uneValidationDeSecondNiveau() {
+        ProcessusMensuel processus = unProcessus();
+        ReflectionTestUtils.setField(processus, "statut", StatutEnum.CLOTURE);
+        ReflectionTestUtils.setField(processus, "montantTotal", 150_000);
+
+        EtapeWorkflow etape = new EtapeWorkflow(ID, 12L, 3, NomEtapeEnum.VALIDATION_DR);
+        etape.validerAvecSignature(EMPREINTE);
+        ReflectionTestUtils.setField(etape, "id", 33L);
+        ReflectionTestUtils.setField(etape, "dateCreation", LocalDateTime.of(2026, 9, 3, 11, 5));
+
+        PieceJointe pieceJointe = new PieceJointe(ID, "2026/08/etat-rations-00002-202608-p740.pdf");
+        ReflectionTestUtils.setField(pieceJointe, "id", 12L);
+        ReflectionTestUtils.setField(pieceJointe, "dateCreation",
+                LocalDateTime.of(2026, 9, 1, 10, 24));
+        pieceJointe.enregistrerSignatureSupplementaire();
+        pieceJointe.enregistrerSignatureSupplementaire();
+
+        return new ResultatValidation(processus, pieceJointe, etape,
+                NiveauValidation.DIRECTEUR_RESEAU, null);
+    }
+
+    private ResultatRetour unRetour(NiveauValidation niveau) {
+        ProcessusMensuel processus = unProcessus();
+        ReflectionTestUtils.setField(processus, "statut", StatutEnum.RETOURNE);
+
+        EtapeWorkflow etape = new EtapeWorkflow(ID, 12L, 3, niveau.nomEtape());
+        etape.retournerAvecMotif("Montant du 12 aout incoherent avec la grille");
+        ReflectionTestUtils.setField(etape, "id", 34L);
+        ReflectionTestUtils.setField(etape, "dateCreation", LocalDateTime.of(2026, 9, 3, 14, 40));
+
+        return new ResultatRetour(processus, etape, niveau);
     }
 
 }

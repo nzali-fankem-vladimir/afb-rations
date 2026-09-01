@@ -2,6 +2,7 @@ package cm.afrilandfirstbank.rations.workflow.api.dto;
 
 import java.time.LocalDateTime;
 
+import cm.afrilandfirstbank.rations.workflow.application.ProcessusService.DetailProcessus;
 import cm.afrilandfirstbank.rations.workflow.domaine.ProcessusMensuel;
 import cm.afrilandfirstbank.rations.workflow.domaine.StatutEnum;
 import cm.afrilandfirstbank.rations.workflow.domaine.TypeProcessusEnum;
@@ -42,9 +43,36 @@ public record ProcessusResponse(
         String motifOuverture,
         int montantTotal,
         boolean transmisComptabilite,
-        LocalDateTime dateCreation) {
+        LocalDateTime dateCreation,
+        String motifRetour) {
 
+    /**
+     * Le detail complet : le processus, et le motif du retour en cours s'il y en a un
+     * (US-11 — « le motif de retour est visible par l'agent »).
+     *
+     * <p><b>Champ ajoute en fin de record</b>, comme {@code manques} sur le format
+     * d'erreur au Sprint 4.2 : les onze champs anterieurs gardent leur nom, leur type
+     * et leur ordre. Les cinq premiers sont un contrat inter-services — le service
+     * Saisie les lit a chaque ecriture de ligne pour savoir si l'etat est encore
+     * modifiable — et les renommer ferait refuser toute saisie en {@code 503}, sans
+     * aucune erreur de compilation (action B-04, Sprint 4.1).
+     *
+     * <p>{@code motifRetour} est nul partout ailleurs que sur un etat
+     * {@code RETOURNE} : voir {@code ProcessusService.motifDuRetourEnCours}.
+     */
+    public static ProcessusResponse depuis(DetailProcessus detail) {
+        return depuis(detail.processus(), detail.motifRetour());
+    }
+
+    /**
+     * Sans motif de retour : la forme rendue au declenchement, ou l'etat vient de
+     * naitre et n'a par construction jamais ete retourne.
+     */
     public static ProcessusResponse depuis(ProcessusMensuel processus) {
+        return depuis(processus, null);
+    }
+
+    private static ProcessusResponse depuis(ProcessusMensuel processus, String motifRetour) {
         return new ProcessusResponse(
                 processus.getId(),
                 processus.getStatut(),
@@ -56,7 +84,8 @@ public record ProcessusResponse(
                 processus.getMotifOuverture(),
                 processus.getMontantTotal(),
                 processus.isTransmisComptabilite(),
-                processus.getDateCreation());
+                processus.getDateCreation(),
+                motifRetour);
     }
 
 }

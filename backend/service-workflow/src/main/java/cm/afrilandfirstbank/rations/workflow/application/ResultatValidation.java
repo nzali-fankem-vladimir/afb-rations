@@ -1,6 +1,7 @@
 package cm.afrilandfirstbank.rations.workflow.application;
 
 import cm.afrilandfirstbank.rations.workflow.domaine.EtapeWorkflow;
+import cm.afrilandfirstbank.rations.workflow.domaine.NiveauValidation;
 import cm.afrilandfirstbank.rations.workflow.domaine.PieceJointe;
 import cm.afrilandfirstbank.rations.workflow.domaine.ProcessusMensuel;
 
@@ -23,5 +24,7 @@ public record ResultatValidation(
         ProcessusMensuel processus,
         PieceJointe pieceJointe,
         EtapeWorkflow etape,
+        NiveauValidation niveau,
+        /** Nul au second niveau : aucun aiguillage n'a lieu apres le visa du DR. */
         ResultatAiguillage aiguillage) {
 }

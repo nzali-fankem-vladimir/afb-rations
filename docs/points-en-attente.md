@@ -135,3 +135,38 @@ c'est un point de fragilité qu'il faut connaître avant de le découvrir.
 réservé à `ADMIN` ou à la DRH, publiant un événement d'audit — ce qui fermerait la
 dernière ligne du tableau. Hors périmètre du module tel que spécifié : il n'existe
 aucun endpoint `/parametres` au contrat d'API.
+
+---
+
+## Séparation des tâches dans une unité à un seul valideur (Sprint 4.4)
+
+**Le point.** RG-12 interdit à une même personne d'agir deux fois sur la version d'un
+dossier qui est dans le circuit. La portée d'un chef d'unité est limitée à sa propre
+unité (décision Sprint 1.1), et rien n'oblige une unité à compter plus d'un DA.
+
+**Ce qui est déjà réglé.** Le contrôle porte sur le **cycle courant** et non sur toute
+la vie du processus : un retour clôt un cycle, et le DA qui a retourné un état peut
+valider la version corrigée. Sans ce découpage, le premier retour de chaque unité à un
+seul DA aurait produit un blocage définitif. Voir
+`docs/decisions/2026-09-01-separation-des-taches-et-cycle-de-validation.md`.
+
+**Ce qui reste ouvert.** Le cas où la **même personne** soumet puis doit valider — un
+agent promu chef d'unité qui reprend ses propres dossiers, ou une unité où le chef fait
+lui-même la saisie. Le module refuse (`403 SEPARATION_TACHES`) et le déblocage est
+organisationnel : un suppléant habilité sur l'unité, ou une réattribution par
+l'administrateur. Le module ne peut pas faire mieux : il ne connaît pas l'annuaire des
+valideurs d'une unité, `GET /identite/habilitation` ne répondant qu'à « cette personne
+a-t-elle droit sur cette unité ? », jamais « qui d'autre ? ».
+
+**Ce qui est demandé au métier.**
+
+| Question | Pourquoi elle se pose |
+| --- | --- |
+| Chaque unité dispose-t-elle d'au moins un valideur distinct de l'agent qui saisit ? | Sans cela, le circuit est bloqué dès la première soumission de cette unité, et le refus paraîtra arbitraire à l'utilisateur. |
+| Qui valide quand le chef d'unité est absent ? | La question existait avant le module ; la digitalisation la rend simplement visible et bloquante là où le papier laissait passer. |
+| Un « suppléant » doit-il exister comme habilitation, ou l'administrateur réattribue-t-il au cas par cas ? | La première option demanderait une évolution du service Identité ; la seconde tient avec l'existant. |
+
+**Surveillance.** Les refus `SEPARATION_TACHES` sont tracés en audit avec leur propre
+motif, distinct de `HABILITATION_ABSENTE` et de `ROLE_INSUFFISANT`. Un comptage par
+unité dira si le cas est théorique ou quotidien — et c'est cette mesure, pas une
+hypothèse, qui devra décider d'une éventuelle évolution.

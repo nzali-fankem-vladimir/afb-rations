@@ -31,6 +31,7 @@ import cm.afrilandfirstbank.rations.workflow.application.ResultatConsolidation.E
 import cm.afrilandfirstbank.rations.workflow.application.ResultatHabilitationUnite.AgentHabilite;
 import cm.afrilandfirstbank.rations.workflow.application.ResultatHabilitationUnite.AgentNonHabilite;
 import cm.afrilandfirstbank.rations.workflow.domaine.NomEtapeEnum;
+import cm.afrilandfirstbank.rations.workflow.domaine.PieceJointe;
 import cm.afrilandfirstbank.rations.workflow.domaine.ProcessusMensuel;
 import cm.afrilandfirstbank.rations.workflow.domaine.RoleEnum;
 import cm.afrilandfirstbank.rations.workflow.domaine.StatutEnum;
@@ -345,20 +346,39 @@ class SoumissionServiceTest {
     }
 
     @Test
-    @DisplayName("12. un etat RETOURNE n'est pas soumissible directement : il faut le reprendre d'abord")
-    void etatRetourneRefuse() {
+    @DisplayName("12. un etat RETOURNE est resoumissible : la reprise est portee par la resoumission")
+    void etatRetourneResoumissible() {
+        // Depuis le sous-sprint 4.4, RETOURNE ouvre la soumission (US-11, CT-24) : la
+        // transition RETOURNE -> EN_COURS_SAISIE est appliquee dans la transaction de
+        // resoumission, juste avant EN_COURS_SAISIE -> SOUMIS. Aucun endpoint de
+        // reprise n'existe, le contrat d'API en compte six.
         ProcessusMensuel processus = processusEnSaisie(12);
         TransitionProcessus.soumettre(processus);
         TransitionProcessus.transfererAuChefUnite(processus);
         TransitionProcessus.retournerParChefUnite(processus, "Journee du 3 manquante.");
         processusRepository.saveAndFlush(processus);
 
-        // ET01 impose RETOURNE -> EN_COURS_SAISIE (reprise) avant toute resoumission.
-        // Le message dit le geste attendu, pour que l'agent ne reste pas devant un
-        // refus muet.
-        assertThatThrownBy(() -> soumissionService.soumettre(processus.getId(), JETON, IP))
-                .isInstanceOf(TransitionProcessusInterditeException.class)
-                .hasMessageContaining("reprenez-le pour le corriger");
+        // Le document du premier cycle existe deja : la resoumission le REGENERE
+        // depuis l'etat corrige, elle ne l'enrichit pas.
+        pieceJointeRepository.saveAndFlush(new PieceJointe(
+                processus.getId(), NommageDocument.cheminRelatif(processus)));
+        stockage.ecrireNouveau(NommageDocument.cheminRelatif(processus),
+                "ancien document".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        consolidationRend(etatComplet(processus));
+        profilConnu();
+
+        ResultatSoumission resultat = soumissionService.soumettre(processus.getId(), JETON, IP);
+
+        assertThat(resultat.processus().getStatut()).isEqualTo(StatutEnum.EN_ATTENTE_DA);
+        assertThat(resultat.pieceJointe().getNombreSignatures())
+                .as("le compteur repart a un : les visas d'avant le retour ont disparu "
+                        + "avec l'ancien fichier")
+                .isEqualTo(1);
+        // Le rang de l'etape est calcule depuis le parcours enregistre. Ici, le
+        // premier cycle a ete simule sur l'entite sans creer d'etape en base : le
+        // rang vaut donc un. Le calcul lui-meme est eprouve par le circuit complet
+        // (CircuitCompletIT), ou les etapes existent reellement.
     }
 
     @Test

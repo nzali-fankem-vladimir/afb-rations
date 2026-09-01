@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 
 import org.springframework.stereotype.Service;
 
+import cm.afrilandfirstbank.rations.workflow.domaine.PieceJointe;
 import cm.afrilandfirstbank.rations.workflow.domaine.ProcessusMensuel;
 import cm.afrilandfirstbank.rations.workflow.domaine.StatutEnum;
 import cm.afrilandfirstbank.rations.workflow.domaine.TransitionProcessus;
@@ -123,13 +124,14 @@ public class SoumissionService {
         // 2. Portee d'acces, sur l'unite DU PROCESSUS et non sur un parametre.
         habilitationService.exigerHabilitationSurUnite(processus.getCodeUnite(), enteteAutorisation);
 
-        // 3. Le statut permet-il la soumission ?
+        // 3. Le statut permet-il la soumission ? EN_COURS_SAISIE pour une premiere
+        //    soumission, RETOURNE pour une resoumission apres correction (RG-11).
         exigerStatutSoumissible(processus);
 
-        // 4. Aucune piece jointe deja generee. Controle applicatif AVANT la
-        //    contrainte d'unicite : une violation d'integrite produirait un
-        //    message technique illisible la ou l'agent attend une phrase.
-        exigerAucunePieceJointe(processus);
+        // 4. Le document existe-t-il deja ? Sur un etat retourne, oui : il sera
+        //    regenere depuis l'etat corrige. Sur un etat en saisie, non — et sa
+        //    presence serait une incoherence.
+        PieceJointe pieceJointeExistante = pieceJointeExistanteOuRefus(processus);
 
         // 5. L'etat consolide, seule source du montant total.
         EtatConsolide etat = consoliderOuRefuser(processus, enteteAutorisation);
@@ -148,8 +150,12 @@ public class SoumissionService {
         //    et le document contredirait la base.
         LocalDateTime horodatage = LocalDateTime.now();
 
-        ResultatSignature signature =
-                signatureService.creerEtSigner(processus, etat, acteur, horodatage);
+        // Premiere soumission : le document nait. Resoumission apres retour : il est
+        // REGENERE depuis l'etat corrige, jamais enrichi — les montants ont change,
+        // et le cadre du visa agent est deja occupe (voir SignatureService).
+        ResultatSignature signature = pieceJointeExistante == null
+                ? signatureService.creerEtSigner(processus, etat, acteur, horodatage)
+                : signatureService.regenererEtSigner(processus, etat, acteur, horodatage);
 
         // 9 a 14. Le fichier existe et il est confirme : on peut ecrire en base.
         return enregistrementSoumission.enregistrer(
@@ -171,14 +177,30 @@ public class SoumissionService {
      * les deux, trois appels reseau et une ecriture disque laissent tout le temps
      * a une seconde requete de passer.
      */
+    /**
+     * Deux statuts ouvrent la soumission : {@link StatutEnum#EN_COURS_SAISIE}, la
+     * premiere fois, et {@link StatutEnum#RETOURNE}, apres correction.
+     *
+     * <p><b>C'est la resoumission qui porte la reprise</b> (US-11, CT-24). Le contrat
+     * d'API ne prevoit pas d'endpoint de reprise, et en creer un en ferait un
+     * septieme. Le dossier reste donc visiblement {@code RETOURNE} tant que l'agent
+     * n'a pas resoumis — c'est ce qui lui permet de le reconnaitre dans sa liste — et
+     * il peut deja corriger ses lignes, le service Saisie tenant {@code RETOURNE} pour
+     * modifiable (decision Sprint 3.3). La transition {@code RETOURNE ->
+     * EN_COURS_SAISIE} est appliquee dans la transaction de resoumission, juste avant
+     * {@code EN_COURS_SAISIE -> SOUMIS}.
+     *
+     * <p>La liste est fermee et positive, comme cote Saisie : elle enumere ce qui
+     * autorise, non ce qui interdit. Un statut ajoute un jour ne deviendrait pas
+     * soumissible par omission.
+     */
     private void exigerStatutSoumissible(ProcessusMensuel processus) {
-        if (processus.getStatut() == StatutEnum.EN_COURS_SAISIE) {
+        if (processus.getStatut() == StatutEnum.EN_COURS_SAISIE
+                || processus.getStatut() == StatutEnum.RETOURNE) {
             return;
         }
 
         String suite = switch (processus.getStatut()) {
-            case RETOURNE -> " Cet etat vous a ete retourne : reprenez-le pour le corriger, "
-                    + "puis soumettez-le a nouveau.";
             case SOUMIS, EN_ATTENTE_DA, EN_ATTENTE_DR -> " Il est deja dans le circuit de "
                     + "validation et suit son cours.";
             case CLOTURE -> " Un etat cloture est definitif. Pour regulariser, ouvrez un etat "
@@ -189,18 +211,37 @@ public class SoumissionService {
         throw new TransitionProcessusInterditeException(
                 "L'etat " + libellePeriode(processus) + " de l'unite " + processus.getCodeUnite()
                         + " ne peut pas etre soumis : son statut est " + processus.getStatut()
-                        + ", alors que la soumission exige " + StatutEnum.EN_COURS_SAISIE + "."
-                        + suite);
+                        + ", alors que la soumission exige " + StatutEnum.EN_COURS_SAISIE
+                        + " ou " + StatutEnum.RETOURNE + "." + suite);
     }
 
-    private void exigerAucunePieceJointe(ProcessusMensuel processus) {
-        if (pieceJointeRepository.existsByIdProcessus(processus.getId())) {
+    /**
+     * Le document existant, s'il y en a un — et le refus si sa presence est
+     * incoherente avec le statut.
+     *
+     * <p>Un etat {@link StatutEnum#RETOURNE} <b>doit</b> en avoir un : il a ete soumis
+     * au moins une fois. Il sera regenere depuis l'etat corrige.
+     *
+     * <p>Un etat {@link StatutEnum#EN_COURS_SAISIE} ne doit <b>pas</b> en avoir :
+     * aucune soumission n'a abouti. Sa presence signale un etat deja soumis dont le
+     * statut aurait ete change autrement que par la machine a etats — d'ou le maintien
+     * du refus {@code 409 PIECE_JOINTE_EXISTANTE} du Sprint 4.2, pose ici plutot que
+     * laisse a la contrainte d'unicite, qui produirait un message technique la ou
+     * l'agent attend une phrase.
+     */
+    private PieceJointe pieceJointeExistanteOuRefus(ProcessusMensuel processus) {
+        PieceJointe existante = pieceJointeRepository.findByIdProcessus(processus.getId())
+                .orElse(null);
+
+        if (existante != null && processus.getStatut() == StatutEnum.EN_COURS_SAISIE) {
             throw new PieceJointeExistanteException(
                     "Un document a deja ete genere pour l'etat " + libellePeriode(processus)
-                            + " de l'unite " + processus.getCodeUnite()
-                            + " : il porte les signatures deja apposees et n'est jamais remplace. "
-                            + "Cet etat a donc deja ete soumis.");
+                            + " de l'unite " + processus.getCodeUnite() + ", alors que son statut "
+                            + "est " + StatutEnum.EN_COURS_SAISIE + " : cet etat a donc deja ete "
+                            + "soumis. Signalez-le a l'administrateur du module.");
         }
+
+        return existante;
     }
 
     private EtatConsolide consoliderOuRefuser(ProcessusMensuel processus, String enteteAutorisation) {

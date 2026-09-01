@@ -37,7 +37,7 @@ public record ValidationResponse(
         String statut,
         int montantTotal,
         String aiguillage,
-        long seuilApplique,
+        Long seuilApplique,
         PieceJointeResponse pieceJointe,
         EtapeResponse etape) {
 
@@ -83,6 +83,16 @@ public record ValidationResponse(
         }
     }
 
+    /**
+     * <p><b>{@code aiguillage} et {@code seuilApplique} sont nuls au second niveau.</b>
+     * Apres le visa du directeur reseau il n'y a plus d'echelon : aucun aiguillage
+     * n'a lieu, et le seuil n'est meme pas lu. Les deux champs restent presents au
+     * meme nom et au meme type — les rendre absents obligerait le frontend a
+     * distinguer « champ absent » de « champ nul » — mais ils ne portent aucune
+     * valeur, parce qu'il n'y a rien a rapporter. Inventer une troisieme valeur
+     * d'aiguillage pour la cloture de second niveau aurait fait croire a une
+     * comparaison montant / seuil qui n'a pas eu lieu.
+     */
     public static ValidationResponse depuis(ResultatValidation resultat) {
         ProcessusMensuel processus = resultat.processus();
         ResultatAiguillage aiguillage = resultat.aiguillage();
@@ -91,8 +101,8 @@ public record ValidationResponse(
                 processus.getId(),
                 String.valueOf(processus.getStatut()),
                 processus.getMontantTotal(),
-                String.valueOf(aiguillage.decision()),
-                aiguillage.seuilApplique(),
+                aiguillage == null ? null : String.valueOf(aiguillage.decision()),
+                aiguillage == null ? null : aiguillage.seuilApplique(),
                 PieceJointeResponse.depuis(resultat.pieceJointe()),
                 EtapeResponse.depuis(resultat.etape()));
     }

@@ -53,7 +53,7 @@ public class EnregistrementSoumission {
     private static final String ACTION_SOUMISSION = "SOUMISSION_PROCESSUS";
 
     /** Premier pas du circuit : {@code etape_workflow.ordre_etape} vaut 1. */
-    private static final int ORDRE_SOUMISSION = 1;
+
 
     private final ProcessusMensuelRepository processusMensuelRepository;
     private final EtapeWorkflowRepository etapeWorkflowRepository;
@@ -95,20 +95,38 @@ public class EnregistrementSoumission {
 
         processus.reporterMontantTotal((int) montantTotal);
 
+        // LA REPRISE, quand l'etat revient d'un retour. Elle est portee ici et nulle
+        // part ailleurs : le contrat d'API ne prevoit pas d'endpoint de reprise, et en
+        // creer un en ferait un septieme. Le dossier est donc reste visiblement
+        // RETOURNE jusqu'a cet instant — ce qui permet a l'agent de le reconnaitre
+        // dans sa liste — et la transition n'est appliquee qu'au moment ou il
+        // resoumet.
+        if (processus.getStatut() == StatutEnum.RETOURNE) {
+            TransitionProcessus.reprendreParAgent(processus);
+        }
+
         // Les deux transitions d'ET01, dans l'ordre. La soumission mene toujours au
-        // Chef d'Unite : l'aiguillage au seuil (RG-08) intervient APRES sa
-        // validation, au sous-sprint 4.3.
+        // Chef d'Unite : l'aiguillage au seuil (RG-08) intervient APRES sa validation
+        // (sous-sprint 4.3). Une resoumission repart donc du DEBUT du circuit, jamais
+        // du niveau ou le retour avait eu lieu (RG-07).
         TransitionProcessus.soumettre(processus);
         TransitionProcessus.transfererAuChefUnite(processus);
 
-        EtapeWorkflow etape = new EtapeWorkflow(
-                idProcessus, acteur.id(), ORDRE_SOUMISSION, NomEtapeEnum.SOUMISSION_AGENT);
+        EtapeWorkflow etape = new EtapeWorkflow(idProcessus, acteur.id(),
+                ordreEtapeSuivant(idProcessus), NomEtapeEnum.SOUMISSION_AGENT);
         etape.validerAvecSignature(signature.empreinte());
 
-        // La piece jointe nait a une signature : le fichier en porte deja une, et
-        // son ecriture est confirmee.
-        PieceJointe pieceJointe = new PieceJointe(
-                idProcessus, signature.document().cheminRelatif());
+        // Premiere soumission : la piece jointe nait a une signature, le fichier en
+        // porte deja une et son ecriture est confirmee. Resoumission : le document a
+        // ete REGENERE depuis l'etat corrige, et le compteur repart a un — les visas
+        // d'avant le retour ont disparu avec l'ancien fichier.
+        PieceJointe pieceJointe = pieceJointeRepository.findByIdProcessus(idProcessus)
+                .map(existante -> {
+                    existante.regenererApresRetour(signature.document().cheminRelatif());
+                    return existante;
+                })
+                .orElseGet(() -> new PieceJointe(
+                        idProcessus, signature.document().cheminRelatif()));
 
         ProcessusMensuel enregistre = processusMensuelRepository.save(processus);
         EtapeWorkflow etapeEnregistree = etapeWorkflowRepository.save(etape);
@@ -134,13 +152,29 @@ public class EnregistrementSoumission {
      * la requete gagnante.
      */
     private void exigerStatutEncoreSoumissible(ProcessusMensuel processus) {
-        if (processus.getStatut() != StatutEnum.EN_COURS_SAISIE) {
+        if (processus.getStatut() != StatutEnum.EN_COURS_SAISIE
+                && processus.getStatut() != StatutEnum.RETOURNE) {
             throw new TransitionProcessusInterditeException(
                     "L'etat " + processus.getId() + " a change de statut pendant la preparation "
                             + "de la soumission : il est passe a " + processus.getStatut()
                             + ". Il a vraisemblablement ete soumis par ailleurs. Rechargez le "
                             + "dossier avant toute nouvelle action.");
         }
+    }
+
+    /**
+     * Rang du pas dans le parcours : celui du dernier pas connu, plus un.
+     *
+     * <p>Calcule plutot que fixe a un. Une resoumission apres retour ouvre un nouveau
+     * cycle sur un parcours qui compte deja des etapes ; un rang constant ferait
+     * apparaitre deux soumissions de rang un, et le decoupage en cycles de validation
+     * — sur lequel repose RG-12 — ne saurait plus laquelle est la derniere
+     * ({@code CycleValidation}).
+     */
+    private int ordreEtapeSuivant(Long idProcessus) {
+        return etapeWorkflowRepository.findFirstByIdProcessusOrderByOrdreEtapeDesc(idProcessus)
+                .map(derniere -> derniere.getOrdreEtape() + 1)
+                .orElse(1);
     }
 
     /**

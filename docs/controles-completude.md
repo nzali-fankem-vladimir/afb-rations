@@ -323,5 +323,5 @@ refuser.
 |---|---|---|
 | **K-01** | `StatutFicheEnum.ENREGISTREE` n'est jamais atteint : donner la transition au service Saisie, ou retirer le statut du dictionnaire. Ne pas laisser les deux valeurs sans transition. | Sprint 4 ou 6 |
 | **K-02** | Absence de `DELETE /saisie/fiches/{id}` : tant qu'elle dure, le contrôle de journée vide reste inapplicable (§4.1). Ajout au contrat d'API à arbitrer. | Métier / Sprint 7F |
-| **K-03** | Le champ `manques` doit être porté au contrat d'API §1.4 et à CLAUDE.md §11 à la clôture du Sprint 4. | Clôture Sprint 4 |
-| **K-04** | Cette note doit rejoindre CLAUDE.md à la clôture du Sprint 4 (consigne de l'étape 3 du guide 4.2). | Clôture Sprint 4 |
+| ~~**K-03**~~ | ~~Le champ `manques` doit être porté au contrat d'API §1.4 et à CLAUDE.md §11 à la clôture du Sprint 4.~~ **SOLDÉ au Sprint 4.4** : porté au contrat d'API §1.4, avec un exemple de charge et le tableau des trois codes de refus en 403 ; déjà présent en CLAUDE.md §11. | — |
+| ~~**K-04**~~ | ~~Cette note doit rejoindre CLAUDE.md à la clôture du Sprint 4.~~ **SOLDÉ au Sprint 4.4** : les quatre contrôles sont portés dans CLAUDE.md §6, sous forme de tableau, après RG-15. Cette note reste la référence pour les contrôles **écartés** et leurs motifs. | — |

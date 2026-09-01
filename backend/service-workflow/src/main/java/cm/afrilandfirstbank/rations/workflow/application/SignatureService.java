@@ -98,6 +98,35 @@ public class SignatureService {
     public ResultatSignature creerEtSigner(ProcessusMensuel processus, EtatConsolide etat,
             ActeurSignataire acteur, LocalDateTime horodatage) {
 
+        return produireEtSigner(processus, etat, acteur, horodatage, false);
+    }
+
+    /**
+     * Regenere le document d'un etat retourne, puis corrige, et le signe de la
+     * mention de l'agent qui le resoumet.
+     *
+     * <p><b>Le document est reconstruit, pas enrichi.</b> Un etat retourne a ete
+     * corrige : ses lignes et ses montants ont change. Garder le fichier d'origine
+     * ferait valider au chef d'unite un PDF qui ne correspond plus au dossier — et y
+     * ajouter une seconde mention agent l'imprimerait par-dessus la premiere, dans un
+     * cadre deja occupe. Les visas apposes avant le retour disparaissent avec l'ancien
+     * fichier, ce qui est juste : ils portaient sur une version annulee.
+     *
+     * <p>Le chemin est le meme (la convention de nommage du Sprint 4.2 ne depend que
+     * de l'unite, de la periode et de l'identifiant du processus) : c'est donc un
+     * remplacement, avec le meme {@code fsync} et le meme renommage atomique. Chaque
+     * version reste rattachable a son empreinte SHA-256 par le journal d'audit, ou
+     * aucun service metier n'a de droit d'ecriture.
+     */
+    public ResultatSignature regenererEtSigner(ProcessusMensuel processus, EtatConsolide etat,
+            ActeurSignataire acteur, LocalDateTime horodatage) {
+
+        return produireEtSigner(processus, etat, acteur, horodatage, true);
+    }
+
+    private ResultatSignature produireEtSigner(ProcessusMensuel processus, EtatConsolide etat,
+            ActeurSignataire acteur, LocalDateTime horodatage, boolean remplacement) {
+
         MentionSignature mention = new MentionSignature(
                 NomEtapeEnum.SOUMISSION_AGENT, acteur.login(),
                 String.valueOf(acteur.role()), horodatage);
@@ -105,7 +134,9 @@ public class SignatureService {
         byte[] document = documentService.genererEtatMensuel(processus, etat, List.of(mention));
         String cheminRelatif = NommageDocument.cheminRelatif(processus);
 
-        DocumentEcrit ecrit = stockage.ecrireNouveau(cheminRelatif, document);
+        DocumentEcrit ecrit = remplacement
+                ? stockage.remplacer(cheminRelatif, document)
+                : stockage.ecrireNouveau(cheminRelatif, document);
 
         return new ResultatSignature(ecrit, mention, empreinte(document));
     }

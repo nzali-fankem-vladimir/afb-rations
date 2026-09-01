@@ -43,6 +43,8 @@ import cm.afrilandfirstbank.rations.workflow.domaine.TransitionProcessus;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.AgentNonHabiliteException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.DocumentNonProduitException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ProcessusIntrouvableException;
+import cm.afrilandfirstbank.rations.workflow.domaine.exception.RoleNonAttenduException;
+import cm.afrilandfirstbank.rations.workflow.domaine.exception.SeparationTachesException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ServiceIdentiteIndisponibleException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.SeuilIndisponibleException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.TransitionProcessusInterditeException;
@@ -97,6 +99,8 @@ class ValidationServiceTest {
     private static final Long ID_AGENT = 7L;
     private static final String LOGIN_CHEF = "alice_ngo";
     private static final Long ID_CHEF = 9L;
+    private static final String LOGIN_DIRECTEUR = "estelle_fotso";
+    private static final Long ID_DIRECTEUR = 21L;
 
     @TempDir
     Path racineStockage;
@@ -141,6 +145,7 @@ class ValidationServiceTest {
                 pieceJointeRepository,
                 new HabilitationService(habilitationClient),
                 profilClient,
+                new SeparationTachesService(etapeRepository),
                 new AiguillageService(seuilService),
                 signatureService,
                 new EnregistrementValidation(processusRepository, etapeRepository,
@@ -471,6 +476,233 @@ class ValidationServiceTest {
     }
 
     // =====================================================================
+    // Sous-sprint 4.4 : validation de second niveau (US-10, CT-19)
+    // =====================================================================
+
+    @Nested
+    @DisplayName("Validation du directeur reseau")
+    class SecondNiveau {
+
+        /**
+         * Test 6 du guide 4.4. Le dossier a depasse le seuil, le chef d'unite l'a vise,
+         * le directeur reseau le clot.
+         *
+         * <p>Trois choses s'y verifient ensemble : la cloture, la <b>troisieme</b>
+         * signature sur un document reellement estampe, et l'horodatage de l'etape —
+         * qui tient lieu de date de cloture, {@code processus_mensuel} ne portant pas de
+         * colonne {@code date_cloture} (decision Sprint 4.1, redite au 4.3).
+         */
+        @Test
+        @DisplayName("6. Validation DR nominale : CLOTURE, trois signatures, etape horodatee")
+        void validationDirecteurReseauNominale() {
+            Dossier dossier = unDossierChezLeDirecteurReseau();
+            profilDuDirecteur();
+            directeurHabilite();
+
+            ResultatValidation resultat =
+                    validationService.valider(dossier.idProcessus(), JETON, IP);
+
+            assertThat(resultat.processus().getStatut()).isEqualTo(StatutEnum.CLOTURE);
+            assertThat(resultat.pieceJointe().getNombreSignatures())
+                    .as("agent, chef d'unite, directeur reseau : le document en porte trois")
+                    .isEqualTo(3);
+
+            EtapeWorkflow etape = resultat.etape();
+            assertThat(etape.getNomEtape()).isEqualTo(NomEtapeEnum.VALIDATION_DR);
+            assertThat(etape.getStatutEtape()).isEqualTo(StatutEtapeEnum.VALIDEE);
+            assertThat(etape.getIdActeur()).isEqualTo(ID_DIRECTEUR);
+            assertThat(etape.getOrdreEtape()).isEqualTo(3);
+            assertThat(etape.getSignatureNumerique()).startsWith("SHA-256:");
+            assertThat(etape.getDateCreation())
+                    .as("l'horodatage de l'etape tient lieu de date de cloture")
+                    .isNotNull();
+
+            assertThat(etapeRepository.findByIdProcessusOrderByOrdreEtape(dossier.idProcessus()))
+                    .extracting(EtapeWorkflow::getNomEtape)
+                    .containsExactly(NomEtapeEnum.SOUMISSION_AGENT, NomEtapeEnum.VALIDATION_DA,
+                            NomEtapeEnum.VALIDATION_DR);
+        }
+
+        /**
+         * <b>Pas d'aiguillage au second niveau.</b> Apres le visa du directeur reseau il
+         * n'y a plus d'echelon : le seuil n'est meme pas lu.
+         *
+         * <p>La preuve est faite en le rendant illisible : si le service d'aiguillage
+         * etait rappele « par symetrie », la validation echouerait en
+         * {@code SEUIL_INDISPONIBLE}. Elle aboutit, donc le seuil n'a pas ete consulte.
+         */
+        @Test
+        @DisplayName("6b. Aucun aiguillage au second niveau : le seuil n'est meme pas lu")
+        void aucunAiguillageAuSecondNiveau() {
+            Dossier dossier = unDossierChezLeDirecteurReseau();
+            profilDuDirecteur();
+            directeurHabilite();
+
+            rendreLeSeuilIllisible();
+
+            ResultatValidation resultat =
+                    validationService.valider(dossier.idProcessus(), JETON, IP);
+
+            assertThat(resultat.processus().getStatut()).isEqualTo(StatutEnum.CLOTURE);
+            assertThat(resultat.aiguillage())
+                    .as("aucune decision d'aiguillage : il n'y avait rien a arbitrer")
+                    .isNull();
+        }
+
+        /** Test 7 du guide : le directeur reseau devant un dossier encore chez le DA. */
+        @Test
+        @DisplayName("7. Validation DR d'un etat EN_ATTENTE_DA : refusee, sur le role attendu")
+        void directeurReseauSurUnEtatChezLeChefUnite() {
+            Dossier dossier = unDossierSoumis(seuilService.seuilAiguillage());
+            profilDuDirecteur();
+            directeurHabilite();
+
+            assertThatThrownBy(() -> validationService.valider(dossier.idProcessus(), JETON, IP))
+                    .isInstanceOf(RoleNonAttenduException.class)
+                    .hasMessageContaining("chef d'unite")
+                    .hasMessageContaining("DIRECTEUR_RESEAU_DR");
+
+            assertThat(processusRepository.findById(dossier.idProcessus()).orElseThrow()
+                    .getStatut()).isEqualTo(StatutEnum.EN_ATTENTE_DA);
+        }
+
+        /** Test 8 du guide : le chef d'unite devant un dossier monte au directeur reseau. */
+        @Test
+        @DisplayName("8. Validation d'un etat EN_ATTENTE_DR par un CHEF_UNITE_DA : refusee")
+        void chefUniteSurUnEtatChezLeDirecteurReseau() {
+            Dossier dossier = unDossierChezLeDirecteurReseau();
+            // Le profil et l'habilitation restent ceux du chef d'unite (@BeforeEach).
+
+            assertThatThrownBy(() -> validationService.valider(dossier.idProcessus(), JETON, IP))
+                    .isInstanceOf(RoleNonAttenduException.class)
+                    .hasMessageContaining("directeur reseau")
+                    .hasMessageContaining("CHEF_UNITE_DA");
+
+            assertThat(pieceJointeRepository.findByIdProcessus(dossier.idProcessus())
+                    .orElseThrow().getNombreSignatures())
+                    .as("aucun troisieme visa n'a ete grave")
+                    .isEqualTo(2);
+        }
+
+        /** Test 9 du guide : la cloture de second niveau ne transmet rien non plus. */
+        @Test
+        @DisplayName("9. Apres cloture par le DR, transmis_comptabilite vaut toujours faux")
+        void clotureSecondNiveauSansTransmission() {
+            Dossier dossier = unDossierChezLeDirecteurReseau();
+            profilDuDirecteur();
+            directeurHabilite();
+
+            validationService.valider(dossier.idProcessus(), JETON, IP);
+
+            ProcessusMensuel relu =
+                    processusRepository.findById(dossier.idProcessus()).orElseThrow();
+            assertThat(relu.getStatut()).isEqualTo(StatutEnum.CLOTURE);
+            assertThat(relu.isTransmisComptabilite())
+                    .as("la transmission comptable est le Sprint 5, sur les DEUX branches")
+                    .isFalse();
+        }
+
+        @Test
+        @DisplayName("9b. L'audit du second niveau ne porte ni seuil ni decision d'aiguillage")
+        void auditDuSecondNiveau() {
+            Dossier dossier = unDossierChezLeDirecteurReseau();
+            profilDuDirecteur();
+            directeurHabilite();
+
+            validationService.valider(dossier.idProcessus(), JETON, IP);
+
+            ArgumentCaptor<EvenementAudit> capture = ArgumentCaptor.forClass(EvenementAudit.class);
+            verify(publicateurAudit).publier(capture.capture());
+            EvenementAudit evenement = capture.getValue();
+
+            assertThat(evenement.action()).isEqualTo("VALIDATION_PROCESSUS");
+            assertThat(evenement.idUtilisateur()).isEqualTo(ID_DIRECTEUR);
+            assertThat(evenement.detailJson())
+                    .contains("VALIDATION_DR")
+                    .contains("CLOTURE")
+                    .contains(LOGIN_DIRECTEUR);
+            assertThat(evenement.detailJson())
+                    .as("inscrire un seuil a vide laisserait croire qu'une comparaison a eu lieu")
+                    .doesNotContain("seuilApplique")
+                    .doesNotContain("aiguillage");
+        }
+    }
+
+    // =====================================================================
+    // Sous-sprint 4.4 : separation des taches en situation (RG-12, CT-17)
+    // =====================================================================
+
+    @Nested
+    @DisplayName("Separation des taches")
+    class SeparationDesTaches {
+
+        /**
+         * Test 1 du guide 4.4, en situation reelle : l'agent qui a soumis se presente
+         * pour valider.
+         *
+         * <p>Il porte ici le role du chef d'unite — c'est le cas du cumul, tranche a
+         * l'etape 1 : refus strict. Le refus doit tomber <b>avant</b> l'estampage, sans
+         * quoi le document porterait un visa que la base ne connaitrait pas.
+         */
+        @Test
+        @DisplayName("1. Le soumissionnaire tente de valider : refus, document intact")
+        void leSoumissionnaireNeValidePas() throws Exception {
+            Dossier dossier = unDossierSoumis(seuilService.seuilAiguillage());
+            Path fichier = racineStockage.resolve(dossier.cheminRelatif());
+            long tailleAvant = Files.size(fichier);
+
+            // Meme identifiant local que l'agent qui a soumis, promu chef d'unite.
+            when(profilClient.obtenir(anyString())).thenReturn(new ResultatProfil.ProfilObtenu(
+                    new ActeurSignataire(ID_AGENT, LOGIN_AGENT, RoleEnum.CHEF_UNITE_DA)));
+
+            assertThatThrownBy(() -> validationService.valider(dossier.idProcessus(), JETON, IP))
+                    .isInstanceOf(SeparationTachesException.class)
+                    .hasMessageContaining("Vous avez soumis cet etat");
+
+            assertThat(Files.size(fichier))
+                    .as("le refus precede l'estampage : le document n'a pas bouge")
+                    .isEqualTo(tailleAvant);
+            assertThat(processusRepository.findById(dossier.idProcessus()).orElseThrow()
+                    .getStatut()).isEqualTo(StatutEnum.EN_ATTENTE_DA);
+        }
+
+        /** Test 2 du guide : un chef d'unite qui n'a pas soumis valide normalement. */
+        @Test
+        @DisplayName("2. Un chef d'unite n'ayant pas soumis valide sans obstacle")
+        void leChefUniteNonSoumissionnaireValide() {
+            Dossier dossier = unDossierSoumis(seuilService.seuilAiguillage());
+
+            ResultatValidation resultat =
+                    validationService.valider(dossier.idProcessus(), JETON, IP);
+
+            assertThat(resultat.processus().getStatut()).isEqualTo(StatutEnum.CLOTURE);
+        }
+
+        /**
+         * Test 3 du guide : celui qui a vise au premier niveau se presente au second.
+         *
+         * <p>Conforme a la decision de l'etape 1 — lecture 3 de RG-12, les deux cumuls
+         * sont interdits. Sans ce controle, une seule personne pourrait engager la
+         * banque de bout en bout sur un dossier au-dela du seuil, ce que le second
+         * niveau d'approbation existe precisement pour empecher.
+         */
+        @Test
+        @DisplayName("3. Celui qui a valide au premier niveau ne valide pas au second")
+        void pasDeDoubleVisaDeValidation() {
+            Dossier dossier = unDossierChezLeDirecteurReseau();
+
+            // Le chef d'unite du cycle courant, promu directeur reseau.
+            when(profilClient.obtenir(anyString())).thenReturn(new ResultatProfil.ProfilObtenu(
+                    new ActeurSignataire(ID_CHEF, LOGIN_CHEF, RoleEnum.DIRECTEUR_RESEAU_DR)));
+            directeurHabilite();
+
+            assertThatThrownBy(() -> validationService.valider(dossier.idProcessus(), JETON, IP))
+                    .isInstanceOf(SeparationTachesException.class)
+                    .hasMessageContaining("deja valide cet etat au niveau du chef d'unite");
+        }
+    }
+
+    // =====================================================================
     // Outils
     // =====================================================================
 
@@ -549,6 +781,40 @@ class ValidationServiceTest {
             }
         }
         return texte.toString();
+    }
+
+    /**
+     * Un dossier deja vise par le chef d'unite et monte au directeur reseau : statut
+     * {@code EN_ATTENTE_DR}, document a deux signatures, parcours de deux etapes.
+     *
+     * <p>Construit en faisant reellement valider le dossier par le chef d'unite plutot
+     * qu'en fabriquant l'etat a la main : c'est le seul moyen d'avoir un document qui
+     * porte veritablement deux visas, et un parcours que le decoupage en cycles de
+     * RG-12 lira comme le fera la production.
+     */
+    private Dossier unDossierChezLeDirecteurReseau() {
+        Dossier dossier = unDossierSoumis(seuilService.seuilAiguillage() + 1);
+
+        validationService.valider(dossier.idProcessus(), JETON, IP);
+        entityManager.flush();
+        entityManager.clear();
+
+        // Le compteur d'appels au publicateur repart a zero : les tests du second
+        // niveau n'observent que leur propre evenement.
+        org.mockito.Mockito.clearInvocations(publicateurAudit);
+
+        return dossier;
+    }
+
+    private void directeurHabilite() {
+        when(habilitationClient.verifier(anyString(), anyString())).thenReturn(
+                new AgentHabilite(LOGIN_DIRECTEUR, RoleEnum.DIRECTEUR_RESEAU_DR.name(), UNITE));
+    }
+
+    private void profilDuDirecteur() {
+        when(profilClient.obtenir(anyString())).thenReturn(new ResultatProfil.ProfilObtenu(
+                new ActeurSignataire(ID_DIRECTEUR, LOGIN_DIRECTEUR,
+                        RoleEnum.DIRECTEUR_RESEAU_DR)));
     }
 
     private void chefHabilite() {

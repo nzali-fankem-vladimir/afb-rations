@@ -149,6 +149,40 @@ public class PieceJointe {
         this.dateDerniereModification = LocalDateTime.now();
     }
 
+    /**
+     * Le document a ete <b>regenere</b> apres un retour : il repart de la seule
+     * signature de l'agent.
+     *
+     * <p>Un etat retourne est corrige puis resoumis. Ses montants ont change : garder
+     * le document d'origine ferait valider au chef d'unite un PDF qui ne correspond
+     * plus au dossier. Le fichier est donc reconstruit depuis l'etat corrige et
+     * remplace l'ancien ; les visas apposes avant le retour disparaissent avec lui, ce
+     * qui est juste — ils portaient sur une version annulee.
+     *
+     * <p>Le compteur repart a un, et non a zero : le document neuf porte deja la
+     * mention de l'agent qui vient de le resoumettre. C'est la meme regle qu'a la
+     * naissance de la piece.
+     *
+     * <p>Le chemin est repris en parametre bien qu'il soit en pratique identique — la
+     * convention de nommage (Sprint 4.2) ne depend que de l'unite, de la periode et de
+     * l'identifiant du processus. Le passer explicitement evite que cette entite
+     * suppose une invariance qui n'est pas la sienne a garantir.
+     *
+     * <p><b>A n'appeler qu'apres confirmation d'ecriture du nouveau fichier</b>, comme
+     * {@link #enregistrerSignatureSupplementaire()} : le compteur constate une
+     * ecriture, il ne l'anticipe pas (doctrine Sprint 4.2).
+     */
+    public void regenererApresRetour(String cheminFichier) {
+        if (cheminFichier == null || cheminFichier.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Aucun chemin de fichier pour la piece jointe regeneree du processus "
+                            + idProcessus + ".");
+        }
+        this.cheminFichier = cheminFichier;
+        this.nombreSignatures = 1;
+        this.dateDerniereModification = LocalDateTime.now();
+    }
+
     // --- Lecture ---------------------------------------------------------------
 
     public Long getId() {
