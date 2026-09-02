@@ -38,6 +38,7 @@ import cm.afrilandfirstbank.rations.workflow.domaine.PieceJointe;
 import cm.afrilandfirstbank.rations.workflow.domaine.ProcessusMensuel;
 import cm.afrilandfirstbank.rations.workflow.domaine.RoleEnum;
 import cm.afrilandfirstbank.rations.workflow.domaine.StatutEnum;
+import cm.afrilandfirstbank.rations.workflow.domaine.StatutIntegrationEnum;
 import cm.afrilandfirstbank.rations.workflow.domaine.StatutEtapeEnum;
 import cm.afrilandfirstbank.rations.workflow.domaine.TransitionProcessus;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.AgentNonHabiliteException;
@@ -122,6 +123,7 @@ class ValidationServiceTest {
     private StockageDocumentsFichier stockage;
     private SignatureService signatureService;
     private SeuilService seuilService;
+    private AppuiTransmission.ClientDeTest transmissionClient;
     private ValidationService validationService;
 
     /** Compteur de mois, pour que chaque test ouvre sa propre periode. */
@@ -139,6 +141,7 @@ class ValidationServiceTest {
         stockage = new StockageDocumentsFichier(racineStockage.toString());
         signatureService = new SignatureService(new DocumentService(), stockage);
         seuilService = new SeuilService(parametreSystemeRepository);
+        transmissionClient = new AppuiTransmission.ClientDeTest();
 
         validationService = new ValidationService(
                 processusRepository,
@@ -149,7 +152,9 @@ class ValidationServiceTest {
                 new AiguillageService(seuilService),
                 signatureService,
                 new EnregistrementValidation(processusRepository, etapeRepository,
-                        pieceJointeRepository, publicateurAudit));
+                        pieceJointeRepository, publicateurAudit),
+                AppuiTransmission.declenchement(
+                        transmissionClient, processusRepository, publicateurAudit));
 
         chefHabilite();
         profilDuChef();
@@ -230,24 +235,79 @@ class ValidationServiceTest {
         }
 
         /**
-         * La cloture ne transmet rien : {@code transmis_comptabilite} reste faux.
+         * <b>Premier point de cloture</b> : sous le seuil, le visa du chef d'unite cloture, et
+         * la cloture met l'etat a la disposition de la comptabilite (Sprint 5.1, US-12).
          *
-         * <p>Le poser des la cloture contournerait le verrou de RG-13 — l'etat
-         * paraitrait transmis avant de l'etre, et la transmission reelle du Sprint 5
-         * serait ensuite refusee comme un doublon.
+         * <p>Le drapeau {@code transmis_comptabilite} n'est pose qu'<b>apres accuse du
+         * broker</b>. Le poser des la cloture contournerait le verrou de RG-13 : l'etat
+         * paraitrait transmis avant de l'etre, et la transmission reelle serait ensuite
+         * refusee comme un doublon — l'etat resterait definitivement impaye.
          */
         @Test
-        @DisplayName("3. Apres cloture, transmis_comptabilite vaut toujours faux")
-        void clotureSansTransmission() {
+        @DisplayName("3. La cloture sous le seuil declenche la transmission et pose le drapeau")
+        void clotureSousLeSeuilTransmet() {
             Dossier dossier = unDossierSoumis(seuilService.seuilAiguillage());
 
-            validationService.valider(dossier.idProcessus(), JETON, IP);
+            ResultatValidation resultat = validationService.valider(dossier.idProcessus(), JETON, IP);
+
+            assertThat(transmissionClient.processusAppeles()).containsExactly(dossier.idProcessus());
+            assertThat(resultat.transmission()).isNotNull();
+            assertThat(resultat.transmission().transmis()).isTrue();
 
             ProcessusMensuel relu = processusRepository.findById(dossier.idProcessus()).orElseThrow();
             assertThat(relu.getStatut()).isEqualTo(StatutEnum.CLOTURE);
+            assertThat(relu.isTransmisComptabilite()).isTrue();
+            assertThat(relu.getStatutIntegration())
+                    .as("EN_ATTENTE signifie « publie, la comptabilite n'a pas encore repondu »")
+                    .isEqualTo(StatutIntegrationEnum.EN_ATTENTE);
+        }
+
+        /**
+         * <b>Le scenario le plus dangereux du sous-sprint</b>, et ce qui doit en rester vrai.
+         *
+         * <p>Un etat cloture est fige : plus personne ne peut le corriger. S'il n'est pas
+         * transmis, ses beneficiaires ne sont pas payes. La cloture <b>reste acquise</b> — le
+         * document porte deja le visa, ecrit sur disque hors transaction —, mais le drapeau
+         * reste a faux, ce qui rend l'etat retrouvable par requete, et l'echec remonte au
+         * valideur : aucune reprise automatique n'etant possible faute de compte de service
+         * au realm, c'est le seul moment ou un humain l'apprend.
+         */
+        @Test
+        @DisplayName("3b. Transmission en echec : la cloture tient, le drapeau reste faux")
+        void transmissionEnEchecNAnnulePasLaCloture() {
+            transmissionClient.repondraToujours(new ResultatDemandeTransmission.EchecApresTentative(
+                    "PUBLICATION_ECHOUEE : aucun accuse du broker"));
+            Dossier dossier = unDossierSoumis(seuilService.seuilAiguillage());
+
+            ResultatValidation resultat = validationService.valider(dossier.idProcessus(), JETON, IP);
+
+            assertThat(resultat.transmission().transmis()).isFalse();
+            assertThat(resultat.transmission().motif()).contains("aucun accuse du broker");
+
+            ProcessusMensuel relu = processusRepository.findById(dossier.idProcessus()).orElseThrow();
+            assertThat(relu.getStatut())
+                    .as("la cloture est la decision metier, la transmission n'en est que la suite")
+                    .isEqualTo(StatutEnum.CLOTURE);
             assertThat(relu.isTransmisComptabilite())
-                    .as("La transmission comptable est le Sprint 5 : la cloture ne la declenche pas")
+                    .as("poser le drapeau ici rendrait l'etat definitivement impaye (RG-13)")
                     .isFalse();
+            assertThat(relu.getStatutIntegration()).isNull();
+        }
+
+        /**
+         * Un etat aiguille vers le directeur reseau n'est <b>pas</b> cloture : il n'a rien a
+         * transmettre, et le service Transmission n'est meme pas appele.
+         */
+        @Test
+        @DisplayName("3c. Une montee au directeur reseau ne transmet rien")
+        void monteeAuDirecteurNeTransmetPas() {
+            Dossier dossier = unDossierSoumis(seuilService.seuilAiguillage() + 1);
+
+            ResultatValidation resultat = validationService.valider(dossier.idProcessus(), JETON, IP);
+
+            assertThat(resultat.processus().getStatut()).isEqualTo(StatutEnum.EN_ATTENTE_DR);
+            assertThat(resultat.transmission()).isNull();
+            assertThat(transmissionClient.nombreAppels()).isZero();
         }
 
         /**
@@ -289,11 +349,8 @@ class ValidationServiceTest {
 
             validationService.valider(dossier.idProcessus(), JETON, IP);
 
-            ArgumentCaptor<EvenementAudit> capture = ArgumentCaptor.forClass(EvenementAudit.class);
-            verify(publicateurAudit).publier(capture.capture());
-            EvenementAudit evenement = capture.getValue();
+            EvenementAudit evenement = evenementDAudit("VALIDATION_PROCESSUS");
 
-            assertThat(evenement.action()).isEqualTo("VALIDATION_PROCESSUS");
             assertThat(evenement.idUtilisateur()).isEqualTo(ID_CHEF);
             assertThat(evenement.detailJson())
                     .contains("EN_ATTENTE_DA")
@@ -301,6 +358,15 @@ class ValidationServiceTest {
                     .contains("SOUS_SEUIL_CLOTURE_DIRECTE")
                     .contains(String.valueOf(seuil))
                     .contains(LOGIN_CHEF);
+
+            // Depuis le Sprint 5.1, une cloture produit une SECONDE trace : la mise a
+            // disposition comptable. Deux evenements distincts a dessein -- « qui a valide,
+            // sur quelle comparaison » et « qu'a-t-on envoye, ou » sont deux questions de
+            // controle interne differentes, et les fondre en une seule trace obligerait a
+            // les demeler ensuite.
+            assertThat(evenementDAudit("TRANSMISSION_COMPTABLE").detailJson())
+                    .contains("rations.etat.valide")
+                    .contains("offset");
         }
     }
 
@@ -584,22 +650,37 @@ class ValidationServiceTest {
                     .isEqualTo(2);
         }
 
-        /** Test 9 du guide : la cloture de second niveau ne transmet rien non plus. */
+        /**
+         * <b>Second point de cloture</b> : le visa du directeur reseau est terminal, et il
+         * transmet comme le premier.
+         *
+         * <p>C'est la garantie que les deux points sont couverts. Le declenchement n'est pas
+         * ecrit deux fois : il est branche sur ce qui les definit tous les deux — le statut
+         * atteint vaut {@code CLOTURE}. Deux appels separes se seraient ressembles a s'y
+         * meprendre, et en oublier un aurait laisse une moitie des etats de la banque sans
+         * jamais partir en paiement, sans aucune erreur visible.
+         */
         @Test
-        @DisplayName("9. Apres cloture par le DR, transmis_comptabilite vaut toujours faux")
-        void clotureSecondNiveauSansTransmission() {
+        @DisplayName("9. La cloture par le DR declenche aussi la transmission")
+        void clotureSecondNiveauTransmet() {
             Dossier dossier = unDossierChezLeDirecteurReseau();
             profilDuDirecteur();
             directeurHabilite();
 
-            validationService.valider(dossier.idProcessus(), JETON, IP);
+            ResultatValidation resultat =
+                    validationService.valider(dossier.idProcessus(), JETON, IP);
+
+            assertThat(transmissionClient.processusAppeles())
+                    .containsExactly(dossier.idProcessus());
+            assertThat(resultat.transmission().transmis()).isTrue();
 
             ProcessusMensuel relu =
                     processusRepository.findById(dossier.idProcessus()).orElseThrow();
             assertThat(relu.getStatut()).isEqualTo(StatutEnum.CLOTURE);
             assertThat(relu.isTransmisComptabilite())
-                    .as("la transmission comptable est le Sprint 5, sur les DEUX branches")
-                    .isFalse();
+                    .as("la transmission est declenchee sur les DEUX branches du seuil")
+                    .isTrue();
+            assertThat(relu.getStatutIntegration()).isEqualTo(StatutIntegrationEnum.EN_ATTENTE);
         }
 
         @Test
@@ -611,11 +692,8 @@ class ValidationServiceTest {
 
             validationService.valider(dossier.idProcessus(), JETON, IP);
 
-            ArgumentCaptor<EvenementAudit> capture = ArgumentCaptor.forClass(EvenementAudit.class);
-            verify(publicateurAudit).publier(capture.capture());
-            EvenementAudit evenement = capture.getValue();
+            EvenementAudit evenement = evenementDAudit("VALIDATION_PROCESSUS");
 
-            assertThat(evenement.action()).isEqualTo("VALIDATION_PROCESSUS");
             assertThat(evenement.idUtilisateur()).isEqualTo(ID_DIRECTEUR);
             assertThat(evenement.detailJson())
                     .contains("VALIDATION_DR")
@@ -626,6 +704,29 @@ class ValidationServiceTest {
                     .doesNotContain("seuilApplique")
                     .doesNotContain("aiguillage");
         }
+    }
+
+    /**
+     * Le premier evenement d'audit portant cette action.
+     *
+     * <p>Depuis le Sprint 5.1, une cloture en publie <b>deux</b> :
+     * {@code VALIDATION_PROCESSUS} puis {@code TRANSMISSION_COMPTABLE}. Un
+     * {@code verify(publicateurAudit).publier(...)} sans filtre echouerait donc, non parce
+     * qu'une trace manque, mais parce qu'il y en a une de plus — et il faudrait la relacher
+     * en {@code atLeastOnce()}, ce qui cesserait de dire quoi que ce soit. On nomme donc
+     * l'action attendue.
+     */
+    private EvenementAudit evenementDAudit(String action) {
+        ArgumentCaptor<EvenementAudit> capture = ArgumentCaptor.forClass(EvenementAudit.class);
+        verify(publicateurAudit, org.mockito.Mockito.atLeastOnce()).publier(capture.capture());
+
+        return capture.getAllValues().stream()
+                .filter(evenement -> action.equals(evenement.action()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                        "Aucun evenement d'audit " + action + " publie. Publies : "
+                                + capture.getAllValues().stream().map(EvenementAudit::action)
+                                        .toList()));
     }
 
     // =====================================================================

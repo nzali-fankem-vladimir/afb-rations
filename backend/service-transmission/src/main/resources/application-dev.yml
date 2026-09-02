@@ -3,6 +3,17 @@
 # configuration Flyway ici.
 spring:
   kafka:
+    # Seule l'adresse des brokers vient de l'environnement. Les DEUX producteurs
+    # de ce service construisent leur propre configuration en Java :
+    #   - celui de l'audit, dans rations-audit-commun (bean kafkaTemplateAudit),
+    #     dont les bornes -- max.block.ms en tete -- garantissent que l'audit ne
+    #     fait jamais echouer le metier et ne doivent jamais etre surchargees ici
+    #     (Sprint 1.3, CLAUDE.md section 15) ;
+    #   - celui de l'echange comptable (bean kafkaTemplateEtatValide), dont
+    #     acks=all et l'idempotence sont des garanties, pas des reglages
+    #     d'environnement.
+    # Aucun spring.kafka.producer.* ici, deliberement : il laisserait croire qu'un
+    # fichier de deploiement peut relacher l'une ou l'autre.
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
 
   security:
@@ -17,6 +28,33 @@ spring:
 app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+
+  transmission:
+    # Topic de l'echange comptable. Nom de DEVELOPPEMENT arrete au Sprint 0.5 ; le
+    # nommage definitif en environnement partage reste un point en attente DSI
+    # (D-07). CLAUDE.md section 9 demande de ne pas le figer ailleurs que dans la
+    # configuration : d'ou une propriete surchargeable, et non une constante Java.
+    topic-etat-valide: ${KAFKA_TOPIC_ETAT_VALIDE:rations.etat.valide}
+
+  workflow:
+    # Adresse du service Workflow, interroge pour l'en-tete du processus
+    # (GET /processus/{id}) : periode, unite, type, montant total et statut.
+    #
+    # Ce service relit l'en-tete a la source plutot que de le recevoir dans la
+    # demande de transmission (arbitrage Sprint 5.1) : il peut ainsi verifier
+    # lui-meme que l'etat est bien CLOTURE avant de publier vers la comptabilite,
+    # au lieu de publier sur la foi d'un corps fourni par l'appelant.
+    #
+    # L'echange passe par l'API et jamais par la base rations_workflow : aucune
+    # source de donnees vers elle n'existe ici, et la cartographie le verifie.
+    url: ${WORKFLOW_URL:http://localhost:8084}
+
+  saisie:
+    # Adresse du service Saisie, interroge pour le detail consolide
+    # (GET /saisie/processus/{id}/etat, endpoint interne du Sprint 3.4). C'est la
+    # seule source des lignes qui partent en comptabilite : beneficiaires, natures,
+    # sessions, montants, comptes courants et codes agence (CT-21).
+    url: ${SAISIE_URL:http://localhost:8082}
 
 logging:
   level:

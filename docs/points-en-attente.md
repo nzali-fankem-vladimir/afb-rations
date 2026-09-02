@@ -170,3 +170,106 @@ a-t-elle droit sur cette unité ? », jamais « qui d'autre ? ».
 motif, distinct de `HABILITATION_ABSENTE` et de `ROLE_INSUFFISANT`. Un comptage par
 unité dira si le cas est théorique ou quotidien — et c'est cette mesure, pas une
 hypothèse, qui devra décider d'une éventuelle évolution.
+
+---
+
+## Dédoublonnage de l'événement `rations.etat.valide` côté comptabilité (Sprint 5.1)
+
+**À poser à la DFT, à côté de M-03** (« Position sur une seconde transmission
+comptable », `docs/dispositifs_provisoires.md`), dont c'est le versant technique.
+
+**La question.** Si le module publiait deux fois l'événement du même
+`idProcessus` sur `rations.etat.valide`, le module de comptabilisation
+produirait-il deux jeux d'écritures — donc un double paiement des mêmes
+bénéficiaires — ou écarterait-il le doublon ? **Personne dans l'équipe ne le
+sait**, et le module de comptabilisation n'est pas accessible.
+
+**Ce qui est déjà fait pour que le cas ne se présente pas.**
+
+| Mesure | Portée |
+| --- | --- |
+| `enable.idempotence=true` sur le producteur | Couvre les réessais **internes** du client Kafka à l'intérieur d'un seul `send()` : le broker écarte le doublon par numéro de séquence. |
+| **Aucun réessai applicatif après une tentative de publication** | Un second `send()` applicatif serait, pour le producteur, un message neuf : l'idempotence ne le couvre pas. Le type `ResultatDemandeTransmission` sépare structurellement l'échec **antérieur** à toute publication — réessayable — de l'échec **ambigu**, qui ne l'est jamais. Éprouvé par `DeclenchementTransmissionTest`. |
+| Drapeau `transmis_comptabilite` posé **après accuse** | Empêche qu'un état publié soit republié par un chemin ultérieur. |
+| Contrôle d'unicité résistant à la concurrence | **Sprint 5.3.** Il fermera les chemins que le 5.1 laisse ouverts : rejeu de la clôture, appel manuel de l'endpoint interne, deux instances du service. |
+
+**Le risque résiduel, qui ne peut pas être fermé de l'intérieur.** Une publication
+peut aboutir sur le broker et son accusé se perdre en chemin. Le module classe alors
+l'échec comme ambigu et ne rejoue rien — l'état reste `CLOTURE` et non transmis, donc
+à reprendre à la main. Si quelqu'un le reprend et que le premier message était bien
+passé, la comptabilité reçoit deux fois le même état. **Le module ne peut pas le
+détecter** : il n'a aucun consommateur sur `rations.etat.valide`, et rien ne lui dit
+ce que le receveur a déjà vu.
+
+**Ce qui est demandé.** Que la DFT indique si le module de comptabilisation
+dédoublonne par `idProcessus`. Si oui, la reprise manuelle d'un état ambigu devient
+sans danger. Si non, elle exige une vérification humaine préalable côté comptabilité,
+et il faut le dire dans la procédure d'exploitation.
+
+---
+
+## Reprise d'une transmission manquée — aucun compte de service au realm (Sprint 5.1)
+
+**Le point.** Un état `CLOTURE` est **figé** : plus personne ne peut le corriger ni
+le rouvrir. S'il n'a pas été transmis, ses bénéficiaires ne sont pas payés. Il n'existe
+aujourd'hui **aucune reprise automatique**.
+
+**Pourquoi elle est impossible, et non simplement absente.** Toute la chaîne de
+transmission relaie le jeton de l'utilisateur final (doctrine Sprint 1.3) :
+Workflow → Transmission, puis Transmission → Workflow et Transmission → Saisie. Le
+realm `afb-rations-dev` ne porte **qu'un client public**, `serviceAccountsEnabled:
+false` — vérifié dans `infra/keycloak/realm-afb-rations-dev.json`. Une tâche
+programmée n'aurait donc aucun jeton à présenter. Ce n'est pas un oubli de code : il
+manque une identité machine, et sa création est une décision Keycloak / DSI.
+
+**Ce qui tient lieu de filet aujourd'hui.**
+
+| Dispositif | Ce qu'il apporte |
+| --- | --- |
+| **Un réessai immédiat**, sur les seuls échecs antérieurs à toute publication | Couvre le cas le plus fréquent : un service dépendant qui redémarre. |
+| **Le résultat rendu au valideur** (champ `transmission` de `ValidationResponse`) | **Le seul signal qu'un humain reçoit**, au moment même de la clôture. |
+| **Journal au préfixe `TRANSMISSION MANQUEE`** | Supervision. Distinct de `TRANSMISSION REJETEE POOL SATURE`, qui désigne un pic de charge et non une panne : les deux appellent des réactions différentes. |
+| **Événement d'audit `TRANSMISSION_MANQUEE`** | Trace dans une base qu'aucun service métier ne peut réécrire, avec le motif exact. |
+| **`transmis_comptabilite` reste à faux** | L'état reste retrouvable : `SELECT ... WHERE statut = 'CLOTURE' AND transmis_comptabilite = false`. |
+
+**Ce qui est demandé.**
+
+1. **À la DSI** : créer un client confidentiel avec compte de service sur le realm AFB,
+   ou statuer que la reprise restera un geste manuel. Sans lui, aucune reprise
+   programmée ne peut être écrite.
+2. **À l'exploitation** : superviser le préfixe `TRANSMISSION MANQUEE`, et contrôler
+   périodiquement la requête ci-dessus — un état qui y figure durablement est un
+   paiement en attente.
+3. **Au métier / DFT** : la reprise manuelle est subordonnée à la réponse sur le
+   dédoublonnage (point précédent).
+
+**Ce que le Sprint 5.3 ne réglera pas.** Il pose le verrou d'unicité, qui empêche une
+transmission de partir deux fois. Il ne fait pas partir celle qui n'est jamais partie.
+
+### Constat de la vérification manuelle du 2 septembre 2026 : trois filets, mais deux seulement quand c'est Kafka qui tombe
+
+Le scénario a été rejoué en réel, broker arrêté. Les trois états clôturés pendant la
+panne (1318, 1319, 1320) sont restés `CLOTURE` avec `transmis_comptabilite = false` et
+`statut_integration` nul, et **aucun message n'est parti** — vérifié sur le topic. La
+réponse au valideur portait bien `transmis: false` avec le motif exact, et le journal du
+service Workflow le préfixe `TRANSMISSION MANQUEE`.
+
+**En revanche, l'événement d'audit `TRANSMISSION_MANQUEE` n'est jamais arrivé.** C'est
+logique et non un défaut : le journal d'audit passe lui aussi par Kafka, en publication
+non bloquante (doctrine Sprint 1.3). Quand la cause de l'échec de transmission **est**
+l'indisponibilité du broker, la trace de cet échec ne peut pas davantage partir.
+
+**Conséquence pratique.** Sur les trois filets prévus, seuls **deux** survivent à une
+panne de Kafka :
+
+| Filet | Panne de Kafka | Autre panne (Saisie, Workflow, charge incomplète) |
+| --- | --- | --- |
+| Journal `TRANSMISSION MANQUEE` | **survit** | survit |
+| `transmis_comptabilite = false` en base | **survit** | survit |
+| Réponse au valideur | **survit** | survit |
+| Audit `TRANSMISSION_MANQUEE` | **perdu** | arrive |
+
+La supervision ne doit donc **pas** s'appuyer sur le journal d'audit pour détecter les
+transmissions manquées : c'est le préfixe de log et la requête
+`WHERE statut = 'CLOTURE' AND transmis_comptabilite = false` qui font foi. C'est un
+argument de plus en faveur de l'outbox transactionnel déjà consigné plus haut.

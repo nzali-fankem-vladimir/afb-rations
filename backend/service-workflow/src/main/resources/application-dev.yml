@@ -66,6 +66,22 @@ app:
     # Point a arreter avec la DSI, au meme titre que les Secrets Kubernetes.
     repertoire: ${PIECES_JOINTES_REPERTOIRE:./donnees/pieces-jointes}
 
+  transmission:
+    # Adresse du service Transmission, appele a la CLOTURE pour mettre l'etat valide a
+    # la disposition de la comptabilite (US-12, endpoint interne du Sprint 5.1,
+    # POST /transmission/processus/{id}).
+    #
+    # L'appel passe par l'API et jamais par une base : le service Transmission n'en a
+    # d'ailleurs aucune. C'est LUI qui relit l'en-tete de ce service et le detail du
+    # service Saisie, puis publie sur rations.etat.valide (diagramme AR04).
+    #
+    # Cet appel deroge a la convention 2 s / 3 s des appels sortants : son delai de
+    # lecture est de 20 s (ConfigurationTransmission), parce que l'appele enchaine
+    # lui-meme trois operations bornees totalisant 17 s au pire. Ce n'est pas un
+    # reglage d'environnement, c'est une consequence arithmetique -- d'ou sa presence
+    # en Java et non ici.
+    url: ${TRANSMISSION_URL:http://localhost:8086}
+
   saisie:
     # Adresse du service Saisie, interroge pour l'etat mensuel consolide
     # (RG-06, GET /saisie/processus/{id}/etat, docs/appel-consolidation.md).

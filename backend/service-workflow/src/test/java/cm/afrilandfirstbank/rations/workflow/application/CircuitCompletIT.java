@@ -34,6 +34,7 @@ import cm.afrilandfirstbank.rations.workflow.domaine.ProcessusMensuel;
 import cm.afrilandfirstbank.rations.workflow.domaine.RoleEnum;
 import cm.afrilandfirstbank.rations.workflow.domaine.StatutEnum;
 import cm.afrilandfirstbank.rations.workflow.domaine.StatutEtapeEnum;
+import cm.afrilandfirstbank.rations.workflow.domaine.StatutIntegrationEnum;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.SeparationTachesException;
 import cm.afrilandfirstbank.rations.workflow.infrastructure.EtapeWorkflowRepository;
 import cm.afrilandfirstbank.rations.workflow.infrastructure.ParametreSystemeRepository;
@@ -104,6 +105,7 @@ class CircuitCompletIT {
     private SoumissionService soumissionService;
     private ValidationService validationService;
     private RetourService retourService;
+    private AppuiTransmission.ClientDeTest transmissionClient;
 
     private static int prochainMois = 1;
 
@@ -120,6 +122,7 @@ class CircuitCompletIT {
         HabilitationService habilitationService = new HabilitationService(habilitationClient);
         SeparationTachesService separationTachesService =
                 new SeparationTachesService(etapeRepository);
+        transmissionClient = new AppuiTransmission.ClientDeTest();
 
         processusService = new ProcessusService(processusRepository, etapeRepository,
                 habilitationService, consolidationClient, publicateurAudit);
@@ -133,7 +136,9 @@ class CircuitCompletIT {
                 habilitationService, profilClient, separationTachesService,
                 new AiguillageService(seuilService), signatureService,
                 new EnregistrementValidation(processusRepository, etapeRepository,
-                        pieceJointeRepository, publicateurAudit));
+                        pieceJointeRepository, publicateurAudit),
+                AppuiTransmission.declenchement(
+                        transmissionClient, processusRepository, publicateurAudit));
 
         retourService = new RetourService(processusRepository, habilitationService, profilClient,
                 new EnregistrementRetour(processusRepository, etapeRepository, publicateurAudit));
@@ -178,10 +183,16 @@ class CircuitCompletIT {
                 .contains(LOGIN_CHEF)
                 .doesNotContain(LOGIN_DIRECTEUR);
 
-        assertThat(processusRepository.findById(idProcessus).orElseThrow()
-                .isTransmisComptabilite())
-                .as("RG-13 : la transmission est le Sprint 5, la cloture ne la declenche pas")
-                .isFalse();
+        // Sprint 5.1 : la cloture met l'etat a la disposition de la comptabilite. Le
+        // drapeau de RG-13 n'est pose qu'apres accuse du broker, et le statut d'integration
+        // avance avec lui -- les deux disent le meme fait vu de deux cotes.
+        assertThat(transmissionClient.processusAppeles()).containsExactly(idProcessus);
+        ProcessusMensuel transmis = processusRepository.findById(idProcessus).orElseThrow();
+        assertThat(transmis.isTransmisComptabilite())
+                .as("RG-13 : le drapeau est pose apres l'accuse du broker")
+                .isTrue();
+        assertThat(transmis.getStatutIntegration())
+                .isEqualTo(StatutIntegrationEnum.EN_ATTENTE);
     }
 
     // =====================================================================
@@ -231,10 +242,16 @@ class CircuitCompletIT {
                 .contains(LOGIN_CHEF)
                 .contains(LOGIN_DIRECTEUR);
 
-        assertThat(processusRepository.findById(idProcessus).orElseThrow()
-                .isTransmisComptabilite())
-                .as("RG-13 : faux sur les DEUX branches a la fin du Sprint 4")
-                .isFalse();
+        // La branche longue transmet aussi : le declenchement est branche sur le statut
+        // atteint, pas sur le niveau qui a valide -- c'est ce qui garantit que les DEUX
+        // points de cloture sont couverts sans qu'aucun ne puisse etre oublie.
+        assertThat(transmissionClient.processusAppeles()).containsExactly(idProcessus);
+        ProcessusMensuel transmis = processusRepository.findById(idProcessus).orElseThrow();
+        assertThat(transmis.isTransmisComptabilite())
+                .as("RG-13 : vrai sur les DEUX branches du seuil")
+                .isTrue();
+        assertThat(transmis.getStatutIntegration())
+                .isEqualTo(StatutIntegrationEnum.EN_ATTENTE);
     }
 
     // =====================================================================

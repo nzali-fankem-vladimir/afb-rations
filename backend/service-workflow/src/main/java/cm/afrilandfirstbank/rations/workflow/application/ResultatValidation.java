@@ -19,6 +19,12 @@ import cm.afrilandfirstbank.rations.workflow.domaine.ProcessusMensuel;
  * @param aiguillage la decision RG-08, avec le montant et le seuil qui l'ont
  *        produite. <b>C'est elle qui justifie le statut</b> : sans elle, la reponse
  *        dirait ce qui s'est passe sans dire pourquoi
+ * @param transmission ce que la mise a disposition comptable a donne (Sprint 5.1).
+ *        <b>Nul quand la validation ne cloture pas</b> — un etat aiguille vers le
+ *        directeur reseau n'a rien a transmettre —, renseigne aux deux points ou la
+ *        cloture survient. Champ ajoute <b>en fin de record</b>, comme {@code motifRetour}
+ *        au Sprint 4.4 : les cinq champs anterieurs gardent leur nom, leur type et leur
+ *        ordre
  */
 public record ResultatValidation(
         ProcessusMensuel processus,
@@ -26,5 +32,29 @@ public record ResultatValidation(
         EtapeWorkflow etape,
         NiveauValidation niveau,
         /** Nul au second niveau : aucun aiguillage n'a lieu apres le visa du DR. */
-        ResultatAiguillage aiguillage) {
+        ResultatAiguillage aiguillage,
+        /** Nul quand la validation ne cloture pas l'etat. */
+        ResultatTransmissionCloture transmission) {
+
+    /**
+     * Le resultat tel que l'enregistrement le produit : la transmission n'a pas encore eu
+     * lieu, puisqu'elle suit le commit.
+     */
+    public ResultatValidation(ProcessusMensuel processus, PieceJointe pieceJointe,
+            EtapeWorkflow etape, NiveauValidation niveau, ResultatAiguillage aiguillage) {
+        this(processus, pieceJointe, etape, niveau, aiguillage, null);
+    }
+
+    /**
+     * Le meme resultat, complete de ce que la transmission a donne.
+     *
+     * <p>Recopie plutot que mutation : le resultat de l'enregistrement reste ce qu'il etait
+     * au moment du commit, et l'on ne peut pas lui attribuer apres coup une transmission
+     * qui aurait echoue.
+     */
+    public ResultatValidation avecTransmission(ResultatTransmissionCloture transmission) {
+        return new ResultatValidation(
+                processus, pieceJointe, etape, niveau, aiguillage, transmission);
+    }
+
 }

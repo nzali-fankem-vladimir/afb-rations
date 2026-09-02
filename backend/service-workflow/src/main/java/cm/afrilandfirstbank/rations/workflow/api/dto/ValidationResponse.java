@@ -3,6 +3,7 @@ package cm.afrilandfirstbank.rations.workflow.api.dto;
 import java.time.LocalDateTime;
 
 import cm.afrilandfirstbank.rations.workflow.application.ResultatAiguillage;
+import cm.afrilandfirstbank.rations.workflow.application.ResultatTransmissionCloture;
 import cm.afrilandfirstbank.rations.workflow.application.ResultatValidation;
 import cm.afrilandfirstbank.rations.workflow.domaine.EtapeWorkflow;
 import cm.afrilandfirstbank.rations.workflow.domaine.PieceJointe;
@@ -39,7 +40,36 @@ public record ValidationResponse(
         String aiguillage,
         Long seuilApplique,
         PieceJointeResponse pieceJointe,
-        EtapeResponse etape) {
+        EtapeResponse etape,
+        TransmissionResponse transmission) {
+
+    /**
+     * Ce que la mise a disposition comptable a donne (Sprint 5.1).
+     *
+     * <p><b>Champ ajoute en fin de record</b>, comme {@code motifRetour} sur
+     * {@code ProcessusResponse} au Sprint 4.4 : les sept champs anterieurs gardent leur nom,
+     * leur type et leur ordre, et les cinq premiers restent ceux de l'exemple du contrat
+     * d'API section 5. <b>Nul quand la validation ne cloture pas</b> — un etat aiguille vers
+     * le directeur reseau n'a rien a transmettre.
+     *
+     * <p><b>Pourquoi cette information remonte jusqu'au valideur.</b> Aucune reprise
+     * automatique n'est possible : le realm n'a qu'un client public,
+     * {@code serviceAccountsEnabled: false}, et une tache programmee n'aurait aucun jeton a
+     * relayer. La personne qui vient de cloturer est donc, aujourd'hui, la <b>seule</b> a
+     * pouvoir apprendre qu'un etat n'est pas parti — et un etat cloture non transmis est un
+     * etat fige dont les beneficiaires ne seront pas payes.
+     *
+     * @param transmis vrai si et seulement si le broker a accuse reception
+     * @param motif ce qui a empeche la transmission, nul quand elle a abouti
+     * @param tentatives tentatives reellement faites, deux au plus
+     */
+    public record TransmissionResponse(boolean transmis, String motif, int tentatives) {
+
+        static TransmissionResponse depuis(ResultatTransmissionCloture resultat) {
+            return resultat == null ? null : new TransmissionResponse(
+                    resultat.transmis(), resultat.motif(), resultat.tentatives());
+        }
+    }
 
     /**
      * Le document, apres apposition du visa.
@@ -104,7 +134,8 @@ public record ValidationResponse(
                 aiguillage == null ? null : String.valueOf(aiguillage.decision()),
                 aiguillage == null ? null : aiguillage.seuilApplique(),
                 PieceJointeResponse.depuis(resultat.pieceJointe()),
-                EtapeResponse.depuis(resultat.etape()));
+                EtapeResponse.depuis(resultat.etape()),
+                TransmissionResponse.depuis(resultat.transmission()));
     }
 
 }

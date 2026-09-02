@@ -52,6 +52,9 @@ import cm.afrilandfirstbank.rations.workflow.infrastructure.ProcessusMensuelRepo
  *    12. piece jointe : une signature de plus
  *    13. transition : aiguillage au premier niveau, cloture au second
  *    14. audit (publie apres le commit)
+ *
+ *   APRES LA TRANSACTION
+ *    15. si l'etat est desormais CLOTURE : transmission comptable, sur pool dedie
  * </pre>
  *
  * <h2>Pas d'aiguillage au second niveau</h2>
@@ -79,11 +82,26 @@ import cm.afrilandfirstbank.rations.workflow.infrastructure.ProcessusMensuelRepo
  * grille tarifaire modifiee entretemps, et le chef d'unite validerait un montant
  * different de celui qu'il a lu et signe.
  *
- * <h2>La cloture ne transmet rien</h2>
+ * <h2>La cloture transmet, mais apres le commit, et sans jamais le remettre en cause</h2>
  *
- * <p>{@code transmis_comptabilite} reste faux, aux deux niveaux. La publication sur
- * {@code rations.etat.valide} est le Sprint 5 ; l'anticiper ici contournerait le
- * verrou de transmission unique de RG-13.
+ * <p>Depuis le Sprint 5.1, une cloture declenche la mise a disposition de l'etat vers la
+ * comptabilite. Le declenchement a lieu <b>hors et apres</b> la transaction
+ * ({@link DeclenchementTransmission}), aux <b>deux</b> points ou la cloture survient : la
+ * validation du chef d'unite sous le seuil, et celle du directeur reseau. Ces deux points
+ * sont couverts par une seule ligne de code, qui teste le statut atteint — les separer en
+ * deux appels ouvrirait la possibilite d'en oublier un.
+ *
+ * <p><b>Un echec de transmission n'annule jamais la validation.</b> Le document porte deja
+ * le visa, ecrit sur disque hors transaction (Sprint 4.2), et faire dependre une validation
+ * de la banque de la disponibilite de Kafka serait absurde. L'echec est signale : journal au
+ * prefixe {@code TRANSMISSION MANQUEE}, evenement d'audit, et champ {@code transmission}
+ * dans la reponse — le seul moment ou un humain l'apprend, aucune reprise automatique
+ * n'etant possible faute de compte de service au realm.
+ *
+ * <p>{@code transmis_comptabilite} n'est pose qu'apres accuse du broker, dans sa propre
+ * transaction ({@link EnregistrementTransmission}). Le poser a la cloture contournerait le
+ * verrou de RG-13 : l'etat paraitrait transmis avant de l'etre, et la transmission reelle
+ * serait ensuite refusee comme un doublon.
  *
  * <h2>La separation des taches</h2>
  *
@@ -104,6 +122,7 @@ public class ValidationService {
     private final AiguillageService aiguillageService;
     private final SignatureService signatureService;
     private final EnregistrementValidation enregistrementValidation;
+    private final DeclenchementTransmission declenchementTransmission;
 
     public ValidationService(ProcessusMensuelRepository processusMensuelRepository,
             PieceJointeRepository pieceJointeRepository,
@@ -112,7 +131,8 @@ public class ValidationService {
             SeparationTachesService separationTachesService,
             AiguillageService aiguillageService,
             SignatureService signatureService,
-            EnregistrementValidation enregistrementValidation) {
+            EnregistrementValidation enregistrementValidation,
+            DeclenchementTransmission declenchementTransmission) {
         this.processusMensuelRepository = processusMensuelRepository;
         this.pieceJointeRepository = pieceJointeRepository;
         this.habilitationService = habilitationService;
@@ -121,6 +141,7 @@ public class ValidationService {
         this.aiguillageService = aiguillageService;
         this.signatureService = signatureService;
         this.enregistrementValidation = enregistrementValidation;
+        this.declenchementTransmission = declenchementTransmission;
     }
 
     /**
@@ -189,8 +210,44 @@ public class ValidationService {
 
         // 10 a 14. Le document porte la signature et son ecriture est confirmee : on
         //          peut ecrire en base.
-        return enregistrementValidation.enregistrer(
+        ResultatValidation resultat = enregistrementValidation.enregistrer(
                 idProcessus, niveau, acteur, signature, aiguillage, adresseIp);
+
+        // 15. La cloture est commitee. Si elle a eu lieu, l'etat part en comptabilite.
+        return transmettreSiCloture(resultat, enteteAutorisation, adresseIp);
+    }
+
+    /**
+     * Declenche la transmission quand, et seulement quand, la validation a cloture l'etat.
+     *
+     * <h2>Un seul point de branchement pour les deux clotures</h2>
+     *
+     * <p>Le circuit cloture a deux endroits : la validation du chef d'unite quand le montant
+     * est sous le seuil (RG-08), et celle du directeur reseau, qui est terminale. Plutot que
+     * de brancher la transmission a ces deux endroits, on la branche sur ce qui leur est
+     * commun et qui les <b>definit</b> : le statut atteint vaut {@link StatutEnum#CLOTURE}.
+     *
+     * <p>Deux appels separes se seraient ressembles a s'y meprendre, et il aurait suffi d'en
+     * oublier un pour qu'une moitie des etats de la banque ne parte jamais en paiement, sans
+     * aucune erreur visible. Ici, il n'y a rien a oublier : tout etat qui atteint
+     * {@code CLOTURE} passe par cette ligne, y compris par une troisieme voie de cloture
+     * qu'un sprint ulterieur ajouterait.
+     *
+     * <p><b>Rien n'est tente sur un etat aiguille vers le directeur reseau</b> : il n'est pas
+     * cloture, il n'a rien a transmettre, et le champ {@code transmission} reste nul.
+     */
+    private ResultatValidation transmettreSiCloture(ResultatValidation resultat,
+            String enteteAutorisation, String adresseIp) {
+
+        if (resultat.processus().getStatut() != StatutEnum.CLOTURE) {
+            return resultat;
+        }
+
+        return resultat.avecTransmission(declenchementTransmission.transmettre(
+                resultat.processus().getId(),
+                resultat.processus().getCodeUnite(),
+                enteteAutorisation,
+                adresseIp));
     }
 
     // --- Regles -----------------------------------------------------------------

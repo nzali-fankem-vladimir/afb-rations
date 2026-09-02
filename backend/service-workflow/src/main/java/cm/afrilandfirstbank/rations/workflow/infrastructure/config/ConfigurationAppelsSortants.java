@@ -5,6 +5,7 @@ import java.time.Duration;
 import org.springframework.beans.factory.config.ConfigurableBeanFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import org.springframework.context.annotation.Scope;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
@@ -48,7 +49,18 @@ public class ConfigurationAppelsSortants {
     /** Delai d'attente de la reponse, une fois la connexion etablie. */
     static final Duration DELAI_LECTURE = Duration.ofSeconds(3);
 
+    /**
+     * Le constructeur <b>par defaut</b> du service : c'est lui qu'obtient tout client qui
+     * demande un {@code RestClient.Builder} sans qualificatif.
+     *
+     * <p>{@code @Primary} depuis le Sprint 5.1, ou un second constructeur est apparu —
+     * {@code constructeurRestTransmission}, dote d'un delai de lecture bien plus long parce
+     * que l'appele fait lui-meme trois operations bornees. Sans cette annotation, l'arrivee
+     * de ce second bean rendrait ambigue l'injection des clients d'habilitation et de
+     * consolidation, ecrits bien avant lui.
+     */
     @Bean
+    @Primary
     @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
     public RestClient.Builder constructeurRestSortant() {
         SimpleClientHttpRequestFactory fabrique = new SimpleClientHttpRequestFactory();

@@ -142,7 +142,9 @@ class RetourServiceTest {
                 new AiguillageService(new SeuilService(parametreSystemeRepository)),
                 signatureService,
                 new EnregistrementValidation(processusRepository, etapeRepository,
-                        pieceJointeRepository, publicateurAudit));
+                        pieceJointeRepository, publicateurAudit),
+                AppuiTransmission.declenchement(new AppuiTransmission.ClientDeTest(),
+                        processusRepository, publicateurAudit));
 
         processusService = new ProcessusService(
                 processusRepository,
