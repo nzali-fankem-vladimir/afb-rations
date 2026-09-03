@@ -5,12 +5,15 @@ import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -31,13 +34,61 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 @EnableMethodSecurity
 public class SecurityConfig {
 
-    private final List<String> originsAutorisees;
+    /**
+     * Chemin de l'endpoint interne de mise a jour du statut d'integration (Sprint 5.2).
+     * Un seul chemin, nomme ici et nulle part ailleurs : sa portee doit se lire d'un coup
+     * d'oeil.
+     */
+    static final String CHEMIN_INTEGRATION = "/processus/*/integration";
 
-    public SecurityConfig(@Value("${app.cors.allowed-origins}") List<String> originsAutorisees) {
+    private final List<String> originsAutorisees;
+    private final String cleInterne;
+
+    public SecurityConfig(@Value("${app.cors.allowed-origins}") List<String> originsAutorisees,
+            @Value("${app.integration.cle-interne}") String cleInterne) {
         this.originsAutorisees = originsAutorisees;
+        this.cleInterne = cleInterne;
+    }
+
+    /**
+     * Chaine dediee a l'endpoint interne {@code PUT /processus/{id}/integration}
+     * (Sprint 5.2).
+     *
+     * <h2>Pourquoi une chaine a part, et non une regle de plus dans la chaine principale</h2>
+     *
+     * <p>Cet endpoint <b>ne passe pas par OAuth2</b> : il est appele par le service
+     * Transmission a la reception d'un accuse comptable, c'est-a-dire depuis un message
+     * Kafka, ou aucun utilisateur n'existe et aucun jeton n'est donc relayable (doctrine
+     * Sprint 1.3, qui suppose un utilisateur final). Le realm ne porte par ailleurs aucun
+     * compte de service. Il est protege par un <b>secret partage</b>, dispositif provisoire
+     * arbitre au Sprint 5.2.
+     *
+     * <p>Une chaine separee, plutot qu'une exception dans la chaine principale, pour que
+     * cette difference soit <b>visible dans la structure</b> : les six endpoints du contrat
+     * restent tous protoges par OAuth2 sans exception a lire entre les lignes, et
+     * l'endpoint interne porte sa propre regle a cote de sa propre justification.
+     *
+     * <p>{@link Order} en tete : sans cela, la chaine principale, qui accepte toutes les
+     * requetes, capterait celle-ci avant que celle-la ne soit consultee.
+     */
+    @Bean
+    @Order(Ordered.HIGHEST_PRECEDENCE)
+    public SecurityFilterChain chaineIntegrationInterne(HttpSecurity http) throws Exception {
+        http
+                .securityMatcher(CHEMIN_INTEGRATION)
+                .csrf(csrf -> csrf.disable())
+                .cors(cors -> cors.disable())
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                // Le controle d'acces est entierement porte par le filtre du secret
+                // partage : Spring Security n'a ici aucun jeton a valider.
+                .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
+                .addFilterBefore(new FiltreCleInterne(cleInterne),
+                        UsernamePasswordAuthenticationFilter.class);
+        return http.build();
     }
 
     @Bean
+    @Order(Ordered.LOWEST_PRECEDENCE)
     public SecurityFilterChain securityFilterChain(HttpSecurity http, RoleJwtConverter roleJwtConverter)
             throws Exception {
         http

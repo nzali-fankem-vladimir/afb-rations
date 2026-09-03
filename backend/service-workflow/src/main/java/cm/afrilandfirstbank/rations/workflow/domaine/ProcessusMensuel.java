@@ -264,6 +264,52 @@ public class ProcessusMensuel {
         this.statutIntegration = StatutIntegrationEnum.EN_ATTENTE;
     }
 
+    /**
+     * Inscrit sur l'etat la suite que la comptabilite lui a donnee (Sprint 5.2, contrat
+     * d'API section 7.2).
+     *
+     * <h2>Visibilite paquet, comme {@link #appliquerStatut(StatutEnum)}</h2>
+     *
+     * <p>Le statut d'integration a lui aussi ses transitions permises — {@code INTEGRE} et
+     * {@code REJETE} sont definitifs, aucun accuse ne fait regresser un statut — et elles
+     * sont tenues par {@link TransitionIntegration}. Fermer ce mutateur fait verifier par
+     * le compilateur que rien ne les contourne : aucun service applicatif ne peut ecrire un
+     * statut d'integration sans que la table des transitions l'ait juge legal.
+     *
+     * <p>C'est exactement la discipline du statut de circuit, et pour la meme raison : le
+     * statut d'integration est ce que lit le suivi (US-15) pour dire si un etat a ete paye.
+     *
+     * <h2>Les quatre champs avancent ensemble</h2>
+     *
+     * <p>Ils viennent d'un seul et meme accuse et n'ont aucun sens separement : une
+     * reference comptable sans son statut ne dit pas si l'etat a ete pris en charge ou
+     * refuse. Les ecrire par quatre mutateurs distincts autoriserait des combinaisons que
+     * la comptabilite n'a jamais envoyees.
+     *
+     * <p><b>Ecrire un {@code null} recu est deliberement possible</b> : un accuse
+     * d'integration ne porte pas de motif, et le laisser subsister effacerait la trace du
+     * rejet precedent tout en gardant sa justification — un etat integre avec un motif de
+     * refus affiche a cote.
+     *
+     * @throws IllegalStateException si l'etat n'a jamais ete transmis. Dernier garde-fou,
+     *         double de la contrainte {@code ck_processus_integration_apres_transmission} :
+     *         la comptabilite ne peut pas avoir traite ce qu'elle n'a pas recu
+     */
+    void appliquerAccuseComptable(StatutIntegrationEnum statutRecu, String referenceComptable,
+            LocalDateTime dateTraitement, String motifIntegration) {
+
+        if (!transmisComptabilite) {
+            throw new IllegalStateException(
+                    "L'etat " + id + " n'a jamais ete transmis a la comptabilite : aucun statut "
+                            + "d'integration ne peut y etre inscrit (RG-13, contrainte "
+                            + "ck_processus_integration_apres_transmission).");
+        }
+        this.statutIntegration = statutRecu;
+        this.referenceComptable = referenceComptable;
+        this.dateTraitement = dateTraitement;
+        this.motifIntegration = motifIntegration;
+    }
+
     // --- Lecture ---------------------------------------------------------------
 
     public Long getId() {

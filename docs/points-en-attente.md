@@ -273,3 +273,82 @@ La supervision ne doit donc **pas** s'appuyer sur le journal d'audit pour détec
 transmissions manquées : c'est le préfixe de log et la requête
 `WHERE statut = 'CLOTURE' AND transmis_comptabilite = false` qui font foi. C'est un
 argument de plus en faveur de l'outbox transactionnel déjà consigné plus haut.
+
+---
+
+## Partitionnement des accusés sur `rations.etat.accuse` — clé posée par la comptabilité (Sprint 5.2)
+
+**À poser à la DFT, à côté du dédoublonnage ci-dessus et de M-03**, dont c'est le
+versant symétrique : celui-là porte sur ce que la comptabilité fait de ce qu'on lui
+envoie, celui-ci sur la forme de ce qu'elle nous renvoie.
+
+**La question.** Le module de comptabilisation publie-t-il ses accusés sur
+`rations.etat.accuse` avec **`idProcessus` en clé de partition** ?
+
+**Pourquoi elle compte.** Le consommateur du Sprint 5.2 tourne à un seul fil par
+instance (`concurrency = 1`), et Kafka garantit qu'une partition n'est lue que par un
+consommateur du groupe. Si les accusés d'un même état portent la même clé, ils tombent
+donc dans la même partition et sont traités **en série et dans l'ordre**.
+
+**Mais cette garantie est une supposition, pas un fait vérifié.** Le module de
+comptabilisation n'est pas accessible à l'équipe et **nous ne contrôlons pas son
+producteur**. S'il partitionne par autre chose — un identifiant technique de lot
+d'envoi, par exemple, ce qui serait un choix parfaitement naturel de son côté — deux
+accusés portant sur le même état peuvent atterrir sur deux partitions différentes et
+arriver **dans le désordre**, malgré `concurrency = 1`.
+
+**Ce qui protège aujourd'hui, et qui ne dépend d'aucune supposition.** Le vrai filet
+n'est pas l'ordre Kafka, c'est le **refus strict de contradiction** arbitré au Sprint
+5.2 : `INTEGRE` et `REJETE` sont définitifs, aucun accusé ne fait régresser un statut,
+et un accusé qui contredit un statut déjà reçu est refusé, tracé, et n'écrit rien. Un
+rejeu désordonné ne peut donc pas corrompre un statut — au pire il produit une trace
+`ACCUSE CONTRADICTOIRE` qu'un humain examine.
+
+**Ce qui est demandé.**
+
+1. **À la DFT** : confirmer la clé de partition des accusés. Si elle vaut
+   `idProcessus`, l'ordre est garanti et la trace `ACCUSE CONTRADICTOIRE` devient le
+   signal d'une vraie anomalie comptable. Si elle vaut autre chose, cette même trace
+   peut n'être qu'un désordre de transport, et son interprétation en exploitation
+   change du tout au tout.
+2. **À l'exploitation** : surveiller le préfixe `ACCUSE CONTRADICTOIRE`. Sa
+   signification exacte dépend de la réponse au point 1.
+
+---
+
+## Montée de `spring-kafka` vers 4.1.0 — dette technique datée (Sprint 5.2)
+
+**Le point.** Le pom parent épingle `spring-kafka.version` à **3.3.0** (décision Sprint 0.2,
+« versions hors Spring Boot en `dependencyManagement` »). Or **Spring Boot 4.1.0, parent du
+projet, gère déjà `spring-kafka` en 4.1.0** : l'épinglage rétrograde la bibliothèque de deux
+versions majeures, alors que les `kafka-clients` effectivement tirés sont en **4.2.1**.
+
+**Comment il s'est révélé.** Au Sprint 5.2, `@EmbeddedKafka` échoue avec
+`NoClassDefFoundError: kafka/testkit/KafkaClusterTestKit` : Kafka 4 a déplacé cette classe,
+que spring-kafka 3.3.0 référence encore. **Le test bout en bout du guide (test 10) n'est
+donc pas automatisable en l'état.** Le sous-sprint a livré à la place un test de câblage
+(`CablageConsommateurAccuseTest`) et fait le bout en bout à la vérification manuelle, sur le
+conteneur réel.
+
+**Pourquoi ce n'est pas seulement une gêne de test.** Un client Kafka en retard de deux
+versions majeures sur son serveur n'est pas une configuration qu'on souhaite emmener en
+production. Le décalage est aujourd'hui silencieux ; il ne l'a été rendu visible que par un
+test.
+
+**Ce qui est demandé — sprint technique dédié, pas « un jour ».**
+
+| Étape | Portée |
+| --- | --- |
+| Retirer `<spring-kafka.version>` du pom parent, laisser Boot 4.1 gérer | 1 ligne, effet sur tout le réacteur |
+| Rejouer la suite complète du backend | 603 tests au 2 septembre 2026 |
+| **Éprouver chacun des six producteurs, broker éteint** | `rations-audit-commun` (les cinq couches qui garantissent que l'audit ne fait jamais échouer le métier, `max.block.ms` en tête) et le producteur comptable du Sprint 5.1 (`acks=all`, idempotence, budget 6 s / 7 s) |
+| Éprouver le consommateur d'accusé, broker éteint puis relancé | Sprint 5.2 |
+| Réactiver le test bout en bout `@EmbeddedKafka` | Test 10 du guide 5.2, aujourd'hui remplacé |
+
+**Pourquoi la vérification broker éteint est explicitement demandée.** C'est elle, et elle
+seule, qui a révélé les deux défauts du Sprint 5.1 — le bean `ObjectMapper` absent et le
+`KafkaException` levé dès l'appel de `send()`. Une montée de version qui passerait les 603
+tests sans ce contrôle laisserait exactement le même angle mort.
+
+**Ce que ce report coûte aujourd'hui.** Un test automatisé de moins (le bout en bout Kafka),
+compensé par un test de câblage et par la vérification manuelle. Rien en fonctionnement.

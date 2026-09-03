@@ -241,8 +241,88 @@ Un fichier unique, tenu à jour, qui répond à une question simple : où en est
 | D-07 | Nommage des topics en environnement partagé | DSI | | Noms de développement conservés | Topics à renommer après coup | En attente |
 | D-08 | URL publiques passerelle et frontend | DSI | | `A_CONFIRMER_DSI_URL_API` et `_URL_FRONT` | Exposition impossible | En attente |
 | D-09 | Pipeline de livraison Harbor vers cluster | DSI | | Procédure manuelle documentée | Déploiement manuel | En attente |
+| D-10 | Compte de service Keycloak pour les appels sans utilisateur | DSI | 2026-09-02 | Secret partagé `X-Cle-Interne` (§3bis) | Reprise d'une transmission manquée impossible ; secret à gérer hors Keycloak | En attente |
+| D-11 | Clé de partition des accusés sur `rations.etat.accuse` | DFT | 2026-09-02 | Ordre supposé par `idProcessus` | L'ordre n'est pas garanti ; le refus de contradiction reste le filet | En attente |
+| T-01 | Montée de `spring-kafka` 3.3.0 → 4.1.0 (sprint technique dédié) | Équipe | 2026-09-02 | Épinglage conservé | Client Kafka en retard de deux majeures ; test bout en bout non automatisable | En attente |
 
 La colonne « demandé le » sert à relancer : un point en attente depuis trois semaines n'a pas le même statut qu'un point demandé hier.
+
+---
+
+## 3bis. Secret partagé pour la remontée du statut d'intégration (Sprint 5.2)
+
+### 3bis.1 Le problème
+
+Le consommateur de l'accusé comptable doit écrire le statut d'intégration sur
+`processus_mensuel`, par l'API du service Workflow (AR04). Toute la chaîne du module relaie
+le jeton de l'utilisateur final (doctrine Sprint 1.3) — mais **un message Kafka n'a pas
+d'utilisateur derrière lui**. L'accusé arrive des minutes ou des heures après la clôture ;
+aucun jeton n'existe, et le realm `afb-rations-dev` ne porte **aucun compte de service**
+(`serviceAccountsEnabled: false`).
+
+Ce n'est pas une exception à la doctrine : c'est une situation où elle **ne s'applique pas**,
+faute d'utilisateur final à relayer.
+
+Deux attitudes sont mauvaises. Ouvrir la route sans contrôle (`permitAll`, comme Swagger)
+laisserait quiconque atteint le port 8084 déclarer n'importe quel état intégré ou rejeté —
+et il s'agit d'une **écriture sur le statut de paiement**, pas d'une lecture de
+documentation. Attendre le compte de service DSI bloquerait le sous-sprint sur une réponse
+qui n'est pas venue depuis le 5.1.
+
+### 3bis.2 Le dispositif
+
+Un secret partagé, en en-tête `X-Cle-Interne`, exigé par la **seule** route
+`PUT /processus/{id}/integration`, portée par une **chaîne de sécurité dédiée** qui ne passe
+pas par OAuth2. Les six endpoints du contrat restent tous protégés par OAuth2, sans exception
+à lire entre les lignes.
+
+```yaml
+# service-workflow — application-dev.yml
+app:
+  integration:
+    cle-interne: ${INTEGRATION_CLE_INTERNE:changeme-in-development}
+
+# service-transmission — application-dev.yml
+app:
+  workflow:
+    cle-interne: ${INTEGRATION_CLE_INTERNE:changeme-in-development}
+```
+
+**Les deux valeurs doivent être identiques.** Une seule variable d'environnement les sert
+toutes deux.
+
+### 3bis.3 Le secret ne fuit par aucun canal
+
+Exigence posée explicitement à l'arbitrage, et **rendue vérifiable plutôt que promise** : le
+module a l'habitude de journaliser des motifs détaillés (`AUDIT PERDU`,
+`TRANSMISSION MANQUEE`, `SEUIL INDISPONIBLE`), et c'est précisément ce qui rend la fuite
+probable.
+
+| Garantie | Où |
+| --- | --- |
+| Jamais dans un journal, une exception, un événement d'audit, un corps de réponse | `FiltreCleInterne`, `StatutIntegrationHttpClient` |
+| Ni longueur, ni préfixe — un préfixe est déjà une fuite | idem |
+| Le refus ne distingue pas « absent » de « invalide » | `FiltreCleInterne` |
+| Comparaison à temps constant (`MessageDigest.isEqual`) | `FiltreCleInterne` |
+| **Deux tests de garde relisent les sources**, un par service | `CleInterneJamaisJournaliseeTest` × 2 |
+
+### 3bis.4 Le jour où la DSI ouvre un compte de service
+
+Le remplacement est circonscrit à trois fichiers : la chaîne dédiée de `SecurityConfig`
+redevient une route OAuth2 ordinaire, `FiltreCleInterne` disparaît, et
+`StatutIntegrationHttpClient` présente un jeton au lieu d'un en-tête. Le reste du
+sous-sprint — table des transitions, idempotence, traitement des anomalies — n'est pas
+touché.
+
+### 3bis.5 Requête de contrôle
+
+Vérifier que la clé n'a pas été laissée à sa valeur de développement en environnement
+partagé :
+
+```bash
+docker exec service-workflow printenv INTEGRATION_CLE_INTERNE
+# doit rendre autre chose que changeme-in-development
+```
 
 ---
 

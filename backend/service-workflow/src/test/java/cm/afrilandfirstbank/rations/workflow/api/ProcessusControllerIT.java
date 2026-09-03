@@ -43,6 +43,7 @@ import cm.afrilandfirstbank.rations.commun.audit.EvenementAudit;
 import cm.afrilandfirstbank.rations.commun.audit.PublicateurAudit;
 import cm.afrilandfirstbank.rations.workflow.application.EtatConsolide;
 import cm.afrilandfirstbank.rations.workflow.application.ManqueCompletude;
+import cm.afrilandfirstbank.rations.workflow.application.IntegrationComptableService;
 import cm.afrilandfirstbank.rations.workflow.application.ProcessusService;
 import cm.afrilandfirstbank.rations.workflow.application.RetourService;
 import cm.afrilandfirstbank.rations.workflow.application.DecisionAiguillage;
@@ -120,6 +121,15 @@ class ProcessusControllerIT {
 
     @MockitoBean
     private RetourService retourService;
+
+    /**
+     * Requis depuis le Sprint 5.2 : le controleur sert aussi l'endpoint interne
+     * {@code PUT /processus/{id}/integration}. Sans cette doublure, le contexte de ce
+     * {@code @WebMvcTest} ne s'assemble pas — les services ne sont pas balayes.
+     * L'endpoint lui-meme est eprouve par {@code IntegrationComptableIT}.
+     */
+    @MockitoBean
+    private IntegrationComptableService integrationComptableService;
 
     /** Empreinte de reference : 8 caracteres de prefixe plus 64 de SHA-256. */
     private static final String EMPREINTE =

@@ -36,6 +36,18 @@ app:
     # configuration : d'ou une propriete surchargeable, et non une constante Java.
     topic-etat-valide: ${KAFKA_TOPIC_ETAT_VALIDE:rations.etat.valide}
 
+    # Topic de l'accuse renvoye par la comptabilite (contrat section 7.2, Sprint 5.2).
+    # Meme statut que le precedent : nom de DEVELOPPEMENT, point D-07 en attente.
+    topic-etat-accuse: ${KAFKA_TOPIC_ETAT_ACCUSE:rations.etat.accuse}
+
+    # Identifiant du groupe de consommation. Un seul groupe : Kafka garantit alors
+    # qu'une partition n'est lue que par un consommateur a la fois, donc qu'un meme
+    # etat n'est jamais traite en parallele -- pour autant que le module de
+    # comptabilisation partitionne bien par idProcessus, ce qui reste a confirmer
+    # avec la DFT (docs/points-en-attente.md). Le vrai filet n'est pas la : c'est le
+    # refus strict de contradiction, cote service Workflow.
+    groupe-accuse: ${KAFKA_GROUPE_ACCUSE:rations-transmission-accuse}
+
   workflow:
     # Adresse du service Workflow, interroge pour l'en-tete du processus
     # (GET /processus/{id}) : periode, unite, type, montant total et statut.
@@ -48,6 +60,21 @@ app:
     # L'echange passe par l'API et jamais par la base rations_workflow : aucune
     # source de donnees vers elle n'existe ici, et la cartographie le verifie.
     url: ${WORKFLOW_URL:http://localhost:8084}
+
+    # Secret partage presente a PUT /processus/{id}/integration, endpoint interne du
+    # Sprint 5.2 (DISPOSITIF PROVISOIRE, docs/dispositifs_provisoires.md).
+    #
+    # POURQUOI un secret et pas un jeton. Cet appel nait d'un message Kafka : aucun
+    # utilisateur n'est derriere lui, il n'y a donc aucun jeton a relayer -- la
+    # doctrine du Sprint 1.3 ne s'applique pas, faute d'utilisateur final. Et le realm
+    # afb-rations-dev ne porte aucun compte de service (serviceAccountsEnabled: false)
+    # : aucune identite machine n'existe encore. A remplacer par un compte de service
+    # le jour ou la DSI en ouvre un (docs/points-en-attente.md).
+    #
+    # Sa valeur n'apparait dans AUCUN journal, message d'erreur ou evenement d'audit,
+    # ni ici ni cote Workflow -- pas meme sous forme de longueur ou de prefixe. Un
+    # test de garde le verifie dans les deux services.
+    cle-interne: ${INTEGRATION_CLE_INTERNE:changeme-in-development}
 
   saisie:
     # Adresse du service Saisie, interroge pour le detail consolide

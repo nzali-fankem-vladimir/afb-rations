@@ -22,6 +22,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import cm.afrilandfirstbank.rations.commun.audit.DeltaAudit;
 import cm.afrilandfirstbank.rations.commun.audit.EvenementAudit;
 import cm.afrilandfirstbank.rations.commun.audit.PublicateurAudit;
+import cm.afrilandfirstbank.rations.workflow.domaine.exception.AccuseContradictoireException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.AgentNonHabiliteException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.DocumentNonProduitException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.EtatIncompletException;
@@ -30,6 +31,7 @@ import cm.afrilandfirstbank.rations.workflow.domaine.exception.MotifRetourRequis
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.PieceJointeExistanteException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ProcessusExistantException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ProcessusIntrouvableException;
+import cm.afrilandfirstbank.rations.workflow.domaine.exception.ProcessusNonTransmisException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.RoleNonAttenduException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.SeparationTachesException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ServiceIdentiteIndisponibleException;
@@ -289,6 +291,42 @@ public class GestionnaireErreursApi {
     public ResponseEntity<ErreurApiDto> seuilIndisponible(SeuilIndisponibleException exception,
             HttpServletRequest requete) {
         return reponse(requete, HttpStatus.INTERNAL_SERVER_ERROR, "SEUIL_INDISPONIBLE",
+                exception.getMessage());
+    }
+
+    /**
+     * Accuse comptable portant sur un etat jamais transmis (Sprint 5.2).
+     *
+     * <p><b>{@code 422} et non {@code 409}</b> : rien n'est duplique, c'est une regle de
+     * gestion qui refuse — meme distinction qu'au Sprint 2.3 entre
+     * {@code TRANSITION_INTERDITE} et un conflit d'unicite.
+     *
+     * <p>Non trace ici : c'est le service Transmission, qui a recu l'accuse, qui publie la
+     * trace d'audit avec le prefixe {@code ACCUSE INCOHERENT}. La tracer aux deux endroits
+     * ferait deux lignes pour un seul fait.
+     */
+    @ExceptionHandler(ProcessusNonTransmisException.class)
+    public ResponseEntity<ErreurApiDto> processusNonTransmis(ProcessusNonTransmisException exception,
+            HttpServletRequest requete) {
+        return reponse(requete, HttpStatus.UNPROCESSABLE_ENTITY, "PROCESSUS_NON_TRANSMIS",
+                exception.getMessage());
+    }
+
+    /**
+     * Accuse comptable contredisant un statut d'integration deja recu (Sprint 5.2).
+     *
+     * <p><b>{@code 409} et non {@code 422}</b>, contrairement au precedent : il y a bien
+     * ici deux affirmations concurrentes sur la meme ressource, et c'est la definition d'un
+     * conflit — meme distinction qu'au Sprint 4.1 entre {@code PROCESSUS_EXISTANT}
+     * ({@code 409}) et {@code FONCTIONNALITE_NON_OUVERTE} ({@code 422}).
+     *
+     * <p>Le message nomme le statut deja porte <b>et</b> celui de l'accuse recu : sans les
+     * deux, personne ne pourrait lever la contradiction avec la comptabilite.
+     */
+    @ExceptionHandler(AccuseContradictoireException.class)
+    public ResponseEntity<ErreurApiDto> accuseContradictoire(AccuseContradictoireException exception,
+            HttpServletRequest requete) {
+        return reponse(requete, HttpStatus.CONFLICT, "ACCUSE_CONTRADICTOIRE",
                 exception.getMessage());
     }
 

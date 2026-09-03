@@ -8,6 +8,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -15,11 +16,14 @@ import org.springframework.web.bind.annotation.RestController;
 
 import cm.afrilandfirstbank.rations.workflow.api.dto.DeclenchementProcessusRequest;
 import cm.afrilandfirstbank.rations.workflow.api.dto.EtatProcessusResponse;
+import cm.afrilandfirstbank.rations.workflow.api.dto.IntegrationComptableRequest;
+import cm.afrilandfirstbank.rations.workflow.api.dto.IntegrationComptableResponse;
 import cm.afrilandfirstbank.rations.workflow.api.dto.ProcessusResponse;
 import cm.afrilandfirstbank.rations.workflow.api.dto.RetourRequest;
 import cm.afrilandfirstbank.rations.workflow.api.dto.RetourResponse;
 import cm.afrilandfirstbank.rations.workflow.api.dto.SoumissionResponse;
 import cm.afrilandfirstbank.rations.workflow.api.dto.ValidationResponse;
+import cm.afrilandfirstbank.rations.workflow.application.IntegrationComptableService;
 import cm.afrilandfirstbank.rations.workflow.application.ProcessusService;
 import cm.afrilandfirstbank.rations.workflow.application.RetourService;
 import cm.afrilandfirstbank.rations.workflow.application.SoumissionService;
@@ -44,6 +48,19 @@ import jakarta.validation.Valid;
  * <p>Les six endpoints du contrat d'API sont desormais tous servis, et il n'y en a
  * pas un de plus. La reprise d'un etat retourne n'en ajoute aucun : elle est portee
  * par la resoumission (voir {@code SoumissionService}).
+ *
+ * <h2>Plus un endpoint interne, hors contrat passerelle</h2>
+ *
+ * <pre>
+ *   PUT  /processus/{id}/integration       accuse comptable    secret partage     (5.2)
+ * </pre>
+ *
+ * <p>Il n'est pas destine au frontend : il est appele par le service Transmission a la
+ * reception d'un accuse sur {@code rations.etat.accuse}. Meme statut que
+ * {@code GET /identite/habilitation} (Sprint 1.3),
+ * {@code GET /saisie/processus/{id}/etat} (Sprint 3.4) et
+ * {@code POST /transmission/processus/{id}} (Sprint 5.1) : <b>le compte de six endpoints
+ * reste celui du contrat expose par la passerelle</b>.
  *
  * <h2>Les roles ne sont pas les memes selon l'endpoint</h2>
  *
@@ -74,15 +91,18 @@ public class ProcessusController {
     private final SoumissionService soumissionService;
     private final ValidationService validationService;
     private final RetourService retourService;
+    private final IntegrationComptableService integrationComptableService;
 
     public ProcessusController(ProcessusService processusService,
             SoumissionService soumissionService,
             ValidationService validationService,
-            RetourService retourService) {
+            RetourService retourService,
+            IntegrationComptableService integrationComptableService) {
         this.processusService = processusService;
         this.soumissionService = soumissionService;
         this.validationService = validationService;
         this.retourService = retourService;
+        this.integrationComptableService = integrationComptableService;
     }
 
     /**
@@ -265,6 +285,53 @@ public class ProcessusController {
 
         return ResponseEntity.ok(RetourResponse.depuis(retourService.retourner(
                 id, requete.motif(), enteteAutorisation, requeteHttp.getRemoteAddr())));
+    }
+
+    /**
+     * Inscrit sur l'etat la suite que la comptabilite lui a donnee (Sprint 5.2, contrat
+     * d'API section 7.2, US-12, US-15). <b>Endpoint interne, hors contrat passerelle.</b>
+     *
+     * <h2>Ni jeton, ni role — et pourquoi ce n'est pas un relachement</h2>
+     *
+     * <p>Aucun {@code @PreAuthorize} et aucun en-tete {@code Authorization} : cet appel nait
+     * d'un <b>message Kafka</b>, ou aucun utilisateur n'existe et ou aucun jeton n'est donc
+     * relayable — la doctrine du Sprint 1.3 suppose un utilisateur final. Le realm ne porte
+     * par ailleurs aucun compte de service.
+     *
+     * <p>La route n'est pas ouverte pour autant : elle a sa propre chaine de securite,
+     * gardee par un secret partage ({@code FiltreCleInterne}), dispositif provisoire a
+     * remplacer par un compte de service le jour ou la DSI en ouvre un.
+     *
+     * <h2>{@code PUT} et non {@code POST}</h2>
+     *
+     * <p>L'operation est <b>idempotente</b> : recevoir deux fois le meme accuse produit
+     * exactement le meme etat qu'une seule reception, sans erreur ni seconde ecriture
+     * d'audit. C'est la definition de {@code PUT}, et le verbe le dit avant tout
+     * commentaire.
+     *
+     * <p>{@code 200} dans les deux cas d'acceptation ; le champ {@code resultat} distingue
+     * {@code APPLIQUE} de {@code DEJA_APPLIQUE}, ce que l'appelant doit savoir pour ne
+     * publier une trace d'audit que dans le premier cas.
+     *
+     * <p>Refus possibles : {@code 401 CLE_INTERNE_INVALIDE} ;
+     * {@code 404 PROCESSUS_INTROUVABLE} ; {@code 422 PROCESSUS_NON_TRANSMIS} si la
+     * comptabilite accuse un etat qui ne lui a jamais ete envoye ;
+     * {@code 409 ACCUSE_CONTRADICTOIRE} si l'accuse contredit un statut deja recu.
+     */
+    @PutMapping("/{id}/integration")
+    public ResponseEntity<IntegrationComptableResponse> appliquerAccuseComptable(
+            @PathVariable Long id,
+            @Valid @RequestBody IntegrationComptableRequest requete,
+            HttpServletRequest requeteHttp) {
+
+        return ResponseEntity.ok(IntegrationComptableResponse.depuis(
+                integrationComptableService.appliquerAccuse(
+                        id,
+                        requete.statutIntegration(),
+                        requete.referenceComptable(),
+                        requete.dateTraitement(),
+                        requete.motif(),
+                        requeteHttp.getRemoteAddr())));
     }
 
 }

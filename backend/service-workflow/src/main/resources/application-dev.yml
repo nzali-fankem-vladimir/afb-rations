@@ -91,6 +91,26 @@ app:
     # la cartographie (critere du guide 4.1).
     url: ${SAISIE_URL:http://localhost:8082}
 
+  integration:
+    # Secret partage exige par PUT /processus/{id}/integration, endpoint interne du
+    # Sprint 5.2 (DISPOSITIF PROVISOIRE, docs/dispositifs_provisoires.md). Doit valoir
+    # exactement app.workflow.cle-interne cote service-transmission.
+    #
+    # POURQUOI un secret et pas un jeton. Cet appel nait d'un message Kafka : aucun
+    # utilisateur n'est derriere lui, il n'y a donc aucun jeton a relayer -- la
+    # doctrine du Sprint 1.3 suppose un utilisateur final. Et le realm afb-rations-dev
+    # ne porte aucun compte de service (serviceAccountsEnabled: false). L'alternative
+    # permitAll a ete ecartee : c'est une ECRITURE sur le statut de paiement d'un etat,
+    # pas une lecture de documentation.
+    #
+    # Sa valeur n'apparait dans AUCUN journal, message d'erreur ou evenement d'audit,
+    # ni ici ni cote Transmission -- pas meme sous forme de longueur ou de prefixe. Un
+    # test de garde le verifie dans les deux services.
+    #
+    # A remplacer par un compte de service le jour ou la DSI en ouvre un
+    # (docs/points-en-attente.md).
+    cle-interne: ${INTEGRATION_CLE_INTERNE:changeme-in-development}
+
 logging:
   level:
     root: INFO
