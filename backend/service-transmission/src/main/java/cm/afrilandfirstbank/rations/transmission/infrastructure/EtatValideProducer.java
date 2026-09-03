@@ -17,7 +17,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import cm.afrilandfirstbank.rations.transmission.application.PublicateurEtatValide;
 import cm.afrilandfirstbank.rations.transmission.application.ResultatPublication;
-import cm.afrilandfirstbank.rations.transmission.application.ResultatPublication.PublicationEchouee;
+import cm.afrilandfirstbank.rations.transmission.application.ResultatPublication.EchecAvantEnvoi;
+import cm.afrilandfirstbank.rations.transmission.application.ResultatPublication.EchecIssueIncertaine;
 import cm.afrilandfirstbank.rations.transmission.application.ResultatPublication.Publiee;
 import cm.afrilandfirstbank.rations.transmission.domaine.EtatValideEvent;
 
@@ -126,7 +127,7 @@ public class EtatValideProducer implements PublicateurEtatValide {
             journal.error("{} : la charge du processus {} n'a pas pu etre convertie en JSON. "
                             + "Rien n'a ete publie.",
                     PREFIXE_ECHEC, charge.idProcessus(), serialisationImpossible);
-            return new PublicationEchouee(
+            return new EchecAvantEnvoi(
                     "serialisation JSON impossible : " + serialisationImpossible.getMessage());
         }
 
@@ -148,12 +149,12 @@ public class EtatValideProducer implements PublicateurEtatValide {
             Thread.currentThread().interrupt();
             journal.error("{} : attente de l'accuse interrompue pour le processus {}. On ignore "
                     + "si le message est parti.", PREFIXE_ECHEC, charge.idProcessus());
-            return new PublicationEchouee("attente de l'accuse interrompue");
+            return new EchecIssueIncertaine("attente de l'accuse interrompue");
 
         } catch (TimeoutException delaiDepasse) {
             journal.error("{} : aucun accuse du broker en {} s pour le processus {}.",
                     PREFIXE_ECHEC, ATTENTE_ACCUSE_SECONDES, charge.idProcessus(), delaiDepasse);
-            return new PublicationEchouee(
+            return new EchecIssueIncertaine(
                     "aucun accuse du broker en " + ATTENTE_ACCUSE_SECONDES + " s");
 
         } catch (ExecutionException echecDeLivraison) {
@@ -163,7 +164,7 @@ public class EtatValideProducer implements PublicateurEtatValide {
             journal.error("{} : le broker a refuse ou n'a pas pu recevoir l'etat {} sur le topic "
                     + "{} : {}", PREFIXE_ECHEC, charge.idProcessus(), topic, cause.getMessage(),
                     cause);
-            return new PublicationEchouee(cause.getClass().getSimpleName() + " : "
+            return new EchecIssueIncertaine(cause.getClass().getSimpleName() + " : "
                     + cause.getMessage());
 
         } catch (RuntimeException echecSynchrone) {
@@ -182,9 +183,11 @@ public class EtatValideProducer implements PublicateurEtatValide {
             Throwable cause = echecSynchrone.getCause() == null
                     ? echecSynchrone
                     : echecSynchrone.getCause();
-            journal.error("{} : l'envoi de l'etat {} sur le topic {} a echoue des l'appel : {}",
+            journal.error("{} : l'envoi de l'etat {} sur le topic {} a echoue des l'appel : {}. "
+                    + "Le message n'a jamais ete remis au client Kafka : la reservation du "
+                    + "verrou peut etre liberee.",
                     PREFIXE_ECHEC, charge.idProcessus(), topic, cause.getMessage(), echecSynchrone);
-            return new PublicationEchouee(cause.getClass().getSimpleName() + " : "
+            return new EchecAvantEnvoi(cause.getClass().getSimpleName() + " : "
                     + cause.getMessage());
         }
     }

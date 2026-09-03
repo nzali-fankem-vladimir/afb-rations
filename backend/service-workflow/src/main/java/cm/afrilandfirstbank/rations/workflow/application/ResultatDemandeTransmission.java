@@ -1,9 +1,9 @@
 package cm.afrilandfirstbank.rations.workflow.application;
 
 /**
- * Les trois issues d'une demande de transmission au service Transmission.
+ * Les quatre issues d'une demande de transmission au service Transmission.
  *
- * <h2>Trois issues, et la troisieme est une regle de securite, pas une nuance</h2>
+ * <h2>Deux echecs, et leur distinction est une regle de securite, pas une nuance</h2>
  *
  * <p>La distinction entre {@link EchecAvantPublication} et {@link EchecApresTentative}
  * <b>est</b> la regle qui empeche un double paiement, exprimee dans le type plutot que
@@ -12,6 +12,7 @@ package cm.afrilandfirstbank.rations.workflow.application;
  * <table>
  *   <tr><th>Issue</th><th>Un message a-t-il pu atteindre le broker ?</th><th>Reessai</th></tr>
  *   <tr><td>{@link Transmise}</td><td>oui, et c'est confirme</td><td>sans objet</td></tr>
+ *   <tr><td>{@link DejaTransmise}</td><td>oui, lors d'un envoi <b>anterieur</b></td><td><b>sans objet</b></td></tr>
  *   <tr><td>{@link EchecAvantPublication}</td><td><b>non</b>, aucun envoi n'a eu lieu</td><td><b>autorise</b></td></tr>
  *   <tr><td>{@link EchecApresTentative}</td><td><b>peut-etre</b></td><td><b>interdit</b></td></tr>
  * </table>
@@ -36,8 +37,10 @@ package cm.afrilandfirstbank.rations.workflow.application;
  * raison : ne pas avoir recu de reponse ne veut pas dire que rien ne s'est passe.
  *
  * <p>Type scelle : le {@code switch} qui decide de reessayer est exhaustif, et une
- * quatrieme issue ajoutee plus tard ferait echouer la compilation plutot que de se glisser
- * dans un {@code else} qui reessaierait par defaut.
+ * cinquieme issue ajoutee plus tard ferait echouer la compilation plutot que de se glisser
+ * dans un {@code else} qui reessaierait par defaut. C'est ainsi que
+ * {@link DejaTransmise} est entree au Sprint 5.3 : le compilateur a designe lui-meme les
+ * deux endroits qui devaient en tenir compte.
  */
 public sealed interface ResultatDemandeTransmission {
 
@@ -52,6 +55,23 @@ public sealed interface ResultatDemandeTransmission {
      */
     record Transmise(String topic, int partition, long offset, int nombreLignes,
             long montantTotal) implements ResultatDemandeTransmission {
+    }
+
+    /**
+     * L'etat avait <b>deja</b> ete transmis : le verrou de RG-13 a refuse la seconde
+     * publication, et rien n'est parti (Sprint 5.3).
+     *
+     * <p><b>Ce n'est pas un echec.</b> Vue de la comptabilite, la situation est celle
+     * qu'on voulait : l'etat y est, une fois et une seule. Un rejeu legitime — reprise
+     * apres incident, double declenchement — arrive donc ici, et le traiter en erreur
+     * ferait croire a une panne. Aucun reessai, evidemment : le refus se reproduirait a
+     * l'identique, et c'est bien le but.
+     *
+     * @param message ce que le verrou a repondu : la date de la premiere transmission et
+     *        la suite qu'elle a recue, de quoi juger s'il s'agit d'un rejeu banal ou
+     *        d'une anomalie
+     */
+    record DejaTransmise(String message) implements ResultatDemandeTransmission {
     }
 
     /**

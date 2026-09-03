@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import cm.afrilandfirstbank.rations.commun.audit.DeltaAudit;
 import cm.afrilandfirstbank.rations.commun.audit.EvenementAudit;
 import cm.afrilandfirstbank.rations.commun.audit.PublicateurAudit;
+import cm.afrilandfirstbank.rations.workflow.application.ResultatDemandeTransmission.DejaTransmise;
 import cm.afrilandfirstbank.rations.workflow.application.ResultatDemandeTransmission.EchecApresTentative;
 import cm.afrilandfirstbank.rations.workflow.application.ResultatDemandeTransmission.EchecAvantPublication;
 import cm.afrilandfirstbank.rations.workflow.application.ResultatDemandeTransmission.Transmise;
@@ -72,11 +73,11 @@ import cm.afrilandfirstbank.rations.workflow.infrastructure.config.Configuration
  *   <tr><td>Transmission injoignable</td><td>~2 s</td><td>oui</td><td>~6 s</td></tr>
  *   <tr><td>Workflow ou Saisie qui pend</td><td>5 s</td><td>oui</td><td><b>12 s</b></td></tr>
  *   <tr><td>Kafka muet</td><td>7 s</td><td>non</td><td>7 s</td></tr>
- *   <tr><td>Les trois a leur limite</td><td>17 s</td><td>non</td><td><b>17 s</b></td></tr>
+ *   <tr><td>Les cinq a leur limite (verrou compris, 5.3)</td><td>27 s</td><td>non</td><td><b>27 s</b></td></tr>
  *   <tr><td>Charge incomplete</td><td>~0,2 s</td><td>non</td><td>0,2 s</td></tr>
  * </table>
  *
- * <p>Cas nominal : environ 150 ms. Pire cas d'un fil HTTP retenu : 17 s, et au plus quatre a
+ * <p>Cas nominal : environ 200 ms. Pire cas d'un fil HTTP retenu : 27 s, et au plus quatre a
  * la fois grace au pool dedie ({@link ConfigurationTransmission}).
  */
 @Service
@@ -98,17 +99,22 @@ public class DeclenchementTransmission {
     static final long PAUSE_ENTRE_TENTATIVES_MS = 2_000;
 
     /**
-     * Borne defensive de l'attente du fil appelant. Superieure au pire cas construit (17 s
-     * pour une tentative, 12 s pour deux), elle ne devrait jamais se declencher : elle
-     * existe pour qu'un blocage imprevu ne retienne pas un fil HTTP indefiniment.
+     * Borne defensive de l'attente du fil appelant. Superieure au pire cas construit (27 s
+     * pour une tentative depuis le Sprint 5.3, 12 s pour deux), elle ne devrait jamais se
+     * declencher : elle existe pour qu'un blocage imprevu ne retienne pas un fil HTTP
+     * indefiniment.
+     *
+     * <p>Relevee de 40 a 55 s au Sprint 5.3, en consequence des deux appels du verrou de
+     * RG-13 ajoutes au budget de l'appele : elle doit rester au-dessus du delai de lecture
+     * HTTP (35 s), faute de quoi elle trancherait a sa place — par un delai depasse sans
+     * motif, la ou l'appele aurait rendu une reponse nommee.
      */
-    static final long ATTENTE_MAXIMALE_SECONDES = 40;
+    static final long ATTENTE_MAXIMALE_SECONDES = 55;
 
     private static final String ENTITE_CIBLE = "processus_mensuel";
     private static final String ACTION_MANQUEE = "TRANSMISSION_MANQUEE";
 
     private final TransmissionClient transmissionClient;
-    private final EnregistrementTransmission enregistrementTransmission;
     private final PublicateurAudit publicateurAudit;
     /**
      * Type {@link Executor} et non {@code ThreadPoolTaskExecutor} : cette classe se sert de
@@ -121,11 +127,9 @@ public class DeclenchementTransmission {
     private final Executor executeurTransmission;
 
     public DeclenchementTransmission(TransmissionClient transmissionClient,
-            EnregistrementTransmission enregistrementTransmission,
             PublicateurAudit publicateurAudit,
             @Qualifier("executeurTransmission") Executor executeurTransmission) {
         this.transmissionClient = transmissionClient;
-        this.enregistrementTransmission = enregistrementTransmission;
         this.publicateurAudit = publicateurAudit;
         this.executeurTransmission = executeurTransmission;
     }
@@ -204,12 +208,24 @@ public class DeclenchementTransmission {
 
             switch (resultat) {
                 case Transmise accuse -> {
-                    enregistrementTransmission.constaterTransmission(idProcessus, accuse, adresseIp);
+                    // Aucune ecriture ici depuis le Sprint 5.3 : le drapeau de RG-13 a ete
+                    // pose a la RESERVATION et confirme par le service Transmission, seul a
+                    // savoir ce qui est reellement parti. L'ecrire une seconde fois de ce
+                    // cote rouvrirait deux verites sur le meme fait.
                     journal.info("Etat {} (unite {}) transmis a la comptabilite : {} ligne(s), "
                                     + "{} FCFA, topic {} partition {} offset {}, en {} tentative(s).",
                             idProcessus, codeUnite, accuse.nombreLignes(), accuse.montantTotal(),
                             accuse.topic(), accuse.partition(), accuse.offset(), tentative);
                     return ResultatTransmissionCloture.reussie(tentative);
+                }
+                case DejaTransmise deja -> {
+                    // Le verrou a fait son office : rien n'est reparti vers la comptabilite.
+                    // Ce n'est pas un echec, et cela ne se journalise pas comme tel — le
+                    // refus est deja trace en audit par le service qui l'a oppose.
+                    journal.info("Etat {} (unite {}) : deja transmis, aucune seconde "
+                                    + "publication (RG-13). {}",
+                            idProcessus, codeUnite, deja.message());
+                    return ResultatTransmissionCloture.dejaTransmise(deja.message(), tentative);
                 }
                 case EchecApresTentative definitif -> {
                     // Un message a pu partir, ou l'echec se reproduirait a l'identique :

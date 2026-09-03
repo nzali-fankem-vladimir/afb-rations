@@ -28,6 +28,7 @@ import cm.afrilandfirstbank.rations.workflow.application.ResultatIntegrationComp
 import cm.afrilandfirstbank.rations.workflow.application.RetourService;
 import cm.afrilandfirstbank.rations.workflow.application.SoumissionService;
 import cm.afrilandfirstbank.rations.workflow.application.ValidationService;
+import cm.afrilandfirstbank.rations.workflow.application.VerrouTransmissionService;
 import cm.afrilandfirstbank.rations.workflow.domaine.StatutIntegrationEnum;
 import cm.afrilandfirstbank.rations.workflow.domaine.TransitionIntegration.Decision;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.AccuseContradictoireException;
@@ -76,6 +77,9 @@ class IntegrationComptableIT {
 
     @MockitoBean
     private ValidationService validationService;
+
+    @MockitoBean
+    private VerrouTransmissionService verrouTransmissionService;
 
     @MockitoBean
     private RetourService retourService;

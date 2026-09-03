@@ -266,13 +266,21 @@ class TransitionIntegrationTest {
     }
 
     /**
-     * Un etat cloture et transmis : {@code transmis_comptabilite} a vrai et
-     * {@code statut_integration} a {@code EN_ATTENTE}, exactement ce que pose
-     * {@code constaterTransmissionComptable()} au Sprint 5.1.
+     * Un etat cloture puis transmis : {@code transmis_comptabilite} a vrai et
+     * {@code statut_integration} a {@code EN_ATTENTE}.
+     *
+     * <p>Il passe par les vrais gestes du verrou du Sprint 5.3 — reservation puis
+     * confirmation — et non par un raccourci : la reservation exige un etat CLOTURE, et
+     * un jeu d'essai qui contournerait cette exigence ne prouverait rien de ce que le
+     * code fait en production.
      */
     private static ProcessusMensuel unEtatTransmis() {
         ProcessusMensuel processus = unEtatNonTransmis();
-        processus.constaterTransmissionComptable();
+        TransitionProcessus.soumettre(processus);
+        TransitionProcessus.transfererAuChefUnite(processus);
+        TransitionProcessus.cloturerApresValidationChefUnite(processus);
+        VerrouTransmission.reserver(processus, LocalDateTime.now());
+        VerrouTransmission.confirmer(processus);
         return processus;
     }
 

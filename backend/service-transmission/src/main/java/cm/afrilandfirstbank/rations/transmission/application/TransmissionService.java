@@ -9,7 +9,8 @@ import cm.afrilandfirstbank.rations.commun.audit.EvenementAudit;
 import cm.afrilandfirstbank.rations.commun.audit.PublicateurAudit;
 import cm.afrilandfirstbank.rations.transmission.application.ResultatConstruction.ChargeConstruite;
 import cm.afrilandfirstbank.rations.transmission.application.ResultatConstruction.ChargeRefusee;
-import cm.afrilandfirstbank.rations.transmission.application.ResultatPublication.PublicationEchouee;
+import cm.afrilandfirstbank.rations.transmission.application.ResultatPublication.EchecAvantEnvoi;
+import cm.afrilandfirstbank.rations.transmission.application.ResultatPublication.EchecIssueIncertaine;
 import cm.afrilandfirstbank.rations.transmission.application.ResultatPublication.Publiee;
 import cm.afrilandfirstbank.rations.transmission.domaine.EtatValideEvent;
 import cm.afrilandfirstbank.rations.transmission.domaine.exception.ChargeIncompleteException;
@@ -28,10 +29,13 @@ import cm.afrilandfirstbank.rations.transmission.domaine.exception.ServiceWorkfl
  * <pre>
  *   1. en-tete du processus, lu au service Workflow    -&gt; 404 / 503
  *   2. l'etat est-il CLOTURE ?                         -&gt; 422
- *   3. detail consolide, lu au service Saisie          -&gt; 503
- *   4. assembler et CONTROLER la charge                -&gt; 500
- *   5. publier sur rations.etat.valide, et ATTENDRE    -&gt; 503
- *   6. audit (publie apres coup, sans bloquer)
+ *   3. deja transmis ? (lecture, pas encore le verrou) -&gt; 200 DEJA_TRANSMIS
+ *   4. detail consolide, lu au service Saisie          -&gt; 503
+ *   5. assembler et CONTROLER la charge                -&gt; 500
+ *   6. RESERVER le verrou de RG-13                     -&gt; 200 DEJA_TRANSMIS, ou 503
+ *   7. publier sur rations.etat.valide, et ATTENDRE    -&gt; 503
+ *   8. CONFIRMER le verrou                             (ne leve jamais)
+ *   9. audit (publie apres coup, sans bloquer)
  * </pre>
  *
  * <p>Tous les refus possibles sont epuises <b>avant</b> la publication, qui est la seule
@@ -55,13 +59,21 @@ import cm.afrilandfirstbank.rations.transmission.domaine.exception.ServiceWorkfl
  * Workflow qui l'ecrit — au vu de la reponse de cet endpoint. Le poser d'ici demanderait
  * un appel retour Transmission -&gt; Workflow, la ou une valeur de retour suffit.
  *
- * <h2>Le controle d'unicite de RG-13 n'est pas encore ici</h2>
+ * <h2>Le controle d'unicite de RG-13 (Sprint 5.3)</h2>
  *
- * <p>Il releve du sous-sprint 5.3, qui doit d'abord couvrir tous les chemins d'une
- * seconde transmission — rejeu de la cloture, appel manuel de cet endpoint, deux
- * instances, reprise apres incident — et resister a la concurrence. Son point d'accroche
- * est marque a sa place exacte ci-dessous, apres la lecture de l'en-tete et avant tout
- * autre appel, comme l'a ete celui de RG-12 au Sprint 4.3.
+ * <p>Il apparait <b>deux fois</b>, et les deux ne se valent pas.
+ *
+ * <p>L'etape 3 est une simple lecture de l'en-tete deja obtenu : elle evite de deranger le
+ * service Saisie et de construire une charge pour un etat manifestement deja parti. <b>Ce
+ * n'est pas le controle</b> — deux instances la franchiraient toutes les deux.
+ *
+ * <p>L'etape 6 <b>est</b> le controle : une reservation atomique, posee sous verrou de
+ * ligne dans la base du service Workflow, qui est la seule source de verite. Elle a lieu
+ * <b>dans le chemin de cette requete</b> et non en amont, pour que l'appel manuel de cet
+ * endpoint — l'un des chemins de double transmission — y soit soumis comme les autres.
+ *
+ * <p>Voir {@link UniciteTransmissionService} pour l'enumeration des cinq chemins et le
+ * choix de l'ordre reserver / publier / confirmer.
  */
 @Service
 public class TransmissionService {
@@ -75,6 +87,14 @@ public class TransmissionService {
     /** Prefixe reperable en supervision, convention {@code INCOHERENCE GRILLE} (Sprint 2.4). */
     private static final String PREFIXE_CHARGE = "CHARGE INCOMPLETE";
 
+    /**
+     * Prefixe reperable : l'etat a peut-etre ete publie, et le verrou de RG-13 reste pose.
+     * Distinct de {@code PUBLICATION ETAT VALIDE EN ECHEC}, qui dit qu'un envoi a echoue :
+     * celui-ci dit qu'un etat est <b>bloque en reservation</b> et attend une decision
+     * humaine.
+     */
+    public static final String PREFIXE_ISSUE_INCERTAINE = "TRANSMISSION ISSUE INCERTAINE";
+
     /** Seul statut dont un etat part en comptabilite. */
     static final String STATUT_CLOTURE = "CLOTURE";
 
@@ -82,17 +102,20 @@ public class TransmissionService {
     private final ConsolidationClient consolidationClient;
     private final ConstructionChargeService constructionChargeService;
     private final PublicateurEtatValide publicateurEtatValide;
+    private final UniciteTransmissionService uniciteTransmissionService;
     private final PublicateurAudit publicateurAudit;
 
     public TransmissionService(ProcessusClient processusClient,
             ConsolidationClient consolidationClient,
             ConstructionChargeService constructionChargeService,
             PublicateurEtatValide publicateurEtatValide,
+            UniciteTransmissionService uniciteTransmissionService,
             PublicateurAudit publicateurAudit) {
         this.processusClient = processusClient;
         this.consolidationClient = consolidationClient;
         this.constructionChargeService = constructionChargeService;
         this.publicateurEtatValide = publicateurEtatValide;
+        this.uniciteTransmissionService = uniciteTransmissionService;
         this.publicateurAudit = publicateurAudit;
     }
 
@@ -121,24 +144,64 @@ public class TransmissionService {
         //    de deranger le service Saisie pour un etat encore en saisie.
         exigerEtatCloture(idProcessus, enTete);
 
-        // RG-13 — POINT D'ACCROCHE DU SOUS-SPRINT 5.3. Le controle d'unicite se pose ici,
-        // sur enTete.transmisComptabilite(), avec le mecanisme resistant a la concurrence
-        // que ce sous-sprint arbitrera. Il n'est pas ecrit maintenant : un controle en
-        // deux temps, lecture puis ecriture, ne resisterait pas a deux instances traitant
-        // la meme cloture, et un demi-verrou donnerait l'illusion de la protection.
+        // 3. RG-13, premiere lecture. Une economie, PAS le controle : deux instances
+        //    liraient toutes les deux « non transmis » avant que l'une ait pu reserver.
+        //    Elle evite simplement de deranger le service Saisie et de construire une
+        //    charge de plusieurs centaines de lignes pour un etat manifestement deja
+        //    parti - le cas ordinaire d'un rejeu.
+        if (Boolean.TRUE.equals(enTete.transmisComptabilite())) {
+            return refusDeSecondeTransmission(idProcessus, enTete);
+        }
 
-        // 3. Le detail : la seule source des lignes qui partent en paiement.
+        // 4. Le detail : la seule source des lignes qui partent en paiement.
         EtatConsolide etat = detailOuRefus(idProcessus, enTete, enteteAutorisation);
 
-        // 4. Le dernier filet. Rien ne rattrape un evenement parti.
+        // 5. Le dernier filet. Rien ne rattrape un evenement parti.
         EtatValideEvent charge = chargeOuRefus(idProcessus, enTete, etat, adresseIp);
 
-        // 5. La seule operation irreversible de la chaine.
-        Publiee accuse = publierOuRefus(idProcessus, charge, adresseIp);
+        // 6. RG-13, le controle. Reservation atomique dans la base du service Workflow,
+        //    sous verrou de ligne : c'est ici que deux demandes concurrentes sont
+        //    departagees, et c'est la derniere chose faite avant l'irreversible.
+        if (!uniciteTransmissionService.reserverOuRefuser(idProcessus, enteteAutorisation)) {
+            return refusDeSecondeTransmission(idProcessus, enTete);
+        }
+
+        // 7. La seule operation irreversible de la chaine.
+        Publiee accuse = publierOuLiberer(idProcessus, charge, enteteAutorisation, adresseIp);
+
+        // 8. Le verrou passe de « reserve » a « transmis » : sans cela, l'etat resterait
+        //    signale comme une publication d'issue inconnue alors qu'elle a abouti.
+        uniciteTransmissionService.confirmerPublication(idProcessus, accuse,
+                charge.lignes().size(), charge.montantTotal(), enteteAutorisation, adresseIp);
 
         publierTraceDeTransmission(charge, accuse, adresseIp);
 
-        return new ResultatTransmission(charge, accuse);
+        return new ResultatTransmission.Transmise(charge, accuse);
+    }
+
+    /**
+     * Rend le refus explicite qu'exige le guide : {@code 200}, pas une erreur.
+     *
+     * <p>Une seconde demande n'est pas forcement une anomalie. Vue de la comptabilite, la
+     * situation est meme celle qu'on voulait : l'etat y est, une fois et une seule. Une
+     * erreur technique ferait croire a une panne et pousserait a reessayer, ce qui est
+     * exactement le geste a ne pas encourager.
+     *
+     * <p><b>Aucune trace d'audit publiee ici</b> : le refus est trace par le service
+     * Workflow, ou le verrou l'a oppose et ou le dossier est connu. La tracer aux deux
+     * endroits ferait deux lignes pour un seul fait - et sur le chemin de l'etape 3, ou le
+     * verrou n'a meme pas ete sollicite, la trace ne dirait rien de plus que la lecture.
+     */
+    private ResultatTransmission refusDeSecondeTransmission(Long idProcessus,
+            EnTeteProcessus enTete) {
+
+        String message = "L'etat " + idProcessus + " de l'unite " + enTete.codeUnite()
+                + " a deja ete transmis a la comptabilite. Aucune seconde publication n'a lieu :"
+                + " elle produirait un second jeu d'ecritures pour les memes beneficiaires"
+                + " (RG-13).";
+
+        journal.info("{}", message);
+        return new ResultatTransmission.DejaTransmise(idProcessus, message);
     }
 
     // --- Etapes -------------------------------------------------------------------
@@ -208,17 +271,60 @@ public class TransmissionService {
         };
     }
 
-    private Publiee publierOuRefus(Long idProcessus, EtatValideEvent charge, String adresseIp) {
+    /**
+     * Publie, et decide du sort de la reservation selon ce que l'echec <b>prouve</b>.
+     *
+     * <table>
+     *   <caption>Ce que chaque issue fait du verrou</caption>
+     *   <tr><td>{@link Publiee}</td><td>le verrou sera confirme par l'appelant</td></tr>
+     *   <tr><td>{@link EchecAvantEnvoi}</td><td>rien n'a quitte la machine : le verrou est <b>libere</b>, une reprise reste possible</td></tr>
+     *   <tr><td>{@link EchecIssueIncertaine}</td><td>on ignore si l'evenement est parti : le verrou <b>reste pose</b></td></tr>
+     * </table>
+     *
+     * <p>Le deuxieme cas est celui du broker arrete, et c'est le plus frequent :
+     * {@code send()} leve des l'appel, le message n'a jamais ete remis au client Kafka. Y
+     * laisser le verrou figerait un etat cloture, repute transmis et jamais paye, alors
+     * qu'on <i>sait</i> qu'il n'est pas parti.
+     *
+     * <p>Le troisieme est celui du doute, et le doute ne se rejoue pas : un accuse peut se
+     * perdre apres que le broker a ecrit le message. La reservation reste posee et l'etat
+     * devient reperable par son anciennete - c'est la doctrine du Sprint 5.1, vue de
+     * l'autre bout.
+     *
+     * <p>Les deux echecs rendent le meme {@code 503 PUBLICATION_ECHOUEE} : du point de vue
+     * de l'appelant, la reponse est la meme - rien n'a ete publie a l'instant, et il ne
+     * doit pas reessayer de lui-meme. La difference se joue en base, la ou elle compte.
+     */
+    private Publiee publierOuLiberer(Long idProcessus, EtatValideEvent charge,
+            String enteteAutorisation, String adresseIp) {
+
         return switch (publicateurEtatValide.publier(charge)) {
+
             case Publiee accuse -> accuse;
-            case PublicationEchouee echec -> {
-                PublicationEchoueeException refus =
-                        new PublicationEchoueeException(idProcessus, echec.motifTechnique());
-                publierRefus(idProcessus, null, "PUBLICATION_ECHOUEE", refus.getMessage(),
-                        adresseIp);
-                throw refus;
+
+            case EchecAvantEnvoi rienNEstParti -> {
+                uniciteTransmissionService.libererApresEchecProuve(
+                        idProcessus, rienNEstParti.motifTechnique(), enteteAutorisation);
+                throw refusDePublication(idProcessus, rienNEstParti.motifTechnique(), adresseIp);
+            }
+
+            case EchecIssueIncertaine doute -> {
+                journal.error("{} : l'etat {} a peut-etre ete publie - le verrou de RG-13 reste "
+                                + "pose et l'etat ne sera pas rejoue automatiquement. Motif : {}. "
+                                + "A lever a la main apres verification du topic.",
+                        PREFIXE_ISSUE_INCERTAINE, idProcessus, doute.motifTechnique());
+                throw refusDePublication(idProcessus, doute.motifTechnique(), adresseIp);
             }
         };
+    }
+
+    private PublicationEchoueeException refusDePublication(Long idProcessus, String motifTechnique,
+            String adresseIp) {
+
+        PublicationEchoueeException refus =
+                new PublicationEchoueeException(idProcessus, motifTechnique);
+        publierRefus(idProcessus, null, "PUBLICATION_ECHOUEE", refus.getMessage(), adresseIp);
+        return refus;
     }
 
     // --- Audit --------------------------------------------------------------------

@@ -121,6 +121,15 @@ public class ProcessusMensuel {
     @Column(name = "date_traitement")
     private LocalDateTime dateTraitement;
 
+    /**
+     * Instant ou la transmission a ete <b>reservee</b>, juste avant la publication
+     * (migration V5, Sprint 5.3). Avec un {@link #statutIntegration} nul, une
+     * reservation ancienne signale une publication d'issue incertaine : c'est ce
+     * qui distingue un etat normalement en transit d'un etat a lever a la main.
+     */
+    @Column(name = "date_reservation_transmission")
+    private LocalDateTime dateReservationTransmission;
+
     /** Motif accompagnant un accuse de rejet (contrat d'API section 7.2). */
     @Column(name = "motif_integration", length = 255)
     private String motifIntegration;
@@ -225,43 +234,112 @@ public class ProcessusMensuel {
     }
 
     /**
-     * Constate que l'etat validé est parti sur {@code rations.etat.valide} : pose le
-     * verrou de RG-13 et ouvre l'attente de l'accuse comptable (Sprint 5.1).
+     * <b>Reserve</b> la transmission de cet etat : pose le verrou de RG-13 juste avant
+     * la publication sur {@code rations.etat.valide} (Sprint 5.3).
      *
-     * <h2>Constat, jamais anticipation</h2>
+     * <h2>Pourquoi avant, et non apres</h2>
      *
-     * <p>Cette methode n'est appelee qu'<b>apres</b> une publication effectivement
-     * confirmee par le broker. La poser a la cloture ferait paraitre transmis un etat
-     * qui ne l'est pas, et la transmission reelle serait ensuite refusee comme un
-     * doublon par le controle de RG-13 (CLAUDE.md section 15) : l'etat resterait
-     * definitivement impaye, sans que rien ne le signale. Meme discipline que le
-     * compteur de signatures du Sprint 4.2, qui ne s'incremente qu'apres confirmation
-     * d'ecriture disque.
+     * <p>Le Sprint 5.1 posait le drapeau <i>apres</i> l'accuse du broker, et c'etait la
+     * bonne prudence tant qu'il n'y avait pas de verrou : rien n'etait jamais repute
+     * transmis sans l'etre. Mais un drapeau pose apres coup ne protege de rien pendant
+     * la publication elle-meme — deux instances, ou deux demandes successives, y
+     * passeraient toutes les deux et la comptabilite recevrait deux fois le meme etat,
+     * donc deux jeux d'ecritures pour les memes beneficiaires.
      *
-     * <p>Les deux champs avancent ensemble parce qu'ils disent la meme chose vue de
-     * deux cotes : {@code transmis_comptabilite} repond « le module a-t-il envoye ? »,
-     * {@link StatutIntegrationEnum#EN_ATTENTE} repond « qu'en sait-on du cote
-     * comptable ? ». La contrainte {@code ck_processus_integration_apres_transmission}
-     * interdit d'ailleurs en base un statut d'integration sans transmission.
+     * <p>La reservation renverse l'ordre et assume le risque inverse, <b>parce qu'il est
+     * reparable et que l'autre ne l'est pas</b> : un etat repute transmis qui ne l'est
+     * pas se voit — il porte une reservation ancienne sans statut d'integration — et se
+     * reprend a la main ; un double paiement, lui, est deja parti.
      *
-     * <p><b>Aucune re-transmission ici.</b> Un etat deja transmis qui repasserait par
-     * cette methode est un defaut, pas un cas metier : le refuser au plus pres de la
-     * donnee vaut mieux que de laisser un second evenement partir vers la
-     * comptabilite, qui produirait un second jeu d'ecritures pour les memes
-     * beneficiaires. Le controle en amont, resistant a la concurrence, est le
-     * sous-sprint 5.3 ; celle-ci en est le dernier garde-fou.
+     * <h2>Ce que la reservation n'ecrit PAS</h2>
      *
-     * @throws IllegalStateException si l'etat porte deja le drapeau de transmission
+     * <p>{@code statutIntegration} <b>reste nul</b>. Il ne passe a
+     * {@link StatutIntegrationEnum#EN_ATTENTE} qu'a la confirmation, apres l'accuse du
+     * broker : c'est ce qui permet de distinguer « publie, la comptabilite n'a pas encore
+     * repondu » de « reserve, on ignore si l'evenement est parti ». Les ecrire ensemble
+     * ferait disparaitre cette difference, qui est toute la detectabilite du dispositif.
+     *
+     * <p><b>Visibilite paquet</b>, comme {@link #appliquerStatut(StatutEnum)} : les trois
+     * gestes du verrou passent par {@link VerrouTransmission}, qui tient leur ordre. Le
+     * compilateur garantit qu'aucun service applicatif n'en saute un.
+     *
+     * @param instantReservation horodatage de la reservation, jamais nul : sans lui, une
+     *        publication d'issue incertaine serait indiscernable d'un etat normalement
+     *        en transit
+     * @throws IllegalStateException si l'etat porte deja le drapeau. Dernier garde-fou,
+     *         double du verrou de ligne pose par le repository : deux transmissions
+     *         produiraient un second jeu d'ecritures pour les memes beneficiaires (RG-13)
      */
-    public void constaterTransmissionComptable() {
+    void reserverTransmission(LocalDateTime instantReservation) {
         if (transmisComptabilite) {
             throw new IllegalStateException(
                     "L'etat " + id + " porte deja le drapeau de transmission comptable : une "
                             + "seconde transmission produirait un second jeu d'ecritures pour les "
                             + "memes beneficiaires (RG-13). Refus.");
         }
+        if (instantReservation == null) {
+            throw new IllegalArgumentException(
+                    "Une reservation de transmission sans horodatage rendrait une publication "
+                            + "d'issue incertaine indiscernable d'un etat en transit normal. Refus.");
+        }
         this.transmisComptabilite = true;
-        this.statutIntegration = StatutIntegrationEnum.EN_ATTENTE;
+        this.dateReservationTransmission = instantReservation;
+    }
+
+    /**
+     * <b>Confirme</b> que l'evenement est sur le broker : ouvre l'attente de l'accuse
+     * comptable (Sprint 5.3, ex-{@code constaterTransmissionComptable} du Sprint 5.1).
+     *
+     * <p>Appelee uniquement apres un accuse du broker. C'est elle qui fait passer l'etat
+     * de « reserve » a « transmis, en attente de la comptabilite » — la difference que le
+     * suivi (US-15) et la supervision lisent.
+     *
+     * <p><b>Sans effet sur un etat deja confirme</b> : le statut n'est pose que s'il est
+     * nul. Une confirmation rejouee ne doit pas ecraser un accuse comptable deja recu, qui
+     * serait alors ramene de {@code INTEGRE} a {@code EN_ATTENTE} — la regression que
+     * {@link TransitionIntegration} interdit precisement.
+     *
+     * @throws IllegalStateException si l'etat n'a pas ete reserve. Confirmer sans avoir
+     *         reserve reviendrait a poser le drapeau de RG-13 sans verrou
+     */
+    void confirmerTransmission() {
+        if (!transmisComptabilite) {
+            throw new IllegalStateException(
+                    "L'etat " + id + " n'a pas ete reserve : sa transmission ne peut pas etre "
+                            + "confirmee. La reservation precede toujours la publication (RG-13).");
+        }
+        if (statutIntegration == null) {
+            this.statutIntegration = StatutIntegrationEnum.EN_ATTENTE;
+        }
+    }
+
+    /**
+     * <b>Libere</b> une reservation dont on a la <i>preuve</i> qu'aucun evenement n'est
+     * parti : le drapeau et l'horodatage reviennent a leur etat d'avant, et une reprise
+     * redevient possible (Sprint 5.3).
+     *
+     * <h2>La preuve, et rien d'autre</h2>
+     *
+     * <p>Liberer sur un echec <i>ambigu</i> — delai d'accuse depasse, reponse perdue —
+     * rouvrirait la porte au double paiement : l'evenement a pu etre ecrit sur le topic
+     * avant que l'accuse ne se perde, et la demande suivante en publierait un second.
+     * Seuls les echecs anterieurs a tout envoi se liberent ; c'est l'appelant qui en
+     * repond, avec un type qui distingue les deux cas.
+     *
+     * @throws IllegalStateException si un accuse comptable est deja inscrit. La
+     *         comptabilite ayant repondu, l'evenement etait bien parti : liberer ferait
+     *         republier un etat deja pris en charge
+     */
+    void libererTransmission() {
+        if (statutIntegration != null) {
+            throw new IllegalStateException(
+                    "L'etat " + id + " porte le statut d'integration " + statutIntegration
+                            + " : la comptabilite a repondu, donc l'evenement etait bien parti. "
+                            + "Liberer la reservation ferait republier un etat deja pris en "
+                            + "charge (RG-13). Refus.");
+        }
+        this.transmisComptabilite = false;
+        this.dateReservationTransmission = null;
     }
 
     /**
@@ -362,6 +440,15 @@ public class ProcessusMensuel {
 
     public LocalDateTime getDateTraitement() {
         return dateTraitement;
+    }
+
+    /**
+     * Instant de la reservation de transmission, nul tant que rien n'a ete reserve.
+     * Avec un statut d'integration nul, son anciennete distingue un etat en transit
+     * normal d'une publication d'issue incertaine (Sprint 5.3).
+     */
+    public LocalDateTime getDateReservationTransmission() {
+        return dateReservationTransmission;
     }
 
     public String getMotifIntegration() {

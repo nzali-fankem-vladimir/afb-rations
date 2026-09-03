@@ -98,10 +98,12 @@ import cm.afrilandfirstbank.rations.workflow.infrastructure.ProcessusMensuelRepo
  * dans la reponse — le seul moment ou un humain l'apprend, aucune reprise automatique
  * n'etant possible faute de compte de service au realm.
  *
- * <p>{@code transmis_comptabilite} n'est pose qu'apres accuse du broker, dans sa propre
- * transaction ({@link EnregistrementTransmission}). Le poser a la cloture contournerait le
- * verrou de RG-13 : l'etat paraitrait transmis avant de l'etre, et la transmission reelle
- * serait ensuite refusee comme un doublon.
+ * <p><b>La cloture ne pose aucun drapeau de transmission</b>, et c'est le point que le
+ * Sprint 5.3 n'a pas change. {@code transmis_comptabilite} est pose par le verrou de RG-13
+ * ({@link VerrouTransmissionService}), a la <i>reservation</i>, c'est-a-dire juste avant la
+ * publication et par le service qui publie. Le poser ici ferait paraitre transmis un etat
+ * qui n'est meme pas encore parti vers le service Transmission, et le verrou refuserait
+ * ensuite la vraie transmission comme un doublon : l'etat resterait impaye a jamais.
  *
  * <h2>La separation des taches</h2>
  *

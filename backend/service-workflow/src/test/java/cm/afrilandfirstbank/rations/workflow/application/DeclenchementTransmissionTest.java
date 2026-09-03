@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 
 import cm.afrilandfirstbank.rations.commun.audit.EvenementAudit;
 import cm.afrilandfirstbank.rations.commun.audit.PublicateurAudit;
+import cm.afrilandfirstbank.rations.workflow.application.ResultatDemandeTransmission.DejaTransmise;
 import cm.afrilandfirstbank.rations.workflow.application.ResultatDemandeTransmission.EchecApresTentative;
 import cm.afrilandfirstbank.rations.workflow.application.ResultatDemandeTransmission.EchecAvantPublication;
 import cm.afrilandfirstbank.rations.workflow.application.ResultatDemandeTransmission.Transmise;
@@ -53,17 +54,14 @@ class DeclenchementTransmissionTest {
     private static final Executor SUR_PLACE = Runnable::run;
 
     private AppuiTransmission.ClientDeTest client;
-    private EnregistrementTransmission enregistrement;
     private PublicateurAudit publicateurAudit;
     private DeclenchementTransmission declenchement;
 
     @BeforeEach
     void preparer() {
         client = new AppuiTransmission.ClientDeTest();
-        enregistrement = mock(EnregistrementTransmission.class);
         publicateurAudit = mock(PublicateurAudit.class);
-        declenchement = new DeclenchementTransmission(
-                client, enregistrement, publicateurAudit, SUR_PLACE);
+        declenchement = new DeclenchementTransmission(client, publicateurAudit, SUR_PLACE);
     }
 
     private ResultatTransmissionCloture transmettre() {
@@ -77,7 +75,7 @@ class DeclenchementTransmissionTest {
     class Aboutie {
 
         @Test
-        @DisplayName("un seul appel, le drapeau de RG-13 est pose, le resultat le dit")
+        @DisplayName("un seul appel, le resultat le dit")
         void nominal() {
             client.repondraToujours(AppuiTransmission.accuse(4, 7_500L));
 
@@ -87,7 +85,23 @@ class DeclenchementTransmissionTest {
             assertThat(resultat.tentatives()).isEqualTo(1);
             assertThat(resultat.motif()).isNull();
             assertThat(client.nombreAppels()).isEqualTo(1);
-            verify(enregistrement).constaterTransmission(eqId(), any(Transmise.class), eqIp());
+        }
+
+        @Test
+        @DisplayName("etat deja transmis : un seul appel, aucun reessai, le valideur l'apprend")
+        void dejaTransmisNeSeRejouePas() {
+            client.repondraToujours(new DejaTransmise(
+                    "L'etat 740 a deja ete transmis a la comptabilite le 2026-09-03T10:00."));
+
+            ResultatTransmissionCloture resultat = transmettre();
+
+            // Vrai, et c'est la seule lecture honnete : l'etat EST a la comptabilite.
+            // Le rendre faux enverrait quelqu'un le retransmettre (RG-13).
+            assertThat(resultat.transmis()).isTrue();
+            assertThat(resultat.tentatives()).isEqualTo(1);
+            assertThat(resultat.motif()).contains("deja ete transmis");
+            assertThat(client.nombreAppels()).isEqualTo(1);
+            verify(publicateurAudit, never()).publier(any(EvenementAudit.class));
         }
 
         @Test
@@ -101,8 +115,6 @@ class DeclenchementTransmissionTest {
             assertThat(resultat.transmis()).isTrue();
             assertThat(resultat.tentatives()).isEqualTo(2);
             assertThat(client.nombreAppels()).isEqualTo(2);
-            verify(enregistrement, times(1))
-                    .constaterTransmission(eqId(), any(Transmise.class), eqIp());
         }
     }
 
@@ -155,14 +167,16 @@ class DeclenchementTransmissionTest {
         }
 
         @Test
-        @DisplayName("aucun drapeau n'est pose tant qu'aucun accuse n'est revenu")
-        void aucunDrapeauSansAccuse() {
+        @DisplayName("un echec ambigu ne demande jamais une seconde publication")
+        void echecAmbiguNeRedemandeRien() {
             client.repondraToujours(new EchecApresTentative("PUBLICATION_ECHOUEE"));
 
             transmettre();
 
-            verify(enregistrement, never())
-                    .constaterTransmission(anyLong(), any(Transmise.class), any());
+            // Depuis le Sprint 5.3, le drapeau de RG-13 est tenu par le verrou, cote
+            // service Transmission : ce declencheur n'ecrit plus rien. Ce qu'il doit
+            // prouver ici est donc le seul geste qui lui reste dangereux — redemander.
+            assertThat(client.nombreAppels()).isEqualTo(1);
         }
     }
 
@@ -204,8 +218,8 @@ class DeclenchementTransmissionTest {
 
             transmettre();
 
-            // La trace de la transmission reussie est publiee par EnregistrementTransmission,
-            // qui est simule ici : ce declencheur ne doit rien publier de plus.
+            // La trace de la transmission reussie est publiee par le verrou, cote service
+            // Workflow, a la confirmation : ce declencheur ne doit rien publier de plus.
             verify(publicateurAudit, never()).publier(any(EvenementAudit.class));
         }
     }
@@ -219,13 +233,12 @@ class DeclenchementTransmissionTest {
         @Test
         @DisplayName("un incident imprevu ne remonte pas en exception")
         void incidentAvale() {
-            EnregistrementTransmission enregistrementFautif = mock(EnregistrementTransmission.class);
-            org.mockito.Mockito.doThrow(new IllegalStateException("base indisponible"))
-                    .when(enregistrementFautif)
-                    .constaterTransmission(anyLong(), any(Transmise.class), any());
+            TransmissionClient clientFautif = (id, entete) -> {
+                throw new IllegalStateException("base indisponible");
+            };
 
             DeclenchementTransmission fragile = new DeclenchementTransmission(
-                    client, enregistrementFautif, publicateurAudit, SUR_PLACE);
+                    clientFautif, publicateurAudit, SUR_PLACE);
 
             ResultatTransmissionCloture resultat =
                     fragile.transmettre(ID_PROCESSUS, UNITE, JETON, IP);
@@ -243,7 +256,7 @@ class DeclenchementTransmissionTest {
                 throw new java.util.concurrent.RejectedExecutionException("pool sature");
             };
             DeclenchementTransmission sature = new DeclenchementTransmission(
-                    client, enregistrement, publicateurAudit, refusant);
+                    client, publicateurAudit, refusant);
 
             ResultatTransmissionCloture resultat =
                     sature.transmettre(ID_PROCESSUS, UNITE, JETON, IP);

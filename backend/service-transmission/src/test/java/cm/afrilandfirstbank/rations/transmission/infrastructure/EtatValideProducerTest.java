@@ -23,7 +23,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import cm.afrilandfirstbank.rations.transmission.application.ResultatPublication;
-import cm.afrilandfirstbank.rations.transmission.application.ResultatPublication.PublicationEchouee;
+import cm.afrilandfirstbank.rations.transmission.application.ResultatPublication.EchecAvantEnvoi;
+import cm.afrilandfirstbank.rations.transmission.application.ResultatPublication.EchecIssueIncertaine;
 import cm.afrilandfirstbank.rations.transmission.application.ResultatPublication.Publiee;
 import cm.afrilandfirstbank.rations.transmission.domaine.EtatValideEvent;
 import cm.afrilandfirstbank.rations.transmission.domaine.EtatValideEvent.LigneEtat;
@@ -236,8 +237,11 @@ class EtatValideProducerTest {
 
             ResultatPublication resultat = producteur.publier(CHARGE_DU_CONTRAT);
 
-            assertThat(resultat).isInstanceOf(PublicationEchouee.class);
-            assertThat(((PublicationEchouee) resultat).motifTechnique())
+            // Sprint 5.3 : ce cas-la est PROUVE anterieur a tout envoi — le message n'a
+            // jamais ete remis au client Kafka. C'est le seul echec qui autorise a liberer
+            // la reservation du verrou de RG-13, donc le seul dont une reprise est sure.
+            assertThat(resultat).isInstanceOf(EchecAvantEnvoi.class);
+            assertThat(((EchecAvantEnvoi) resultat).motifTechnique())
                     .contains("TimeoutException")
                     .contains("not present in metadata");
         }
@@ -250,8 +254,10 @@ class EtatValideProducerTest {
 
             ResultatPublication resultat = producteur.publier(CHARGE_DU_CONTRAT);
 
-            assertThat(resultat).isInstanceOf(PublicationEchouee.class);
-            assertThat(((PublicationEchouee) resultat).motifTechnique())
+            // Echec du futur : le message a ete remis au client Kafka et l'on ignore ce
+            // qu'il en est advenu. La reservation reste posee, on ne rejoue pas.
+            assertThat(resultat).isInstanceOf(EchecIssueIncertaine.class);
+            assertThat(((EchecIssueIncertaine) resultat).motifTechnique())
                     .contains("TimeoutException");
         }
     }

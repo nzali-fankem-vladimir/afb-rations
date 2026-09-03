@@ -391,6 +391,79 @@ class CircuitCompletIT {
     }
 
     // =====================================================================
+    // 11 (guide 5.3). La chaine complete, du declenchement au statut comptable
+    // =====================================================================
+
+    /**
+     * Test 11 du guide 5.3, dans sa part automatisable.
+     *
+     * <p>Il enchaine, sur les services reels et la vraie base : declenchement, saisie
+     * consolidee, soumission signee, validation, cloture, transmission avec le <b>verrou
+     * de RG-13</b>, seconde demande refusee, puis l'accuse comptable applique et le statut
+     * remonte jusqu'a {@code INTEGRE}. C'est toute la chaine du module, du Sprint 4.1 au
+     * Sprint 5.3.
+     *
+     * <p><b>Ce qui n'y figure pas, et pourquoi</b> : le passage reel par Kafka. Le pom
+     * epingle {@code spring-kafka} en 3.3.0 alors que les {@code kafka-clients} sont en
+     * 4.2.1, et {@code @EmbeddedKafka} echoue sur une classe deplacee par Kafka 4 (dette
+     * T-01, arbitree au Sprint 5.2). La publication est donc simulee ici, et le bout en
+     * bout sur le broker reel se fait a la verification manuelle, comme le guide le
+     * prescrit a sa section 8.
+     */
+    @Test
+    @DisplayName("11. Chaine complete : cloture, transmission unique, accuse comptable, INTEGRE")
+    void chaineCompleteJusquAuStatutComptable() {
+        long montant = seuilService.seuilAiguillage();
+        Long idProcessus = declencher();
+
+        agent();
+        montantConsolide(idProcessus, montant);
+        soumissionService.soumettre(idProcessus, JETON, IP);
+        rafraichir();
+
+        chefUnite();
+        ResultatValidation validation = validationService.valider(idProcessus, JETON, IP);
+        rafraichir();
+
+        assertThat(validation.processus().getStatut()).isEqualTo(StatutEnum.CLOTURE);
+        assertThat(validation.transmission().transmis()).isTrue();
+        assertThat(transmissionClient.processusAppeles()).containsExactly(idProcessus);
+
+        ProcessusMensuel apresTransmission = processusRepository.findById(idProcessus).orElseThrow();
+        assertThat(apresTransmission.isTransmisComptabilite()).isTrue();
+        assertThat(apresTransmission.getStatutIntegration())
+                .isEqualTo(StatutIntegrationEnum.EN_ATTENTE);
+        assertThat(apresTransmission.getDateReservationTransmission())
+                .as("sans horodatage, une publication d'issue incertaine serait indiscernable "
+                        + "d'un etat en transit normal")
+                .isNotNull();
+
+        // CT-22 : une seconde demande ne republie rien. Le verrou est la seule chose qui
+        // s'y oppose, et il est ici le vrai, sur la vraie ligne.
+        VerrouTransmissionService verrou =
+                new VerrouTransmissionService(processusRepository, mock(PublicateurAudit.class));
+        assertThat(verrou.reserver(idProcessus, IP).resultat())
+                .isEqualTo(ResultatVerrouTransmission.Resultat.DEJA_TRANSMISE);
+
+        // L'accuse comptable revient sur rations.etat.accuse et remonte dans le suivi.
+        IntegrationComptableService integration = new IntegrationComptableService(
+                processusRepository, mock(PublicateurAudit.class));
+        integration.appliquerAccuse(idProcessus, StatutIntegrationEnum.INTEGRE,
+                "CPT-2026-07-000512", "2026-08-18T02:15:00Z", null, IP);
+        rafraichir();
+
+        ProcessusMensuel apresAccuse = processusRepository.findById(idProcessus).orElseThrow();
+        assertThat(apresAccuse.getStatutIntegration()).isEqualTo(StatutIntegrationEnum.INTEGRE);
+        assertThat(apresAccuse.getReferenceComptable()).isEqualTo("CPT-2026-07-000512");
+        assertThat(apresAccuse.getDateTraitement()).isNotNull();
+
+        // Et le verrou ne se libere plus : la comptabilite a repondu, l'evenement etait
+        // bien parti.
+        assertThat(verrou.liberer(idProcessus, "tentative tardive", IP).resultat())
+                .isEqualTo(ResultatVerrouTransmission.Resultat.LIBERATION_REFUSEE);
+    }
+
+    // =====================================================================
     // Outils
     // =====================================================================
 

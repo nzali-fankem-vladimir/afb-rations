@@ -24,6 +24,7 @@ import cm.afrilandfirstbank.rations.commun.audit.PublicateurAudit;
 import cm.afrilandfirstbank.rations.workflow.domaine.ProcessusMensuel;
 import cm.afrilandfirstbank.rations.workflow.domaine.StatutIntegrationEnum;
 import cm.afrilandfirstbank.rations.workflow.domaine.TransitionProcessus;
+import cm.afrilandfirstbank.rations.workflow.domaine.VerrouTransmission;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.AccuseContradictoireException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ProcessusIntrouvableException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ProcessusNonTransmisException;
@@ -264,9 +265,22 @@ class IntegrationComptableServiceTest {
         return TransitionProcessus.declencher(8, 2026, "00002");
     }
 
+    /**
+     * Un etat cloture puis transmis : {@code transmis_comptabilite} a vrai et
+     * {@code statut_integration} a {@code EN_ATTENTE}.
+     *
+     * <p>Il passe par les vrais gestes du verrou du Sprint 5.3 — reservation puis
+     * confirmation — et non par un raccourci : la reservation exige un etat CLOTURE, et
+     * un jeu d'essai qui contournerait cette exigence ne prouverait rien de ce que le
+     * code fait en production.
+     */
     private static ProcessusMensuel unEtatTransmis() {
         ProcessusMensuel processus = unEtatNonTransmis();
-        processus.constaterTransmissionComptable();
+        TransitionProcessus.soumettre(processus);
+        TransitionProcessus.transfererAuChefUnite(processus);
+        TransitionProcessus.cloturerApresValidationChefUnite(processus);
+        VerrouTransmission.reserver(processus, LocalDateTime.now());
+        VerrouTransmission.confirmer(processus);
         return processus;
     }
 

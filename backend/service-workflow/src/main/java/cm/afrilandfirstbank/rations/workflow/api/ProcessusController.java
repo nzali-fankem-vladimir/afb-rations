@@ -18,16 +18,21 @@ import cm.afrilandfirstbank.rations.workflow.api.dto.DeclenchementProcessusReque
 import cm.afrilandfirstbank.rations.workflow.api.dto.EtatProcessusResponse;
 import cm.afrilandfirstbank.rations.workflow.api.dto.IntegrationComptableRequest;
 import cm.afrilandfirstbank.rations.workflow.api.dto.IntegrationComptableResponse;
+import cm.afrilandfirstbank.rations.workflow.api.dto.IntegrationProcessusResponse;
 import cm.afrilandfirstbank.rations.workflow.api.dto.ProcessusResponse;
 import cm.afrilandfirstbank.rations.workflow.api.dto.RetourRequest;
 import cm.afrilandfirstbank.rations.workflow.api.dto.RetourResponse;
 import cm.afrilandfirstbank.rations.workflow.api.dto.SoumissionResponse;
 import cm.afrilandfirstbank.rations.workflow.api.dto.ValidationResponse;
+import cm.afrilandfirstbank.rations.workflow.api.dto.VerrouTransmissionRequest;
+import cm.afrilandfirstbank.rations.workflow.api.dto.VerrouTransmissionResponse;
 import cm.afrilandfirstbank.rations.workflow.application.IntegrationComptableService;
 import cm.afrilandfirstbank.rations.workflow.application.ProcessusService;
+import cm.afrilandfirstbank.rations.workflow.application.ResultatVerrouTransmission;
 import cm.afrilandfirstbank.rations.workflow.application.RetourService;
 import cm.afrilandfirstbank.rations.workflow.application.SoumissionService;
 import cm.afrilandfirstbank.rations.workflow.application.ValidationService;
+import cm.afrilandfirstbank.rations.workflow.application.VerrouTransmissionService;
 import cm.afrilandfirstbank.rations.workflow.domaine.ProcessusMensuel;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -53,14 +58,24 @@ import jakarta.validation.Valid;
  *
  * <pre>
  *   PUT  /processus/{id}/integration       accuse comptable    secret partage     (5.2)
+ *   PUT  /processus/{id}/transmission      verrou RG-13        DA, DR             (5.3)
+ *   GET  /processus/{id}/integration       statut d'integration ARH + circuit     (5.3)
  * </pre>
  *
- * <p>Il n'est pas destine au frontend : il est appele par le service Transmission a la
- * reception d'un accuse sur {@code rations.etat.accuse}. Meme statut que
+ * <p>Aucun des trois n'est destine au frontend, et <b>aucun n'est route par la
+ * passerelle</b> : le premier est appele par le service Transmission a la reception d'un
+ * accuse sur {@code rations.etat.accuse} ; les deux autres le sont pendant le traitement
+ * de {@code POST /transmission/processus/{id}} et de
+ * {@code GET /transmission/processus/{id}}. Meme statut que
  * {@code GET /identite/habilitation} (Sprint 1.3),
  * {@code GET /saisie/processus/{id}/etat} (Sprint 3.4) et
  * {@code POST /transmission/processus/{id}} (Sprint 5.1) : <b>le compte de six endpoints
  * reste celui du contrat expose par la passerelle</b>.
+ *
+ * <p>Le verrou du Sprint 5.3 ne contredit pas la section 7 du contrat, qui dit que le
+ * service Transmission n'expose <b>aucun endpoint de declenchement au client</b> : il ne
+ * declenche rien, il tient un drapeau, et il vit ici — dans le service qui detient la
+ * table — et non dans le service Transmission.
  *
  * <h2>Les roles ne sont pas les memes selon l'endpoint</h2>
  *
@@ -92,17 +107,20 @@ public class ProcessusController {
     private final ValidationService validationService;
     private final RetourService retourService;
     private final IntegrationComptableService integrationComptableService;
+    private final VerrouTransmissionService verrouTransmissionService;
 
     public ProcessusController(ProcessusService processusService,
             SoumissionService soumissionService,
             ValidationService validationService,
             RetourService retourService,
-            IntegrationComptableService integrationComptableService) {
+            IntegrationComptableService integrationComptableService,
+            VerrouTransmissionService verrouTransmissionService) {
         this.processusService = processusService;
         this.soumissionService = soumissionService;
         this.validationService = validationService;
         this.retourService = retourService;
         this.integrationComptableService = integrationComptableService;
+        this.verrouTransmissionService = verrouTransmissionService;
     }
 
     /**
@@ -332,6 +350,98 @@ public class ProcessusController {
                         requete.dateTraitement(),
                         requete.motif(),
                         requeteHttp.getRemoteAddr())));
+    }
+
+    /**
+     * Pose, confirme ou leve le verrou d'unicite de transmission (RG-13, Sprint 5.3).
+     * <b>Endpoint interne, hors contrat passerelle.</b>
+     *
+     * <h2>Pourquoi cet endpoint existe</h2>
+     *
+     * <p>RG-13 exige qu'un etat ne parte qu'une fois vers la comptabilite. Le service qui
+     * publie — Transmission — <b>n'a pas de base</b> ; la seule source de verite est
+     * {@code processus_mensuel}, ici. Il doit donc pouvoir revendiquer le droit de publier
+     * <b>pendant</b> sa propre requete, et de facon atomique : un verrou pose en amont par
+     * le service Workflow serait entierement contourne par un appel direct a
+     * {@code POST /transmission/processus/{id}} — l'un des chemins de double transmission
+     * que ce sous-sprint doit fermer (CT-22).
+     *
+     * <h2>Trois etapes, un seul endpoint</h2>
+     *
+     * <pre>
+     *   RESERVATION   avant de publier : rend RESERVEE, ou DEJA_TRANSMISE et rien ne part
+     *   CONFIRMATION  apres l'accuse du broker : ouvre l'attente de l'accuse comptable
+     *   LIBERATION    echec PROUVE sans envoi : le verrou est leve, une reprise est possible
+     * </pre>
+     *
+     * <p><b>{@code 200} y compris sur {@code DEJA_TRANSMISE}</b> : une seconde demande
+     * n'est pas forcement une anomalie — un rejeu legitime existe —, et une erreur
+     * technique ferait croire a une panne. Le champ {@code resultat} porte la distinction,
+     * comme au Sprint 5.2.
+     *
+     * <h2>Le jeton est relaye, contrairement a l'endpoint d'integration</h2>
+     *
+     * <p>Cet appel-ci nait d'une <b>requete HTTP d'un valideur</b> qui vient de cloturer :
+     * un utilisateur final existe, son jeton est encore valide, la doctrine du Sprint 1.3
+     * s'applique donc pleinement. Le secret partage du Sprint 5.2 ne s'imposait que faute
+     * d'utilisateur derriere un message Kafka.
+     *
+     * <p>La portee d'acces n'est pas revalidee ici : elle a deja ete etablie par la
+     * validation qui a produit la cloture, puis par {@code GET /processus/{id}} que le
+     * service Transmission interroge sur le meme jeton. Une troisieme interrogation du
+     * service Identite ajouterait cinq secondes au pire cas d'un fil HTTP qui attend.
+     *
+     * <p>Refus possibles : {@code 403 ACCES_REFUSE} role hors circuit ;
+     * {@code 404 PROCESSUS_INTROUVABLE} ; {@code 422 ETAT_NON_CLOTURE}.
+     */
+    @PutMapping("/{id}/transmission")
+    @PreAuthorize("hasAnyRole('CHEF_UNITE_DA', 'DIRECTEUR_RESEAU_DR')")
+    public ResponseEntity<VerrouTransmissionResponse> tenirVerrouTransmission(
+            @PathVariable Long id,
+            @Valid @RequestBody VerrouTransmissionRequest requete,
+            HttpServletRequest requeteHttp) {
+
+        String adresseIp = requeteHttp.getRemoteAddr();
+
+        ResultatVerrouTransmission resultat = switch (requete.etape()) {
+            case RESERVATION -> verrouTransmissionService.reserver(id, adresseIp);
+            case CONFIRMATION -> verrouTransmissionService.confirmer(id, requete.topic(),
+                    requete.partition(), requete.offset(), requete.nombreLignes(),
+                    requete.montantTotal(), adresseIp);
+            case LIBERATION -> verrouTransmissionService.liberer(id, requete.motif(), adresseIp);
+        };
+
+        return ResponseEntity.ok(VerrouTransmissionResponse.de(id, resultat));
+    }
+
+    /**
+     * Le bloc d'integration comptable d'un etat (Sprint 5.3). <b>Endpoint interne, hors
+     * contrat passerelle.</b>
+     *
+     * <p>Il sert la consultation {@code GET /transmission/processus/{id}} du contrat d'API
+     * section 7, ouverte aux <b>roles ARH et circuit</b>. Le service Transmission n'ayant
+     * pas de base, il vient lire ici la donnee qui vit sur {@code processus_mensuel}.
+     *
+     * <p><b>Un endpoint etroit plutot qu'un role de plus sur {@code GET /processus/{id}}.</b>
+     * Ce dernier rend le dossier complet — montant, motif de retour, type, periode — et
+     * l'ARH a une portee nationale (Sprint 1.1) : lui ouvrir cette porte lui donnerait la
+     * lecture integrale de tous les dossiers de toutes les unites pour un besoin de quatre
+     * champs. Le module a deja tranche ainsi au Sprint 1.3 avec
+     * {@code GET /identite/habilitation}, et le suivi complet relevera du service Reporting
+     * (Sprint 6), lui aussi ouvert a l'ARH — deux chemins vers le meme dossier finiraient
+     * par diverger.
+     *
+     * <p>La portee d'acces reste verifiee unite par unite aupres du service Identite : le
+     * role n'est que le premier filtre.
+     */
+    @GetMapping("/{id}/integration")
+    @PreAuthorize("hasAnyRole('ARH', 'AGENT_UNITE', 'CHEF_UNITE_DA', 'DIRECTEUR_RESEAU_DR')")
+    public ResponseEntity<IntegrationProcessusResponse> consulterIntegration(
+            @PathVariable Long id,
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String enteteAutorisation) {
+
+        return ResponseEntity.ok(IntegrationProcessusResponse.depuis(
+                processusService.consulterIntegration(id, enteteAutorisation)));
     }
 
 }

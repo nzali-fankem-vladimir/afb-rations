@@ -26,6 +26,7 @@ import cm.afrilandfirstbank.rations.workflow.domaine.exception.AccuseContradicto
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.AgentNonHabiliteException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.DocumentNonProduitException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.EtatIncompletException;
+import cm.afrilandfirstbank.rations.workflow.domaine.exception.EtatNonClotureException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.FonctionnaliteNonOuverteException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.MotifRetourRequisException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.PieceJointeExistanteException;
@@ -309,6 +310,21 @@ public class GestionnaireErreursApi {
     public ResponseEntity<ErreurApiDto> processusNonTransmis(ProcessusNonTransmisException exception,
             HttpServletRequest requete) {
         return reponse(requete, HttpStatus.UNPROCESSABLE_ENTITY, "PROCESSUS_NON_TRANSMIS",
+                exception.getMessage());
+    }
+
+    /**
+     * Verrou de transmission demande sur un etat qui n'est pas cloture (Sprint 5.3).
+     *
+     * <p><b>{@code 422} et non {@code 409}</b>, comme le precedent : rien n'est duplique,
+     * une regle de gestion refuse. Le code {@code ETAT_NON_CLOTURE} est le meme que celui
+     * rendu par le service Transmission pour le meme fait vu de l'autre cote — deux codes
+     * differents pour un seul refus enverraient chercher deux causes.
+     */
+    @ExceptionHandler(EtatNonClotureException.class)
+    public ResponseEntity<ErreurApiDto> etatNonCloture(EtatNonClotureException exception,
+            HttpServletRequest requete) {
+        return reponse(requete, HttpStatus.UNPROCESSABLE_ENTITY, "ETAT_NON_CLOTURE",
                 exception.getMessage());
     }
 

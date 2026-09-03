@@ -17,6 +17,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import cm.afrilandfirstbank.rations.commun.audit.DeltaAudit;
 import cm.afrilandfirstbank.rations.commun.audit.EvenementAudit;
 import cm.afrilandfirstbank.rations.commun.audit.PublicateurAudit;
+import cm.afrilandfirstbank.rations.transmission.domaine.exception.AccesHorsPorteeException;
 import cm.afrilandfirstbank.rations.transmission.domaine.exception.ChargeIncompleteException;
 import cm.afrilandfirstbank.rations.transmission.domaine.exception.EtatNonClotureException;
 import cm.afrilandfirstbank.rations.transmission.domaine.exception.ProcessusIntrouvableException;
@@ -83,6 +84,24 @@ public class GestionnaireErreursApi {
                 "Le role de l'utilisateur ne permet pas cette action.");
         return reponse(requete, HttpStatus.FORBIDDEN, "ACCES_REFUSE",
                 "Le role de l'utilisateur ne permet pas cette action.");
+    }
+
+    /**
+     * L'utilisateur a le bon role, mais pas la portee sur l'unite du dossier (RG-12).
+     *
+     * <p><b>Code distinct d'{@code ACCES_REFUSE}</b>, distinction posee au Sprint 4.4 : les
+     * deux refus appellent deux gestes differents. Les confondre enverrait un chef d'unite
+     * reclamer une habilitation qu'il possede deja.
+     *
+     * <p>Le refus est prononce par le service Workflow, qui detient le dossier et sa portee.
+     * Ce service le <b>relaie</b> — et le trace, comme tout refus qui passe par ici (CT-04).
+     */
+    @ExceptionHandler(AccesHorsPorteeException.class)
+    public ResponseEntity<ErreurApiDto> accesHorsPortee(AccesHorsPorteeException exception,
+            HttpServletRequest requete) {
+        publierRefus(requete, "HABILITATION_ABSENTE", exception.getMessage());
+        return reponse(requete, HttpStatus.FORBIDDEN, "UTILISATEUR_NON_HABILITE",
+                exception.getMessage());
     }
 
     // --- Ressource introuvable (404) ---------------------------------------------

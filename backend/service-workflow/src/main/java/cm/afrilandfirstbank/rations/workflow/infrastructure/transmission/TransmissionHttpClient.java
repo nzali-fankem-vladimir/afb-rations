@@ -13,6 +13,7 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
 import cm.afrilandfirstbank.rations.workflow.application.ResultatDemandeTransmission;
+import cm.afrilandfirstbank.rations.workflow.application.ResultatDemandeTransmission.DejaTransmise;
 import cm.afrilandfirstbank.rations.workflow.application.ResultatDemandeTransmission.EchecApresTentative;
 import cm.afrilandfirstbank.rations.workflow.application.ResultatDemandeTransmission.EchecAvantPublication;
 import cm.afrilandfirstbank.rations.workflow.application.ResultatDemandeTransmission.Transmise;
@@ -31,7 +32,8 @@ import cm.afrilandfirstbank.rations.workflow.application.TransmissionClient;
  *
  * <table>
  *   <tr><th>Reponse</th><th>Issue</th><th>Raison</th></tr>
- *   <tr><td>{@code 200}</td><td>{@link Transmise}</td><td>le broker a accuse reception</td></tr>
+ *   <tr><td>{@code 200}, resultat {@code TRANSMIS}</td><td>{@link Transmise}</td><td>le broker a accuse reception</td></tr>
+ *   <tr><td>{@code 200}, resultat {@code DEJA_TRANSMIS}</td><td>{@link DejaTransmise}</td><td>le verrou de RG-13 a refuse : rien n'est reparti</td></tr>
  *   <tr><td>{@code 503 SERVICE_WORKFLOW_INDISPONIBLE}</td><td>{@link EchecAvantPublication}</td><td>l'en-tete n'a pas pu etre lu : aucun envoi</td></tr>
  *   <tr><td>{@code 503 SERVICE_SAISIE_INDISPONIBLE}</td><td>{@link EchecAvantPublication}</td><td>le detail n'a pas pu etre lu : aucun envoi</td></tr>
  *   <tr><td>connexion refusee / hote injoignable</td><td>{@link EchecAvantPublication}</td><td>la requete n'a jamais atteint le service</td></tr>
@@ -52,15 +54,16 @@ import cm.afrilandfirstbank.rations.workflow.application.TransmissionClient;
  * a pu etre traitee entierement. On les separe donc sur la nature de la cause, et l'on
  * classe dans le prudent tout ce qu'on ne sait pas identifier.
  *
- * <h2>Delai de lecture : 20 s, et non 3 s</h2>
+ * <h2>Delai de lecture : 35 s, et non 3 s</h2>
  *
  * <p>C'est le seul appel sortant du module qui deroge a la convention 2 s / 3 s
- * (Sprint 3.2), et ce n'est pas un reglage d'environnement : l'appele fait lui-meme trois
- * operations bornees — lecture de l'en-tete (5 s), lecture du detail (5 s), publication
- * (7 s) —, soit <b>17 s au pire</b> par construction. Un delai de 3 s couperait la
- * reponse au moment precis ou elle importe le plus, et transformerait chaque panne en
- * situation ambigue, donc non reessayable. Les 20 s sont une borne defensive que le budget
- * de l'appele rend en principe inatteignable.
+ * (Sprint 3.2), et ce n'est pas un reglage d'environnement : l'appele fait lui-meme cinq
+ * operations bornees — en-tete (5 s), detail (5 s), <b>reservation du verrou (5 s)</b>,
+ * publication (7 s), <b>confirmation du verrou (5 s)</b> —, soit <b>27 s au pire</b> par
+ * construction depuis le Sprint 5.3. Un delai trop court couperait la reponse au moment
+ * precis ou elle importe le plus, et transformerait chaque panne en situation ambigue,
+ * donc non reessayable. Les 35 s sont une borne defensive que le budget de l'appele rend
+ * en principe inatteignable.
  */
 @Component
 public class TransmissionHttpClient implements TransmissionClient {
@@ -118,12 +121,31 @@ public class TransmissionHttpClient implements TransmissionClient {
     // --- Traduction ---------------------------------------------------------------
 
     private ResultatDemandeTransmission interpreter(ReponseTransmission reponse, Long idProcessus) {
-        if (reponse == null || reponse.topic() == null) {
+        if (reponse == null) {
             // Un 200 illisible ne prouve pas qu'il ne s'est rien passe : le service a pu
             // publier et mal rendre sa reponse. Prudent, donc sans reessai.
             journal.warn("Le service Transmission a repondu 200 sans corps exploitable pour "
                     + "l'etat {}. On ignore si l'evenement est parti.", idProcessus);
             return new EchecApresTentative("reponse 200 sans corps exploitable");
+        }
+
+        // Sprint 5.3 : le verrou de RG-13 a refuse une seconde publication. C'est un
+        // 200 sans topic ni offset, et c'est normal — rien n'est parti, parce que tout
+        // etait deja parti. Le distinguer d'un corps illisible importe : l'un est le
+        // fonctionnement attendu, l'autre une anomalie a signaler au valideur.
+        if (reponse.etatDejaTransmis()) {
+            journal.info("Le service Transmission a refuse une seconde transmission de l'etat "
+                    + "{} : {}", idProcessus, reponse.message());
+            return new DejaTransmise(reponse.message() == null
+                    ? "l'etat avait deja ete transmis a la comptabilite (RG-13)"
+                    : reponse.message());
+        }
+
+        if (reponse.topic() == null || reponse.partition() == null || reponse.offset() == null) {
+            journal.warn("Le service Transmission a repondu 200 sans position sur le broker pour "
+                    + "l'etat {} (resultat {}). On ignore si l'evenement est parti.",
+                    idProcessus, reponse.resultat());
+            return new EchecApresTentative("reponse 200 sans position exploitable sur le broker");
         }
 
         return new Transmise(reponse.topic(), reponse.partition(), reponse.offset(),

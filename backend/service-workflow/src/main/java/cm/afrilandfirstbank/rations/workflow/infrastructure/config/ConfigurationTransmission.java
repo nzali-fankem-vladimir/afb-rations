@@ -88,17 +88,32 @@ public class ConfigurationTransmission {
     static final Duration DELAI_CONNEXION = Duration.ofSeconds(2);
 
     /**
-     * Delai de lecture, <b>20 s</b> : la seule derogation du module a la convention de 3 s.
+     * Delai de lecture, <b>35 s</b> : la seule derogation du module a la convention de 3 s.
      *
      * <p>Ce n'est pas un reglage d'environnement mais une consequence arithmetique. L'appele
-     * enchaine trois operations bornees — lecture de l'en-tete (5 s), lecture du detail
-     * (5 s), publication et attente de l'accuse (7 s) —, soit <b>17 s au pire par
-     * construction</b>. Un delai de 3 s couperait la reponse au moment ou elle importe le
-     * plus et transformerait chaque panne en situation ambigue, donc non reessayable, alors
-     * qu'elle etait peut-etre parfaitement claire. Les 20 s sont une borne defensive que le
-     * budget de l'appele rend en principe inatteignable.
+     * enchaine cinq operations bornees, et le verrou de RG-13 en a ajoute deux au
+     * Sprint 5.3 :
+     *
+     * <table>
+     *   <caption>Budget de l'appele, pire cas par construction</caption>
+     *   <tr><td>lecture de l'en-tete au service Workflow</td><td>5 s</td></tr>
+     *   <tr><td>lecture du detail au service Saisie</td><td>5 s</td></tr>
+     *   <tr><td><b>reservation du verrou</b> (Sprint 5.3)</td><td>5 s</td></tr>
+     *   <tr><td>publication et attente de l'accuse du broker</td><td>7 s</td></tr>
+     *   <tr><td><b>confirmation du verrou</b> (Sprint 5.3)</td><td>5 s</td></tr>
+     *   <tr><td><b>total</b></td><td><b>27 s</b></td></tr>
+     * </table>
+     *
+     * <p>Les 20 s du Sprint 5.1 seraient donc devenues trop courtes : elles auraient coupe
+     * la reponse au moment ou elle importe le plus — apres la publication, avant la
+     * confirmation —, transformant en situation <b>ambigue</b>, donc non reessayable, une
+     * panne qui etait peut-etre parfaitement claire. Les 35 s sont une borne defensive que
+     * le budget de l'appele rend en principe inatteignable.
+     *
+     * <p>Cas nominal inchange : environ 200 ms, les deux appels du verrou etant deux
+     * ecritures sur une ligne indexee.
      */
-    static final Duration DELAI_LECTURE = Duration.ofSeconds(20);
+    static final Duration DELAI_LECTURE = Duration.ofSeconds(35);
 
     /**
      * Constructeur HTTP reserve a l'appel de transmission, qualifie par son nom de bean.

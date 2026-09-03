@@ -14,6 +14,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -40,6 +41,20 @@ public class SecurityConfig {
      * d'oeil.
      */
     static final String CHEMIN_INTEGRATION = "/processus/*/integration";
+
+    /**
+     * Verbe du seul endpoint garde par le secret partage.
+     *
+     * <p><b>Restriction ajoutee au Sprint 5.3, et ce n'est pas cosmetique.</b> Le meme
+     * chemin porte desormais deux endpoints de natures opposees : le {@code PUT} de
+     * l'accuse comptable, ne d'un message Kafka sans utilisateur, garde par un secret ;
+     * et le {@code GET} du statut d'integration, appele sur le jeton d'un ARH ou d'un
+     * acteur du circuit. Sans ce verbe, la chaine dediee capterait aussi le {@code GET} et
+     * lui reclamerait un secret que le service Transmission ne presente pas sur cette
+     * route — la consultation serait refusee en {@code 401}, sans que rien n'explique
+     * pourquoi.
+     */
+    static final HttpMethod VERBE_INTEGRATION_INTERNE = HttpMethod.PUT;
 
     private final List<String> originsAutorisees;
     private final String cleInterne;
@@ -75,7 +90,8 @@ public class SecurityConfig {
     @Order(Ordered.HIGHEST_PRECEDENCE)
     public SecurityFilterChain chaineIntegrationInterne(HttpSecurity http) throws Exception {
         http
-                .securityMatcher(CHEMIN_INTEGRATION)
+                .securityMatcher(PathPatternRequestMatcher.withDefaults()
+                        .matcher(VERBE_INTEGRATION_INTERNE, CHEMIN_INTEGRATION))
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))

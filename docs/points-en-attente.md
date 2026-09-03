@@ -352,3 +352,68 @@ tests sans ce contrôle laisserait exactement le même angle mort.
 
 **Ce que ce report coûte aujourd'hui.** Un test automatisé de moins (le bout en bout Kafka),
 compensé par un test de câblage et par la vérification manuelle. Rien en fonctionnement.
+
+---
+
+## Publication d'issue incertaine — un état réputé transmis sans l'être (Sprint 5.3)
+
+**Statut :** risque résiduel assumé, **en surveillance prioritaire**
+**Origine :** décision d'ordre du Sprint 5.3, `docs/decisions/2026-09-03-unicite-de-transmission-et-verrou.md`
+
+### Le fait
+
+Le verrou de RG-13 réserve la transmission **avant** de publier. Quand la publication se
+termine de façon **ambiguë** — délai d'accusé dépassé, échec de livraison —, la réservation
+**reste posée** : l'événement a pu être écrit sur le topic avant que l'accusé ne se perde, et
+republier produirait un second jeu d'écritures comptables pour les mêmes bénéficiaires.
+
+L'état est alors marqué transmis sans qu'on sache s'il l'est. C'est le risque résiduel de
+l'ordre retenu, et il a été préféré à l'autre — republier — parce qu'il **se voit et se
+répare**, alors qu'un double paiement est irréversible.
+
+### Comment le détecter
+
+```sql
+SELECT id, code_unite, mois_paiement, annee_paiement, date_reservation_transmission
+  FROM processus_mensuel
+ WHERE statut = 'CLOTURE'
+   AND transmis_comptabilite = TRUE
+   AND statut_integration IS NULL
+   AND date_reservation_transmission < NOW() - INTERVAL '15 minutes';
+```
+
+L'ancienneté est ce qui distingue l'incident du trafic normal : la même signature en base,
+quelques centaines de millisecondes après une clôture, est simplement un envoi en cours.
+C'est la raison d'être de la colonne `date_reservation_transmission` (migration V5).
+
+Deux préfixes de journal l'accompagnent :
+
+| Préfixe | Ce qu'il dit |
+|---|---|
+| `TRANSMISSION ISSUE INCERTAINE` | l'état a peut-être été publié ; le verrou reste posé, il ne sera pas rejoué |
+| `CONFIRMATION TRANSMISSION MANQUEE` | l'état **est** publié, mais le verrou n'a pas pu être confirmé : fausse alerte à venir sur la requête ci-dessus |
+
+Comme pour les transmissions manquées du Sprint 5.1, **le journal d'audit ne peut pas
+servir de filet quand la panne est Kafka lui-même** : la trace passe par le même broker.
+La requête SQL fait foi.
+
+### Ce qu'il faut faire quand la requête remonte un état
+
+1. **Vérifier le topic** `rations.etat.valide` : l'événement du processus y est-il ?
+2. **S'il y est** : rien à faire côté transmission ; l'accusé comptable finira d'aligner le
+   statut d'intégration, ou sera à réclamer à la DFT.
+3. **S'il n'y est pas** : lever la réservation à la main, ce qui rend une reprise possible.
+   Aucune reprise automatique n'existe — le realm n'a pas de compte de service, point déjà
+   ouvert plus haut.
+
+**Ne jamais lever une réservation sans avoir vérifié le topic.** C'est le seul geste du
+module qui puisse produire un double paiement.
+
+### À arrêter avec la DSI
+
+* Le seuil d'alerte (15 minutes ci-dessus est une valeur de départ, à caler sur la latence
+  réelle du broker en environnement partagé).
+* Le rattachement de cette requête à la supervision, à côté de
+  `statut = 'CLOTURE' AND transmis_comptabilite = false`.
+* La levée manuelle : aujourd'hui une écriture directe en base, faute d'endpoint
+  d'administration — à revoir quand un compte de service existera.

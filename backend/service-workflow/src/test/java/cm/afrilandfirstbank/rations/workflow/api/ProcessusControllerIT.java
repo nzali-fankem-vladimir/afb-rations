@@ -52,6 +52,7 @@ import cm.afrilandfirstbank.rations.workflow.application.ResultatSoumission;
 import cm.afrilandfirstbank.rations.workflow.application.ResultatValidation;
 import cm.afrilandfirstbank.rations.workflow.application.SoumissionService;
 import cm.afrilandfirstbank.rations.workflow.application.ValidationService;
+import cm.afrilandfirstbank.rations.workflow.application.VerrouTransmissionService;
 import cm.afrilandfirstbank.rations.workflow.application.ProcessusService.EtatProcessus;
 import cm.afrilandfirstbank.rations.workflow.domaine.CodeManqueEnum;
 import cm.afrilandfirstbank.rations.workflow.domaine.EtapeWorkflow;
@@ -118,6 +119,9 @@ class ProcessusControllerIT {
 
     @MockitoBean
     private ValidationService validationService;
+
+    @MockitoBean
+    private VerrouTransmissionService verrouTransmissionService;
 
     @MockitoBean
     private RetourService retourService;
@@ -499,13 +503,24 @@ class ProcessusControllerIT {
         // garde l'autre bord — aucun chemin n'a ete ajoute au passage, et surtout pas
         // un endpoint de reprise, que la resoumission porte deja (US-11, CT-24).
         for (String chemin : List.of("/processus/740/reprise", "/processus/740/rejet",
-                "/processus/740/cloture", "/processus/740/transmission")) {
+                "/processus/740/cloture")) {
             mockMvc.perform(post(chemin)
                             .header(HttpHeaders.AUTHORIZATION, JETON)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{}"))
                     .andExpect(status().isNotFound());
         }
+
+        // Sprint 5.3 : /processus/{id}/transmission existe desormais, mais en PUT
+        // seulement — c'est le verrou d'unicite de RG-13, endpoint INTERNE hors contrat
+        // passerelle. Un POST sur ce chemin doit donc etre refuse : il n'existe aucun
+        // endpoint de declenchement de transmission cote Workflow, et le verbe PUT dit
+        // par lui-meme que l'operation est idempotente.
+        mockMvc.perform(post("/processus/740/transmission")
+                        .header(HttpHeaders.AUTHORIZATION, JETON)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isMethodNotAllowed());
     }
 
     // --- Soumission (Sprint 4.2) --------------------------------------------------

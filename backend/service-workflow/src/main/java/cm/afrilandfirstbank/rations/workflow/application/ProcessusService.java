@@ -133,6 +133,36 @@ public class ProcessusService {
     }
 
     /**
+     * Le bloc d'integration comptable d'un processus, portee d'acces verifiee
+     * (Sprint 5.3, endpoint interne {@code GET /processus/{id}/integration}).
+     *
+     * <p>Il sert la consultation {@code GET /transmission/processus/{id}} du contrat
+     * d'API section 7, ouverte aux <b>roles ARH et circuit</b>. Le service Transmission
+     * n'ayant pas de base, il vient lire ici la donnee qui vit sur
+     * {@code processus_mensuel}.
+     *
+     * <p><b>Pourquoi une methode a part plutot que {@link #consulter}.</b> Cette
+     * derniere rend le dossier complet et n'est ouverte qu'aux roles du circuit. Y
+     * ajouter l'ARH, dont la portee est nationale (Sprint 1.1), lui donnerait la lecture
+     * integrale de tous les dossiers de toutes les unites pour un besoin qui n'en demande
+     * que quatre champs. Meme parti qu'au Sprint 1.3 pour
+     * {@code GET /identite/habilitation} : un endpoint interne repond a une question
+     * precise, il ne rend pas un objet complet « au cas ou ».
+     *
+     * <p>La portee reste verifiee unite par unite : le role n'est que le premier filtre.
+     * Non transactionnelle, comme {@link #consulter} — une lecture suivie d'un appel
+     * reseau.
+     */
+    public ProcessusMensuel consulterIntegration(Long idProcessus, String enteteAutorisation) {
+        ProcessusMensuel processus = processusMensuelRepository.findById(idProcessus)
+                .orElseThrow(() -> new ProcessusIntrouvableException(idProcessus));
+
+        habilitationService.exigerHabilitationSurUnite(processus.getCodeUnite(), enteteAutorisation);
+
+        return processus;
+    }
+
+    /**
      * Le motif du dernier retour, <b>tant que l'etat est effectivement retourne</b>
      * (US-11 : « le motif de retour est visible par l'agent »).
      *

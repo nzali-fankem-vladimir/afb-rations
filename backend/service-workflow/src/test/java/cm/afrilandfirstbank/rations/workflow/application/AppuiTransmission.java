@@ -37,14 +37,59 @@ final class AppuiTransmission {
         return new Transmise("rations.etat.valide", 0, 12L, nombreLignes, montantTotal);
     }
 
+    /** Adresse d'origine des gestes du verrou simules, pour les traces d'audit. */
+    private static final String IP_SIMULEE = "10.0.0.1";
+
+    /**
+     * Un declencheur cable comme en production, <b>verrou de RG-13 compris</b>.
+     *
+     * <h2>Ce que le client de test doit simuler depuis le Sprint 5.3</h2>
+     *
+     * <p>Le drapeau {@code transmis_comptabilite} n'est plus pose par le service Workflow
+     * apres coup : il est <b>reserve puis confirme</b> par le service Transmission, qui
+     * appelle pour cela l'endpoint interne du verrou. Un client de test qui rendrait
+     * simplement un accuse sans passer par le verrou laisserait donc le drapeau a faux, et
+     * les tests de circuit ne prouveraient plus rien de RG-13.
+     *
+     * <p>Le client est donc enveloppe : quand il rend un accuse, les deux gestes du verrou
+     * sont joues <b>pour de vrai</b>, sur le vrai service et la vraie base. C'est une
+     * simulation fidele du service distant, pas un raccourci — et elle fait au passage
+     * eprouver le refus de seconde transmission par les tests de circuit existants.
+     */
     static DeclenchementTransmission declenchement(TransmissionClient client,
             ProcessusMensuelRepository processusRepository, PublicateurAudit publicateurAudit) {
 
+        VerrouTransmissionService verrou =
+                new VerrouTransmissionService(processusRepository, publicateurAudit);
+
         return new DeclenchementTransmission(
-                client,
-                new EnregistrementTransmission(processusRepository, publicateurAudit),
-                publicateurAudit,
-                Runnable::run);
+                avecVerrou(client, verrou), publicateurAudit, Runnable::run);
+    }
+
+    /**
+     * Enveloppe un client de test des deux gestes que le service Transmission accomplit
+     * reellement autour de sa publication.
+     */
+    private static TransmissionClient avecVerrou(TransmissionClient client,
+            VerrouTransmissionService verrou) {
+
+        return (idProcessus, enteteAutorisation) -> {
+            ResultatDemandeTransmission reponse =
+                    client.demanderTransmission(idProcessus, enteteAutorisation);
+
+            if (!(reponse instanceof Transmise accuse)) {
+                return reponse;
+            }
+
+            ResultatVerrouTransmission reservation = verrou.reserver(idProcessus, IP_SIMULEE);
+            if (reservation.resultat() == ResultatVerrouTransmission.Resultat.DEJA_TRANSMISE) {
+                return new ResultatDemandeTransmission.DejaTransmise(reservation.message());
+            }
+
+            verrou.confirmer(idProcessus, accuse.topic(), accuse.partition(), accuse.offset(),
+                    accuse.nombreLignes(), accuse.montantTotal(), IP_SIMULEE);
+            return accuse;
+        };
     }
 
     /**
