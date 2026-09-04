@@ -247,7 +247,31 @@
       "realmRoles": [
         "AGENT_UNITE"
       ],
-      "_commentaire": "Compte de controle : present a l'annuaire, volontairement SANS profil local dans le module. Sert a verifier le 403 sur compte non habilite."
+      "_commentaire": "ANCIEN compte de controle du refus 403. Depuis le Sprint 6.3, un profil local lui a ete ouvert et son sub_keycloak est lie : il ne peut plus servir a verifier le refus. Le compte de controle est desormais thomas_ndzana. Voir docs/decisions/2026-09-04-compte-de-controle-du-refus-403.md"
+    },
+    {
+      "username": "thomas_ndzana",
+      "email": "thomas_ndzana@afrilandfirstbank.com",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Thomas",
+      "lastName": "NDZANA",
+      "attributes": {
+        "matricule": [
+          "1955"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Rations2026",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "AGENT_UNITE"
+      ],
+      "_commentaire": "COMPTE DE CONTROLE DU REFUS 403 -- NE JAMAIS LUI OUVRIR DE PROFIL LOCAL. Present a l'annuaire, volontairement absent de la migration V1000 du service Identite. C'est le seul compte qui prouve qu'un jeton Keycloak valide sans habilitation dans le module est bien refuse (403 UTILISATEUR_NON_HABILITE, decision Sprint 0.4). Lui ouvrir un profil detruit ce cas de test en silence : la checklist rendrait un succes la ou elle attend un refus. Voir docs/decisions/2026-09-04-compte-de-controle-du-refus-403.md"
     }
   ]
 }

@@ -44,11 +44,36 @@ Mot de passe commun : `Rations2026`. Comptes de developpement uniquement.
 | `claire_nkolo` | ARH | unite 00001 |
 | `agnes_tchinda` | DRH | unite 00001 |
 | `martin_fouda` | ADMIN | unite 00001 |
-| `pierre_belinga` | AGENT_UNITE | **aucun** — compte de controle du refus en 403 |
+| `pierre_belinga` | AGENT_UNITE | unite 00002 — *ancien* compte de controle, habilite depuis le Sprint 6.3 |
+| `thomas_ndzana` | AGENT_UNITE | **aucun** — compte de controle du refus en 403 |
 
 Le role et le code unite affiches ici sont ceux du profil **local** du module
 (table `utilisateurs`, migration `V1000` du service Identite), pas ceux de
 l'annuaire. Keycloak porte l'identite, le module porte l'habilitation.
+
+### Le compte de controle du refus 403
+
+`thomas_ndzana` existe a l'annuaire et n'a **volontairement aucun profil local**.
+C'est le seul cas qui prouve qu'un jeton Keycloak parfaitement valide — bon
+realm, bonne audience, role applicatif reconnu — est malgre tout refuse faute
+d'habilitation ouverte dans le module (decision Sprint 0.4).
+
+```bash
+# Attendu : 403 UTILISATEUR_NON_HABILITE
+curl -H "Authorization: Bearer <jeton_thomas_ndzana>" http://localhost:8081/identite/moi
+```
+
+**Ne jamais lui ouvrir de profil local**, ni par la migration `V1000`, ni par un
+`INSERT` en base. Le faire ne casse rien de visible : le build passe, les tests
+passent, et cette verification rend `200` la ou elle attend `403` — un succes a
+la place d'un refus, sur un test de securite, sans aucun message. C'est
+exactement ce qui est arrive a `pierre_belinga` au Sprint 6.3, d'ou son
+remplacement. Une garde au build (`CompteDeControleDuRefusTest`) couvre
+desormais la migration ; elle ne peut rien contre un `INSERT` manuel.
+
+Besoin d'un profil pre-provisionne non lie, pour eprouver une liaison a la
+premiere connexion ? Creer un compte jetable, jamais celui-ci. Voir
+`docs/decisions/2026-09-04-compte-de-controle-du-refus-403.md`.
 
 ## Points de vigilance
 
