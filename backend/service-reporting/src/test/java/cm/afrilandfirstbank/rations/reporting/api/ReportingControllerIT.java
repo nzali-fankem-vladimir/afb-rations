@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.reporting.api;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -29,7 +30,11 @@ import org.springframework.test.web.servlet.MockMvc;
 import cm.afrilandfirstbank.rations.commun.audit.PublicateurAudit;
 import cm.afrilandfirstbank.rations.reporting.application.ExportExcelService;
 import cm.afrilandfirstbank.rations.reporting.application.ExportPdfService;
+import org.mockito.ArgumentCaptor;
+
+import cm.afrilandfirstbank.rations.commun.audit.EvenementAudit;
 import cm.afrilandfirstbank.rations.reporting.application.RapportService;
+import cm.afrilandfirstbank.rations.reporting.application.TracabiliteRapportService;
 import cm.afrilandfirstbank.rations.reporting.application.SuiviService;
 import cm.afrilandfirstbank.rations.reporting.domaine.Rapport;
 import cm.afrilandfirstbank.rations.reporting.domaine.Rapport.Synthese;
@@ -48,7 +53,8 @@ import cm.afrilandfirstbank.rations.reporting.infrastructure.config.SecurityConf
  * d'erreurs.
  */
 @WebMvcTest(controllers = ReportingController.class)
-@Import({ SecurityConfig.class, RoleJwtConverter.class, GestionnaireErreursApi.class })
+@Import({ SecurityConfig.class, RoleJwtConverter.class, GestionnaireErreursApi.class,
+        TracabiliteRapportService.class })
 class ReportingControllerIT {
 
     private static final String JETON = "Bearer jeton-de-test";
@@ -153,6 +159,104 @@ class ReportingControllerIT {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.vide").value(true))
                 .andExpect(jsonPath("$.loginUtilisateur").value(LOGIN));
+    }
+
+    // --- Sprint 6.3 : couverture d'audit du service Reporting -------------------
+    //
+    // Ce service ne publiait aucun evenement avant ce sprint, alors qu'il declarait
+    // deja rations-audit-commun dans son pom. Les tests ci-dessous verifient la
+    // chaine complete controleur -> TracabiliteRapportService -> PublicateurAudit :
+    // le service de tracabilite est importe pour de vrai, seul le publicateur est
+    // simule.
+
+    @Test
+    @DisplayName("6.3-a. GET /reporting/rapports publie GENERATION_RAPPORT")
+    void generationDeRapport_publieUnEvenementDAudit() throws Exception {
+        keycloakEmet("ARH");
+        when(rapportService.produire(anyInt(), anyInt(), any(), anyString(), anyString()))
+                .thenReturn(unRapport());
+
+        mockMvc.perform(get("/reporting/rapports")
+                        .with(requete -> { requete.setRemoteAddr("10.20.30.40"); return requete; })
+                        .header(HttpHeaders.AUTHORIZATION, JETON)
+                        .param("periode", "2026-08"))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<EvenementAudit> capture = ArgumentCaptor.forClass(EvenementAudit.class);
+        org.mockito.Mockito.verify(publicateurAudit).publier(capture.capture());
+        EvenementAudit evenement = capture.getValue();
+
+        assertThat(evenement.action()).isEqualTo("GENERATION_RAPPORT");
+        assertThat(evenement.entiteCible()).isEqualTo("rapport_activite");
+        assertThat(evenement.adresseIp()).isEqualTo("10.20.30.40");
+        assertThat(evenement.detailJson()).contains(LOGIN).contains("2026");
+        // Aucune unite demandee : la portee la plus large que ce service produise,
+        // rendue explicitement plutot que par un champ vide.
+        assertThat(evenement.detailJson()).contains("TOUTES_UNITES_VISIBLES");
+    }
+
+    @Test
+    @DisplayName("6.3-b. GET /reporting/rapports/export publie EXPORT_RAPPORT, avec le nom et la taille du fichier")
+    void exportDeRapport_publieUnEvenementDAudit() throws Exception {
+        keycloakEmet("ARH");
+        when(rapportService.produire(anyInt(), anyInt(), any(), anyString(), anyString()))
+                .thenReturn(unRapport());
+        when(exportPdfService.exporter(any())).thenReturn("%PDF-faux-contenu".getBytes());
+
+        mockMvc.perform(get("/reporting/rapports/export")
+                        .with(requete -> { requete.setRemoteAddr("10.20.30.40"); return requete; })
+                        .header(HttpHeaders.AUTHORIZATION, JETON)
+                        .param("periode", "2026-08")
+                        .param("format", "pdf"))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<EvenementAudit> capture = ArgumentCaptor.forClass(EvenementAudit.class);
+        org.mockito.Mockito.verify(publicateurAudit).publier(capture.capture());
+        EvenementAudit evenement = capture.getValue();
+
+        assertThat(evenement.action()).isEqualTo("EXPORT_RAPPORT");
+        // Le nom du fichier et sa taille sont ce qui permet, des mois plus tard,
+        // de rapprocher un document retrouve hors du systeme de l'extraction qui
+        // l'a produit.
+        assertThat(evenement.detailJson())
+                .contains("rapport-rations-toutes-unites-202608.pdf")
+                .contains("PDF")
+                .contains("17"); // "%PDF-faux-contenu".length()
+    }
+
+    @Test
+    @DisplayName("6.3-c. un format refuse ne publie AUCUN export : rien n'est sorti du systeme")
+    void formatRefuse_nePublieAucunExport() throws Exception {
+        keycloakEmet("ARH");
+        when(rapportService.produire(anyInt(), anyInt(), any(), anyString(), anyString()))
+                .thenReturn(unRapport());
+
+        mockMvc.perform(get("/reporting/rapports/export")
+                        .header(HttpHeaders.AUTHORIZATION, JETON)
+                        .param("periode", "2026-08")
+                        .param("format", "csv"))
+                .andExpect(status().isUnprocessableEntity());
+
+        org.mockito.Mockito.verifyNoInteractions(publicateurAudit);
+    }
+
+    @Test
+    @DisplayName("6.3-d. les deux endpoints de suivi ne publient rien : ce sont des lectures de travail, pas des extractions")
+    void endpointsDeSuivi_nePublientAucunEvenement() throws Exception {
+        keycloakEmet("CHEF_UNITE_DA");
+        when(suiviService.rechercher(any(), anyInt(), anyInt(), anyString()))
+                .thenReturn(cm.afrilandfirstbank.rations.reporting.api.dto.PageResponse
+                        .depuis(List.of(), 0, 20));
+
+        mockMvc.perform(get("/reporting/demandes")
+                        .header(HttpHeaders.AUTHORIZATION, JETON)
+                        .param("periode", "2026-08"))
+                .andExpect(status().isOk());
+
+        // Tracer une consultation d'ecran produirait un evenement par affichage,
+        // et noierait les faits notables. Decision Sprint 6.3, meme raisonnement
+        // que pour date_dernier_acces cote Identite.
+        org.mockito.Mockito.verifyNoInteractions(publicateurAudit);
     }
 
 }

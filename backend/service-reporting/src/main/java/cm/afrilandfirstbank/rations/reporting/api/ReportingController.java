@@ -27,6 +27,8 @@ import cm.afrilandfirstbank.rations.reporting.application.ExportPdfService;
 import cm.afrilandfirstbank.rations.reporting.application.RapportService;
 import cm.afrilandfirstbank.rations.reporting.application.SuiviService;
 import cm.afrilandfirstbank.rations.reporting.domaine.EnTeteDemande;
+import cm.afrilandfirstbank.rations.reporting.application.TracabiliteRapportService;
+import jakarta.servlet.http.HttpServletRequest;
 import cm.afrilandfirstbank.rations.reporting.domaine.NatureEnum;
 import cm.afrilandfirstbank.rations.reporting.domaine.Rapport;
 import cm.afrilandfirstbank.rations.reporting.domaine.SessionEnum;
@@ -34,10 +36,9 @@ import cm.afrilandfirstbank.rations.reporting.domaine.exception.FormatExportInva
 import cm.afrilandfirstbank.rations.reporting.domaine.exception.PeriodeInvalideException;
 
 /**
- * Les deux endpoints de suivi du contrat d'API section 6 (Sprint 6.1, US-15,
- * CT-30, CT-31). Les deux autres endpoints du service — {@code /reporting/rapports}
- * et {@code /reporting/rapports/export} — relèvent du sous-sprint 6.2 et ne sont
- * pas implémentés ici.
+ * Les quatre endpoints du service Reporting au contrat d'API section 6, et
+ * aucun de plus : les deux endpoints de suivi (Sprint 6.1, US-15, CT-30, CT-31)
+ * et les deux endpoints de rapport (Sprint 6.2, US-16, CT-32, CT-33).
  *
  * <h2>Aucun accès direct à une base</h2>
  *
@@ -61,13 +62,16 @@ public class ReportingController {
     private final RapportService rapportService;
     private final ExportPdfService exportPdfService;
     private final ExportExcelService exportExcelService;
+    private final TracabiliteRapportService tracabiliteRapportService;
 
     public ReportingController(SuiviService suiviService, RapportService rapportService,
-            ExportPdfService exportPdfService, ExportExcelService exportExcelService) {
+            ExportPdfService exportPdfService, ExportExcelService exportExcelService,
+            TracabiliteRapportService tracabiliteRapportService) {
         this.suiviService = suiviService;
         this.rapportService = rapportService;
         this.exportPdfService = exportPdfService;
         this.exportExcelService = exportExcelService;
+        this.tracabiliteRapportService = tracabiliteRapportService;
     }
 
     /**
@@ -137,18 +141,24 @@ public class ReportingController {
             @RequestParam(required = false) String periode,
             @RequestParam(required = false) String codeUnite,
             @RequestHeader(HttpHeaders.AUTHORIZATION) String enteteAutorisation,
-            @AuthenticationPrincipal Jwt jeton) {
+            @AuthenticationPrincipal Jwt jeton,
+            HttpServletRequest requeteHttp) {
 
         YearMonth moisAnnee = exigerPeriode(periode);
 
-        RapportResponse reponse = RapportResponse.depuis(rapportService.produire(
+        Rapport rapport = rapportService.produire(
                 moisAnnee.getMonthValue(),
                 moisAnnee.getYear(),
                 codeUnite,
                 login(jeton),
-                enteteAutorisation));
+                enteteAutorisation);
 
-        return ResponseEntity.ok(reponse);
+        // Après production, jamais avant : une trace posée en amont affirmerait
+        // un rapport qu'un refus de portée peut encore empêcher (document
+        // maître §7.3, la journalisation suit le fait qu'elle décrit).
+        tracabiliteRapportService.tracerGeneration(rapport, requeteHttp.getRemoteAddr());
+
+        return ResponseEntity.ok(RapportResponse.depuis(rapport));
     }
 
     /**
@@ -178,7 +188,8 @@ public class ReportingController {
             @RequestParam(required = false) String codeUnite,
             @RequestParam(required = false) String format,
             @RequestHeader(HttpHeaders.AUTHORIZATION) String enteteAutorisation,
-            @AuthenticationPrincipal Jwt jeton) {
+            @AuthenticationPrincipal Jwt jeton,
+            HttpServletRequest requeteHttp) {
 
         YearMonth moisAnnee = exigerPeriode(periode);
         FormatExport formatExport = exigerFormat(format);
@@ -190,10 +201,19 @@ public class ReportingController {
                 ? exportPdfService.exporter(rapport)
                 : exportExcelService.exporter(rapport);
 
+        String nomFichier = nomFichier(rapport, formatExport);
+
+        // Le fichier est composé : c'est maintenant, et seulement maintenant,
+        // qu'un document quitte le périmètre applicatif. Une composition qui
+        // échoue (500 EXPORT_IMPOSSIBLE) ne produit donc aucune trace d'export,
+        // et c'est voulu — rien n'est sorti.
+        tracabiliteRapportService.tracerExport(rapport, formatExport.name(), nomFichier,
+                contenu.length, requeteHttp.getRemoteAddr());
+
         return ResponseEntity.ok()
                 .contentType(formatExport.typeContenu)
                 .header(HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename=\"" + nomFichier(rapport, formatExport) + "\"")
+                        "attachment; filename=\"" + nomFichier + "\"")
                 .body(contenu);
     }
 
