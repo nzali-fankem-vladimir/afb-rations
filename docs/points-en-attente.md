@@ -465,9 +465,13 @@ pire qu'un refus explicite.
 
 ## A-01 — Une recherche « toutes les actions de cette personne » ne verra pas 21 traces sur 30 (Sprint 6.3)
 
-**Ouvert le 4 septembre 2026, à l'étape 2 du Sprint 6.3. Arbitré avec
-l'utilisateur : constaté et consigné maintenant, corrigé au sprint de
-construction du service Audit.**
+**Ouvert le 4 septembre 2026, à l'étape 2 du Sprint 6.3. TRANCHÉ le 4 septembre
+2026, à l'étape 3 du sprint de rattrapage du service Audit : Option B retenue
+— aucun champ `login_acteur` ajouté au schéma. Voir
+`docs/decisions/2026-09-04-arbitrage-point-a-01-login-acteur.md` et la section
+« Décision tranchée au sprint de rattrapage » ci-dessous. Ce point n'est plus
+ouvert en tant que tel ; les deux défauts de producteur qu'il a mis au jour
+restent consignés ci-dessous comme travail pour un futur sprint producteur.**
 
 ### Le fait
 
@@ -548,3 +552,150 @@ idée mal placée dans le temps.
 | Le renseigner depuis le `SecurityContextHolder`, **sans appel réseau** | C'est ce que fait déjà `GestionnaireErreursApi` dans quatre services. Le quatrième appel HTTP refusé au Sprint 3.3 n'a pas à être rouvert. |
 | Le laisser nul là où il n'y a pas d'utilisateur | Un message Kafka n'a personne derrière lui : `AccuseComptableConsumer` et `TraitementAccuseService` resteront légitimement sans acteur. |
 | Poser l'index dans la même migration que l'entité | Une seule passe, un seul schéma. |
+
+### Décision tranchée au sprint de rattrapage du service Audit (4 septembre 2026)
+
+**Option B retenue avec l'utilisateur : aucun champ `login_acteur` ajouté au
+schéma de `audit_log` à ce sprint.** Motif de fond, confirmé par inspection
+réelle des 193 messages présents sur le topic (`kafka-console-consumer.sh
+--from-beginning`), et non plus seulement supposé : un champ alimenté par
+extraction de `detail_json` n'aurait de toute façon pas résolu la majorité des
+cas, pour deux raisons distinctes qu'il faut désormais traiter séparément —
+d'où les deux points ci-dessous, à ne pas fusionner.
+
+**Correctif à une affirmation provisoire faite pendant l'arbitrage** : il avait
+été avancé une incohérence « `login` contre `loginCible` ». Vérification faite,
+c'est inexact — `loginCible` n'apparaît que sur `ATTRIBUTION_ROLE`, action dont
+`id_utilisateur` **n'est pas nul** (c'est l'identifiant de l'administrateur
+auteur du geste ; `loginCible` désigne la personne dont le rôle change, pas
+l'auteur). Cette action n'appartient donc pas au périmètre du point A-01. La
+vraie incohérence, ci-dessous, oppose `login` à `auteur`.
+
+**1. Service Saisie : aucune capture d'acteur à la source, sur cinq actions.**
+`CREATION_LIGNE_PRESTATION`, `OUVERTURE_FICHE_JOURNALIERE`,
+`SUPPRESSION_LIGNE_PRESTATION`, `MODIFICATION_LIGNE_PRESTATION` et
+`CREATION_BENEFICIAIRE` ne portent **aucun identifiant d'acteur, sous aucune
+forme** — ni `id_utilisateur`, ni un login quelconque dans `detail_json`.
+Vérifié dans le code (`CreationLigneService.tracer`) : `idUtilisateur` y est un
+`null` littéral, écrit en dur. Ce n'est pas une limite de schéma ni un défaut
+de nommage, c'est une absence totale de capture à la source — 45 événements
+`CREATION_LIGNE_PRESTATION` sur les 193 inspectés, la plus grosse part des
+traces sans acteur. **Défaut à corriger dans un futur sprint qui touche aux
+producteurs** (service Saisie), hors périmètre du sprint de construction du
+service Audit, qui ne touche que le consommateur et la lecture.
+
+**2. Nommage incohérent de la clé de login, quand un login est bien capturé.**
+Trois actions au moins capturent un login d'acteur dans `detail_json` malgré
+un `id_utilisateur` nul, mais pas sous la même clé selon le service émetteur :
+
+| Action | Service émetteur | `id_utilisateur` | Clé du login dans `detail_json` |
+| --- | --- | --- | --- |
+| `ACCES_REFUSE` | identite / grilles / saisie / transmission / workflow | nul | `login` |
+| `DECLENCHEMENT_PROCESSUS` | workflow | nul | `auteur` |
+| `GENERATION_RAPPORT` | reporting | nul | `login` |
+| `EXPORT_RAPPORT` | reporting | nul | `login` |
+
+Table complète des 15 actions à `id_utilisateur` toujours nul, constatée sur
+les 193 messages inspectés le 4 septembre 2026 (nullité déterministe par
+action : 0 % ou 100 %, jamais mixte) :
+
+| Action | Service émetteur | Acteur capturé ? | Clé |
+| --- | --- | --- | --- |
+| `CREATION_LIGNE_PRESTATION` | saisie | non | — |
+| `OUVERTURE_FICHE_JOURNALIERE` | saisie | non | — |
+| `SUPPRESSION_LIGNE_PRESTATION` | saisie | non | — |
+| `MODIFICATION_LIGNE_PRESTATION` | saisie | non | — |
+| `CREATION_BENEFICIAIRE` | saisie | non | — |
+| `ACCES_REFUSE` | identite, grilles, saisie, transmission, workflow | oui | `login` |
+| `DECLENCHEMENT_PROCESSUS` | workflow | oui | `auteur` |
+| `GENERATION_RAPPORT` | reporting | oui | `login` |
+| `EXPORT_RAPPORT` | reporting | oui | `login` |
+| `ACCUSE_COMPTABLE_REFUSE` | transmission | non (événement système, sans acteur humain) | — |
+| `TRANSMISSION_ETAT_VALIDE` | transmission | non (système) | — |
+| `TRANSMISSION_COMPTABLE` | workflow | non (système) | — |
+| `TRANSMISSION_DOUBLON_REFUSEE` | workflow | non (système) | — |
+| `INTEGRATION_COMPTABLE` | workflow | non (système, accusé Kafka) | — |
+| `ACCUSE_COMPTABLE_APPLIQUE` | transmission | non (système) | — |
+
+Les six dernières lignes (préfixe transmission/intégration) sont normales et
+non fautives : ce sont des événements déclenchés par un message Kafka, sans
+utilisateur final derrière eux (doctrine 1.3, section 9.1) — à ne pas confondre
+avec les cinq lignes Saisie, où un agent humain a bien agi mais n'a pas été
+capturé.
+
+**But du futur sprint producteur** : uniformiser sur une seule clé (`login`,
+déjà majoritaire) pour toute action qui capture un acteur sans
+`id_utilisateur`, et ajouter la capture manquante côté Saisie — pour que ce
+travail d'archéologie sur le contenu réel du topic n'ait pas à être refait.
+
+---
+
+## Accès du Directeur Réseau au journal d'audit — écarté tant que sa portée nationale reste provisoire
+
+**Ouvert au sprint de rattrapage du service Audit (4 septembre 2026), étape 6.**
+Décision tranchée avec l'utilisateur : `GET /audit/entrees` et
+`GET /audit/processus/{id}` sont réservés à `ARH`, `DRH` et `ADMIN` — pas à
+`DIRECTEUR_RESEAU_DR`.
+
+**Pourquoi ce n'est pas simplement « le DR a déjà une portée nationale »**.
+Le Sprint 1.1 a bien retenu une portée nationale par défaut pour le DR, comme
+pour ARH/DRH/ADMIN (`docs/decisions/2026-08-26-portee-acces-directeur-reseau.md`)
+— mais cette portée est **provisoire**, faute de découpage en réseaux défini
+par le métier, et **réversible à coût faible**. Ouvrir au DR la lecture
+intégrale du journal d'audit — toutes les unités, tous les services, tous les
+refus d'accès — sur la foi d'une portée qui peut encore changer ferait
+dépendre un accès de contrôle interne d'un arbitrage qui n'est pas stabilisé.
+
+**Ce qui rouvrirait la question.** Pas la clarification du découpage en
+réseaux à elle seule : même un DR à portée strictement régionale n'aurait pas
+nécessairement vocation à lire le journal d'audit complet du module, qui n'est
+pas un outil de suivi de dossier mais un instrument de contrôle interne. La
+question à poser au métier, distincte de celle des réseaux, est : *le DR a-t-il
+besoin d'un accès de suivi qui lui soit propre* — par exemple limité à son
+périmètre, dans un format différent des deux endpoints actuels — et non
+simplement d'un ajout de rôle sur les endpoints existants d'ARH/DRH/ADMIN.
+
+**À réexaminer** seulement si le métier formule explicitement ce besoin, pas
+au moment où le découpage en réseaux sera arrêté.
+
+---
+
+## `GET /audit/processus/{id}` ne couvre que le niveau workflow, pas le détail de saisie
+
+**Ouvert au sprint de rattrapage du service Audit (4 septembre 2026), étape 6.**
+Décision tranchée avec l'utilisateur : le filtre reste
+`entite_cible = 'processus_mensuel' AND id_entite = {id}`, et non un filtre
+plus large sur `id_entite` seul.
+
+**Ce que cela couvre.** Tous les événements que le service Workflow publie
+avec `entiteCible = "processus_mensuel"` — `DECLENCHEMENT_PROCESSUS`,
+`SOUMISSION_PROCESSUS`, `VALIDATION_PROCESSUS`, `RETOUR_PROCESSUS`,
+`INTEGRATION_COMPTABLE`, `TRANSMISSION_COMPTABLE`,
+`TRANSMISSION_DOUBLON_REFUSEE`, `TRANSMISSION_RESERVATION_LIBEREE`.
+
+**Ce que cela ne couvre pas.** Les événements du service Saisie
+(`CREATION_LIGNE_PRESTATION`, `MODIFICATION_LIGNE_PRESTATION`,
+`SUPPRESSION_LIGNE_PRESTATION`, `OUVERTURE_FICHE_JOURNALIERE`,
+`CREATION_BENEFICIAIRE`, `INCOHERENCE_BENEFICIAIRE`) ne portent **pas**
+`idProcessus` en `idEntite` : ils portent l'identifiant de la ligne ou de la
+fiche elle-même, dans un espace d'identifiants distinct de celui des
+processus. Les inclure par un filtre élargi sur `id_entite` seul créerait un
+risque de collision numérique — une ligne de prestation n°109 confondue avec
+un processus n°109 — donc une fausse trace dans le journal d'un dossier. C'est
+pour cette raison que le filtre reste restreint à `processus_mensuel`, pas par
+choix de périmètre arbitraire.
+
+**Ce qu'il faudrait pour un journal vraiment complet (workflow + saisie) par
+dossier.** Enrichir les événements publiés par le service Saisie d'un champ
+`idProcessus`, en plus de l'identifiant de la ligne ou de la fiche — évolution
+additive du contrat de fil (`EvenementAudit` porte déjà `entiteCible` et
+`idEntite`, il faudrait un champ supplémentaire ou le porter dans
+`detail_json`). C'est un défaut de producteur, comme celui déjà consigné plus
+haut sur l'absence de capture d'acteur côté Saisie : à traiter dans un futur
+sprint qui touche aux producteurs, pas dans ce sprint-ci, qui ne construit que
+la moitié aval de la chaîne (consommateur, persistance, lecture).
+
+**Documenté dans le contrat d'API**, section 8 (`GET /audit/processus/{id}`) :
+la portée exacte de l'endpoint — niveau workflow uniquement — y est explicite,
+pour qu'un lecteur du contrat ne suppose pas à tort un journal complet du
+dossier.

@@ -1,6 +1,9 @@
 # Robustesse de la chaîne d'audit — observations
 
-**Sprint 6.3, étape 4 — 4 septembre 2026.**
+**Sprint 6.3, étape 4 — 4 septembre 2026. Mis à jour au sprint de rattrapage
+du service Audit, étape 7 — 4 septembre 2026 (même journée, sprint suivant) :
+les scénarios 2 et 3, déclarés inéprouvables faute de consommateur, sont
+désormais vérifiés en réel contre le service construit à ce sprint.**
 
 Ce document consigne ce qui a été **réellement observé**, et distingue
 explicitement ce qui n'a pas pu l'être. Il applique la règle posée le même jour
@@ -12,16 +15,18 @@ l'absence de symptôme d'échec.
 
 ## 0. État de la chaîne au moment de ces observations
 
-La chaîne d'audit a deux moitiés, et une seule existe :
+**Constat initial du Sprint 6.3** : la chaîne d'audit avait deux moitiés, une
+seule existait.
 
-| Moitié | État | Preuve |
+| Moitié | État au Sprint 6.3 | État au sprint de rattrapage (étape 7) |
 | --- | --- | --- |
-| Producteur (`rations-audit-commun` + 5 services) | opérationnel | 176 messages sur le topic |
-| Consommateur (`service-audit`) | **inexistant** | aucun `@KafkaListener`, aucun groupe de consommateurs sur le broker |
+| Producteur (`rations-audit-commun` + 6 services) | opérationnel, 176 messages sur le topic | inchangé, 193 messages |
+| Consommateur (`service-audit`) | **inexistant** | **opérationnel** : `AuditEvenementConsumer`, groupe `rations-audit-lecture`, `audit_log` à 193 lignes |
 
-Deux des trois scénarios du guide portent sur le consommateur. Ils sont donc
-**inéprouvables en l'état**, et sont consignés comme tels plutôt que déclarés
-vérifiés. Voir [`decisions/2026-09-04-service-audit-sprint-bloquant.md`](decisions/2026-09-04-service-audit-sprint-bloquant.md).
+Les deux moitiés existent désormais. Les trois scénarios du guide, y compris
+les deux déclarés inéprouvables au Sprint 6.3, sont vérifiés dans les sections
+2 et 3 ci-dessous. Voir [`decisions/2026-09-04-service-audit-sprint-bloquant.md`](decisions/2026-09-04-service-audit-sprint-bloquant.md)
+pour le contexte de la décision qui a ouvert ce sprint.
 
 ---
 
@@ -77,70 +82,92 @@ le Sprint 1.3 (`docs/publication-audit.md` §5, `docs/points-en-attente.md`).
 
 ## 2. Service Audit arrêté, broker disponible — les traces sont-elles rattrapées au redémarrage ?
 
-**Statut : INÉPROUVABLE. Non vérifié, et déclaré non vérifié.**
+**Statut : VÉRIFIÉ, en conditions réelles, au sprint de rattrapage (4 septembre
+2026, étape 7).**
 
-Ce scénario suppose un consommateur qui s'arrête puis reprend au dernier offset
-acquitté. Il n'existe aucun consommateur : `service-audit/src` ne contient aucun
-`@KafkaListener`, et `service-audit/pom.xml` ne déclare pas `spring-kafka`. Le
-seul groupe de consommateurs enregistré sur le broker est
-`rations-transmission-accuse`, qui écoute `rations.etat.accuse`.
+Le consommateur existe désormais (`AuditEvenementConsumer`,
+`ConfigurationConsommateurAudit`, groupe `rations-audit-lecture`). Le scénario
+a été rejoué deux fois de suite, contre le vrai conteneur `rations-kafka` et la
+vraie base `rations_audit`, base et offset préalablement remis à zéro
+(`TRUNCATE audit_log`, reset du groupe à l'offset 0) :
 
-Le guide qualifie ce point de « contrepartie du choix asynchrone : il faut
-prouver qu'une panne du service Audit diffère les traces sans les perdre ». La
-preuve ne peut pas être produite ici.
+```
+1er demarrage (a froid, offset 0) : Started ServiceAuditApplication ...
+                                     Souscription audit effective : partitions assignees=[rations.audit.evenement-0]
+SELECT COUNT(*) FROM audit_log ;                                   -> 193
 
-### Ce qui est en place et jouera en sa faveur
+arret du service (taskkill sur le port 8087)
+
+2e demarrage (redemarrage, groupe deja etabli) : Started ServiceAuditApplication ...
+                                                  Souscription audit effective : partitions assignees=[rations.audit.evenement-0]
+SELECT COUNT(*) FROM audit_log ;                                   -> 193 (inchange)
+
+SELECT action, service_emetteur, id_entite, date_action, COUNT(*)
+  FROM audit_log
+ GROUP BY action, service_emetteur, id_entite, date_action
+HAVING COUNT(*) > 1 ;                                              -> 0 ligne
+```
+
+**Aucune trace perdue, aucun doublon.** Le compte reste identique à
+193 après le redémarrage, et aucune combinaison (action, service, entité,
+date) n'apparaît deux fois. Ce n'est pas une propriété applicative — l'entité
+`AuditLog` n'a aucune clé métier déduplicante — c'est une propriété de la
+configuration du consommateur, vérifiée par ailleurs à l'assemblage
+(`CablageConsommateurAuditTest`) : groupe de consommateurs **fixe**
+(`rations-audit-lecture`, jamais généré), acquittement `AckMode.RECORD`
+**après** traitement, `enable.auto.commit=false`. Un redémarrage reprend donc
+exactement là où le groupe s'était arrêté, ni avant (perte), ni depuis le début
+(doublon).
+
+### Ce qui reste vrai de l'analyse initiale
 
 - Le topic porte une rétention **explicite de 7 jours**
-  (`retention.ms=604800000`, posée au Sprint 0.5), précisément dimensionnée pour
-  qu'une panne prolongée du service Audit ne perde rien.
+  (`retention.ms=604800000`, posée au Sprint 0.5).
 - La clé de partition (`entiteCible:idEntite`) garantit que les événements d'une
-  même entité restent ordonnés côté consommateur.
+  même entité restent ordonnés côté consommateur — sans rapport avec l'ordre
+  des faits, restitué par le tri sur `date_action` (section 3 ci-dessous et
+  guide de ce sprint, étape 6).
 
-### Un fait favorable, mesuré, et à ne pas prendre pour une garantie
+### La fenêtre de récupération a été utilisée avant sa fermeture
 
-L'offset le plus ancien du topic est encore **0** : les 176 événements sont
-intégralement présents, y compris ceux du 27 août — plus vieux que la rétention.
-Kafka purge par segment entier et ne supprime jamais le segment actif ; à ce
-volume, tout y tient encore.
-
-C'est une fenêtre, pas une garantie. Au premier basculement de segment, les plus
-anciens deviennent éligibles à la suppression. **Le sprint de construction du
-service Audit doit donc reprendre le topic depuis l'offset 0**, et le faire tant
-que cette fenêtre est ouverte.
+L'offset le plus ancien du topic était encore **0** au moment de ce sprint :
+les 176 événements constatés au Sprint 6.3, plus les événements publiés
+depuis, ont été intégralement rejoués et persistés — **193 lignes au total**,
+supérieur au seuil de 176 fixé par les critères de validation du guide.
 
 ---
 
 ## 3. Événement mal formé reçu — le consommateur tombe-t-il ?
 
-**Statut : INÉPROUVABLE côté service Audit. Précédent applicable disponible.**
+**Statut : VÉRIFIÉ, au sprint de rattrapage (étape 5 et étape 7).**
 
-Aucun consommateur d'audit n'existe. En revanche, le module a déjà tranché ce
-problème exact au Sprint 5.2, sur l'autre consommateur, et la solution est
-directement transposable — elle doit être reprise, pas réinventée :
+Le précédent du Sprint 5.2 a été repris tel quel, pas réinventé : désérialisation
+**en chaîne** (`StringDeserializer`), jamais `JsonDeserializer`, dans
+`ConfigurationConsommateurAudit`. La conversion JSON a lieu dans
+`AuditEvenementConsumer.deserialiserOuTracer`, où un échec devient un rejet
+tracé (préfixe `AUDIT ENTREE REJETEE`) au lieu de remonter.
 
-> Désérialisation **en chaîne** (`StringDeserializer`), jamais `JsonDeserializer` :
-> ce dernier convertit *avant* que le code d'écoute ne soit appelé. Un message
-> malformé échouerait donc **dans le conteneur Kafka, hors de portée de toute
-> capture**, et serait rejoué sans fin en bloquant tous les messages suivants,
-> valides compris.
+**Second filet, propre à ce consommateur** : un message lisible mais dont un
+champ obligatoire (`action`, `entiteCible`, `dateAction`, `serviceEmetteur`)
+est absent ou vide est également tracé et écarté
+(`MessageAuditEntrant.premierChampObligatoireManquant`) — la contrainte
+`NOT NULL` d'`audit_log` ne doit jamais être la première à le découvrir.
 
-`AccuseComptableConsumerTest` (9 tests) et le test de câblage (8 tests)
-verrouillent ce comportement côté Transmission. Le consommateur d'audit devra
-suivre la même discipline, avec en plus la contrainte du *tolerant reader* :
-`service-audit` ne dépend pas de `rations-audit-commun` et lit le topic avec son
-propre type, pour que le schéma puisse évoluer sans pas cadencé à sept services.
+Sur les 193 événements réels rejoués à l'étape 7 (voir section 2), **aucun
+n'a été rejeté** : `grep -c "AUDIT ENTREE REJETEE"` sur le journal du service
+rend 0. Le mécanisme de rejet existe et est verrouillé par construction (même
+discipline que le Sprint 5.2), mais n'a pas encore été observé sur un message
+réellement malformé — le topic actuel n'en contient aucun.
 
-### Un piège à ne pas retrouver
+### Le piège du Sprint 5.2, rencontré une seconde fois dans ce module — et évité
 
-Le Sprint 5.2 a découvert, en démarrant le service et non en exécutant des
-tests, que **`@EnableKafka` manquait** : le service démarrait normalement, tous
-ses beans existaient, et aucun consommateur ne s'abonnait — pas une ligne de
-journal, pas une erreur. Le projet déclare `spring-kafka` sans le starter, donc
-l'auto-configuration qui poserait cette annotation n'est pas entraînée. Le
-consommateur d'audit sera le **deuxième** `@KafkaListener` du module et tombera
-dans le même piège s'il l'oublie. La vérification se fait par le
-`KafkaListenerEndpointRegistry`, pas par la présence des beans.
+`@EnableKafka` est posé explicitement dans `ConfigurationConsommateurAudit`
+(commentaire dédié dans le code, référence directe au défaut du Sprint 5.2).
+**Vérifié à l'assemblage** (`CablageConsommateurAuditTest.ecouteEffectivementEnregistree`,
+via `KafkaListenerEndpointRegistry`) et **vérifié au démarrage réel** (log
+`Souscription audit effective : partitions assignees=[...]`, observé à
+plusieurs reprises aux étapes 2, 5 et 7). Le consommateur d'audit est le
+**deuxième** `@KafkaListener` du module, après celui du service Transmission.
 
 ---
 
@@ -149,9 +176,8 @@ dans le même piège s'il l'oublie. La vérification se fait par le
 | Scénario | Statut | Fondement |
 | --- | --- | --- |
 | 1. Broker arrêté, opérations métier aboutissent | **Vérifié** | 8 tests producteur + 5 services restés `UP` broker arrêté + observation réelle du Sprint 5.1 |
-| 2. Service Audit arrêté puis redémarré, aucune trace perdue | **Inéprouvable** | Aucun consommateur n'existe |
-| 3. Événement mal formé, consommateur toujours actif | **Inéprouvable** | Aucun consommateur n'existe ; précédent du Sprint 5.2 à reprendre |
+| 2. Service Audit arrêté puis redémarré, aucune trace perdue | **Vérifié** | Redémarrage réel : 193 lignes avant et après, 0 doublon exact (sprint de rattrapage, étape 7) |
+| 3. Événement mal formé, consommateur toujours actif | **Vérifié par construction** | Désérialisation en chaîne + rejet tracé des champs obligatoires manquants ; `@EnableKafka` vérifié à l'assemblage et au démarrage réel. Aucun message réellement malformé observé sur le topic actuel. |
 
-Les scénarios 2 et 3 sont à reprendre **tels quels** dans le sprint de
-construction du service Audit, où ils deviendront des critères de validation
-opposables.
+Les trois scénarios sont désormais des critères de validation opposables du
+sprint de rattrapage du service Audit (guide, section 10).

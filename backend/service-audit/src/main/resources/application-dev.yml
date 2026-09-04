@@ -8,6 +8,22 @@ spring:
     locations: classpath:db/migration
     baseline-on-migrate: false
 
+  jpa:
+    hibernate:
+      # Le schema est produit par Flyway (V1, V2). Hibernate ne fait que
+      # verifier la concordance entite <-> table au demarrage, jamais de
+      # generation ni de modification automatique (meme convention que les
+      # autres services, Sprint 2.1).
+      ddl-auto: validate
+    open-in-view: false
+
+  kafka:
+    # Seule l'adresse des brokers vient de l'environnement (meme convention que
+    # service-transmission) : la configuration du consommateur lui-meme (groupe,
+    # deserialiseurs, offset) est ecrite en Java dans ConfigurationConsommateurAudit,
+    # pas ici, pour rester sous revue de code.
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+
   security:
     oauth2:
       resourceserver:
@@ -20,6 +36,18 @@ spring:
 app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+
+  audit:
+    # Nom de DEVELOPPEMENT (Sprint 0.5) ; nommage definitif en environnement
+    # partage non arrete, point DSI D-07 (CLAUDE.md section 9). Ne pas figer
+    # ailleurs que dans cette propriete et infra/docker/kafka-topics.sh.
+    topic: ${KAFKA_TOPIC_AUDIT:rations.audit.evenement}
+
+    # Identifiant du groupe de consommateurs, distinct de
+    # rations-transmission-accuse (Sprint 5.2) pour qu'un
+    # kafka-consumer-groups.sh --list distingue les deux chaines de consommation
+    # du module (guide de ce sprint, etape 2).
+    groupe: ${KAFKA_GROUPE_AUDIT:rations-audit-lecture}
 
 logging:
   level:
