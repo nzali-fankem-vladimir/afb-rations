@@ -289,12 +289,65 @@ déjà, et voici la situation qui le justifie. Conséquence portée au sprint su
 **la consultation devra trier sur `date_action`, jamais sur `id`**. L'index
 existe depuis la V1.
 
+### Une collision causée par cette vérification, relevée et corrigée après coup
+
+**`pierre_belinga` était le compte de contrôle du refus 403, et la vérification
+l'a détruit.**
+
+Éprouver `LIAISON_COMPTE_KEYCLOAK` demandait un profil pré-provisionné jamais
+connecté ; aucun des six profils du realm n'était dans cet état.
+`pierre_belinga` existait à l'annuaire sans profil local, il a été choisi. C'était
+précisément la raison pour laquelle il ne fallait pas y toucher :
+
+```
+infra/keycloak/README.md
+| pierre_belinga | AGENT_UNITE | **aucun** — compte de controle du refus en 403 |
+
+docs/decisions/2026-08-25-resolution-du-profil-local.md
+« Le compte pierre_belinga, present a l'annuaire et volontairement absent de
+  cette migration, sert de cas de controle du refus. »
+```
+
+L'information était écrite à **trois** endroits — README, décision du Sprint 0.4,
+commentaire dans l'export du realm. Elle n'a pas été cherchée avant d'écrire en
+base. Défaut de méthode, pas défaut d'information ; c'est exactement le réflexe
+de vérification préalable appliqué au début de ce sprint et non réappliqué ici.
+
+**Pourquoi c'est grave et pas seulement gênant.** Ce compte était le seul cas
+prouvant qu'un jeton parfaitement valide est refusé faute d'habilitation ouverte
+dans le module — l'invariant du Sprint 0.4. Quelqu'un rejouant la checklist en
+pensant tester le refus obtiendrait `200` au lieu de `403`, sur un test de
+sécurité, sans un mot d'explication. Même famille que le compteur de signatures
+du 4.2 ou `@EnableKafka` manquant au 5.2 : **un résultat plausible au lieu d'une
+erreur.**
+
+**Correction appliquée**, détail dans
+[`decisions/2026-09-04-compte-de-controle-du-refus-403.md`](../decisions/2026-09-04-compte-de-controle-du-refus-403.md) :
+
+| Geste | Détail |
+| --- | --- |
+| Nouveau compte de contrôle | **`thomas_ndzana`**, AGENT_UNITE, matricule 1955, aucun profil local — ajouté à l'export du realm et créé dans le realm en cours |
+| Vérifié le jour même | `thomas_ndzana` → **403 UTILISATEUR_NON_HABILITE** ; `pierre_belinga` → **200** |
+| `pierre_belinga` **non restauré** | L'événement `LIAISON_COMPTE_KEYCLOAK` est sur le topic à l'offset 184 et porte le `sub` réellement établi ; effacer le profil ferait mentir le journal — l'inverse de ce que tout ce sprint défend |
+| Garde au build | `CompteDeControleDuRefusTest` relit `V1000` et fait échouer le build si le compte y apparaît |
+| Avertissements | En tête de `V1000`, dans `infra/keycloak/README.md`, dans le commentaire de l'utilisateur au sein de l'export du realm |
+
+**La garde a elle-même été éprouvée dans les deux sens** — et sa première version
+était fausse : elle lisait le fichier entier, or l'en-tête de `V1000` **nomme** les
+deux comptes pour avertir de ne pas les ajouter. Elle aurait échoué en
+permanence, donc aurait été désactivée sous quinze jours. Corrigée pour n'examiner
+que les instructions SQL, commentaires retirés. Vérifiée : verte à l'état sain,
+rouge sur violation.
+
+Limite assumée : la garde couvre la migration, **pas un `INSERT` manuel en base**
+— chemin exact par lequel l'incident est passé.
+
 ### Données de test laissées en base
 
 Processus 2725 (2027-09, unité 00002, vide), fiche 3065, bénéficiaire 1989
-(ONANA Blaise), profil local 7 (`pierre_belinga`, désormais lié). Rien n'a été
-supprimé en SQL : aucun endpoint ne le permet, et forcer la main à la base aurait
-contredit la discipline du module.
+(ONANA Blaise), profil local 7 (`pierre_belinga`, désormais lié — voir la
+collision ci-dessus). Rien n'a été supprimé en SQL : aucun endpoint ne le permet,
+et forcer la main à la base aurait contredit la discipline du module.
 
 ---
 
