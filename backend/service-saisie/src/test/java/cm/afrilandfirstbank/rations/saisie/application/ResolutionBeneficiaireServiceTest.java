@@ -74,6 +74,43 @@ class ResolutionBeneficiaireServiceTest {
         assertThat(resolu.getNumCompteCourant()).isEqualTo(COMPTE);
         assertThat(resolu.getCodeAgence()).isEqualTo(AGENCE);
         verify(beneficiaireRepository).save(any(Beneficiaire.class));
+    }
+
+    @Test
+    @DisplayName("1b. Sprint 6.3 : la création d'un bénéficiaire publie CREATION_BENEFICIAIRE")
+    void beneficiaireInconnu_publieUneTraceDeCreation() {
+        when(beneficiaireRepository.findByNumCompteCourant(COMPTE)).thenReturn(Optional.empty());
+        when(beneficiaireRepository.save(any(Beneficiaire.class))).thenAnswer(appel -> {
+            Beneficiaire cree = appel.getArgument(0);
+            ReflectionTestUtils.setField(cree, "id", 91L);
+            return cree;
+        });
+
+        resolutionBeneficiaireService.resoudre("NGUEMA", "Jean-Pierre", COMPTE, AGENCE, "10.20.30.40");
+
+        ArgumentCaptor<EvenementAudit> capture = ArgumentCaptor.forClass(EvenementAudit.class);
+        verify(publicateurAudit).publier(capture.capture());
+        EvenementAudit evenement = capture.getValue();
+
+        assertThat(evenement.action()).isEqualTo("CREATION_BENEFICIAIRE");
+        assertThat(evenement.entiteCible()).isEqualTo("beneficiaires");
+        assertThat(evenement.idEntite()).isEqualTo(91L);
+        assertThat(evenement.adresseIp()).isEqualTo("10.20.30.40");
+        // Le delta porte le compte qui recevra l'argent : c'est la raison d'être
+        // de cette trace, pas un détail de forme.
+        assertThat(evenement.detailJson())
+                .contains(COMPTE).contains(AGENCE)
+                .contains("NGUEMA").contains("Jean-Pierre");
+    }
+
+    @Test
+    @DisplayName("1c. la trace de création n'est émise que sur une création, jamais sur une résolution")
+    void beneficiaireDejaConnu_nePublieAucuneTraceDeCreation() {
+        Beneficiaire existant = beneficiaireExistant("NGUEMA", "Jean-Pierre", 88L);
+        when(beneficiaireRepository.findByNumCompteCourant(COMPTE)).thenReturn(Optional.of(existant));
+
+        resolutionBeneficiaireService.resoudre("NGUEMA", "Jean-Pierre", COMPTE, AGENCE, "10.20.30.40");
+
         verifyNoInteractions(publicateurAudit);
     }
 
@@ -97,7 +134,8 @@ class ResolutionBeneficiaireServiceTest {
         when(beneficiaireRepository.findByNumCompteCourant(COMPTE)).thenReturn(Optional.of(existant));
 
         // Même compte, nom franchement autre : erreur de compte possible.
-        Beneficiaire resolu = resolutionBeneficiaireService.resoudre("MBALLA", "Paul", COMPTE, AGENCE);
+        Beneficiaire resolu = resolutionBeneficiaireService.resoudre("MBALLA", "Paul", COMPTE, AGENCE,
+                "10.20.30.40");
 
         // Décision 1 : identifié sur le seul compte → pas de doublon créé.
         assertThat(resolu).isSameAs(existant);
@@ -114,6 +152,8 @@ class ResolutionBeneficiaireServiceTest {
         assertThat(evenement.action()).isEqualTo("INCOHERENCE_BENEFICIAIRE");
         assertThat(evenement.entiteCible()).isEqualTo("beneficiaires");
         assertThat(evenement.idEntite()).isEqualTo(88L);
+        // Sprint 6.3 : l'adresse d'origine était nulle jusqu'ici.
+        assertThat(evenement.adresseIp()).isEqualTo("10.20.30.40");
         assertThat(evenement.detailJson())
                 .contains("NGUEMA").contains("MBALLA")
                 .contains("Jean-Pierre").contains("Paul");

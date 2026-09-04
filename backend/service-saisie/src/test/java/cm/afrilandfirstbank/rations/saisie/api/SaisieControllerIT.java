@@ -335,7 +335,7 @@ class SaisieControllerIT {
         Beneficiaire beneficiaire = beneficiaire(88L, "MBARGA", "Jean", "00002000123456");
         LignePrestation ligneRevisee =
                 ligne(1205L, 501L, 88L, NatureEnum.RATION, SessionEnum.SOIR, 3000, 13L);
-        when(ligneService.modifier(eq(1205L), eq(NatureEnum.RATION), eq(SessionEnum.SOIR), anyString()))
+        when(ligneService.modifier(eq(1205L), eq(NatureEnum.RATION), eq(SessionEnum.SOIR), anyString(), any()))
                 .thenReturn(new LigneAvecBeneficiaire(ligneRevisee, beneficiaire));
 
         mockMvc.perform(put("/saisie/lignes/1205")
@@ -353,7 +353,7 @@ class SaisieControllerIT {
     @DisplayName("11. PUT /saisie/lignes/1205, la nouvelle combinaison est deja prise : 409")
     void modificationCreantUnDoublonRefusee() throws Exception {
         keycloakEmet(SUB_AGENT, "jean_mbarga", "AGENT_UNITE");
-        when(ligneService.modifier(eq(1205L), any(), any(), anyString()))
+        when(ligneService.modifier(eq(1205L), any(), any(), anyString(), any()))
                 .thenThrow(new DoublonLigneException(
                         "MBARGA Jean (compte 00002000123456) figure deja sur la journee du 2026-08-18 "
                                 + "en RATION / SOIR."));
@@ -376,7 +376,37 @@ class SaisieControllerIT {
                 .header(HttpHeaders.AUTHORIZATION, JETON))
                 .andExpect(status().isNoContent());
 
-        verify(ligneService, times(1)).supprimer(eq(1205L), anyString());
+        verify(ligneService, times(1)).supprimer(eq(1205L), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("12b. Sprint 6.3 : l'adresse d'origine atteint le service sur la modification ET la suppression")
+    void adresseOrigineTransmiseSurLesTroisEcrituresDeLigne() throws Exception {
+        keycloakEmet(SUB_AGENT, "jean_mbarga", "AGENT_UNITE");
+        Beneficiaire beneficiaire = beneficiaire(88L, "MBARGA", "Jean", "00002000123456");
+        LignePrestation ligneRevisee =
+                ligne(1205L, 501L, 88L, NatureEnum.RATION, SessionEnum.SOIR, 3000, 13L);
+        when(ligneService.modifier(eq(1205L), any(), any(), anyString(), any()))
+                .thenReturn(new LigneAvecBeneficiaire(ligneRevisee, beneficiaire));
+
+        mockMvc.perform(put("/saisie/lignes/1205")
+                .with(requete -> { requete.setRemoteAddr("10.20.30.40"); return requete; })
+                .header(HttpHeaders.AUTHORIZATION, JETON)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"nature":"RATION","session":"SOIR"}"""))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(delete("/saisie/lignes/1205")
+                .with(requete -> { requete.setRemoteAddr("10.20.30.40"); return requete; })
+                .header(HttpHeaders.AUTHORIZATION, JETON))
+                .andExpect(status().isNoContent());
+
+        // Jusqu'au Sprint 6.3, ces deux appels passaient null en adresse, alors
+        // que la creation la renseignait : trois ecritures sur la meme entite,
+        // deux facons de les tracer. C'etait un oubli, et rien ne le signalait.
+        verify(ligneService).modifier(eq(1205L), any(), any(), anyString(), eq("10.20.30.40"));
+        verify(ligneService).supprimer(eq(1205L), anyString(), eq("10.20.30.40"));
     }
 
     @Test

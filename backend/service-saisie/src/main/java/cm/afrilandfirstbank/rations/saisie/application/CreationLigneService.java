@@ -146,7 +146,8 @@ public class CreationLigneService {
                 commande.beneficiaire().nom(),
                 commande.beneficiaire().prenom(),
                 commande.beneficiaire().numCompteCourant(),
-                commande.beneficiaire().codeAgence());
+                commande.beneficiaire().codeAgence(),
+                adresseIp);
 
         // 3. RG-04, avant tout appel reseau.
         if (controleDoublonService.estDoublonSurLaJournee(

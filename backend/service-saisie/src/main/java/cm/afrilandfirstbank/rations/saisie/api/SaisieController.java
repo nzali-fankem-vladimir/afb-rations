@@ -124,10 +124,12 @@ public class SaisieController {
     public ResponseEntity<LigneResponse> modifierLigne(
             @PathVariable("id") Long idLigne,
             @Valid @RequestBody ModificationLigneRequest requete,
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String enteteAutorisation) {
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String enteteAutorisation,
+            HttpServletRequest requeteHttp) {
 
         LigneAvecBeneficiaire resultat = ligneService.modifier(
-                idLigne, requete.nature(), requete.session(), enteteAutorisation);
+                idLigne, requete.nature(), requete.session(), enteteAutorisation,
+                requeteHttp.getRemoteAddr());
 
         return ResponseEntity.ok(LigneResponse.depuis(resultat.ligne(), resultat.beneficiaire()));
     }
@@ -140,9 +142,10 @@ public class SaisieController {
     @DeleteMapping("/lignes/{id}")
     public ResponseEntity<Void> supprimerLigne(
             @PathVariable("id") Long idLigne,
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String enteteAutorisation) {
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String enteteAutorisation,
+            HttpServletRequest requeteHttp) {
 
-        ligneService.supprimer(idLigne, enteteAutorisation);
+        ligneService.supprimer(idLigne, enteteAutorisation, requeteHttp.getRemoteAddr());
         return ResponseEntity.noContent().build();
     }
 

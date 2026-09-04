@@ -131,6 +131,26 @@ public class LigneService {
     @Transactional
     public LigneAvecBeneficiaire modifier(Long idLigne, NatureEnum nature, SessionEnum session,
                                           String enteteAutorisation) {
+        return modifier(idLigne, nature, session, enteteAutorisation, null);
+    }
+
+    /**
+     * Même opération, avec l'adresse d'origine de la requête pour la trace
+     * d'audit.
+     *
+     * <p>Surcharge ajoutée au Sprint 6.3 : l'inventaire de couverture a relevé
+     * que {@code MODIFICATION_LIGNE_PRESTATION} et
+     * {@code SUPPRESSION_LIGNE_PRESTATION} publiaient une {@code adresseIp} nulle
+     * alors que {@code CREATION_LIGNE_PRESTATION} la renseignait — le contrôleur
+     * la détenait déjà et ne la passait qu'à la création. Trois opérations de
+     * même nature sur la même entité tracées de deux façons différentes : c'était
+     * un oubli, pas un choix.
+     *
+     * @param adresseIp origine de la requête, ou {@code null} si inconnue
+     */
+    @Transactional
+    public LigneAvecBeneficiaire modifier(Long idLigne, NatureEnum nature, SessionEnum session,
+                                          String enteteAutorisation, String adresseIp) {
         LignePrestation ligne = chargerLigne(idLigne);
         FicheJournaliere fiche = chargerFiche(ligne.getIdFicheJournaliere());
         etatModifiableService.exigerEcriturePossible(fiche.getIdProcessus(), enteteAutorisation);
@@ -157,7 +177,8 @@ public class LigneService {
 
         ligne.reviser(nature, session, montant.montantFcfa(), montant.idGrille());
 
-        tracerModification(ligne, ancienneNature, ancienneSession, ancienMontant, ancienneGrille);
+        tracerModification(ligne, ancienneNature, ancienneSession, ancienMontant, ancienneGrille,
+                adresseIp);
         return new LigneAvecBeneficiaire(ligne, beneficiaire);
     }
 
@@ -171,12 +192,23 @@ public class LigneService {
      */
     @Transactional
     public void supprimer(Long idLigne, String enteteAutorisation) {
+        supprimer(idLigne, enteteAutorisation, null);
+    }
+
+    /**
+     * Même opération, avec l'adresse d'origine de la requête pour la trace
+     * d'audit (correction du Sprint 6.3, voir {@link #modifier}).
+     *
+     * @param adresseIp origine de la requête, ou {@code null} si inconnue
+     */
+    @Transactional
+    public void supprimer(Long idLigne, String enteteAutorisation, String adresseIp) {
         LignePrestation ligne = chargerLigne(idLigne);
         FicheJournaliere fiche = chargerFiche(ligne.getIdFicheJournaliere());
         etatModifiableService.exigerEcriturePossible(fiche.getIdProcessus(), enteteAutorisation);
 
         lignePrestationRepository.delete(ligne);
-        tracerSuppression(ligne, fiche.getDateJour());
+        tracerSuppression(ligne, fiche.getDateJour(), adresseIp);
     }
 
     /**
@@ -265,13 +297,13 @@ public class LigneService {
 
     private void tracerModification(LignePrestation ligne, NatureEnum ancienneNature,
                                     SessionEnum ancienneSession, Integer ancienMontant,
-                                    Long ancienneGrille) {
+                                    Long ancienneGrille, String adresseIp) {
         publicateurAudit.publier(EvenementAudit.de(
                 null,
                 "MODIFICATION_LIGNE_PRESTATION",
                 "ligne_prestation",
                 ligne.getId(),
-                null,
+                adresseIp,
                 DeltaAudit.nouveau()
                         .contexte("idFicheJournaliere", ligne.getIdFicheJournaliere())
                         .champ("nature", ancienneNature, ligne.getNature())
@@ -281,13 +313,13 @@ public class LigneService {
                         .enJson()));
     }
 
-    private void tracerSuppression(LignePrestation ligne, LocalDate journee) {
+    private void tracerSuppression(LignePrestation ligne, LocalDate journee, String adresseIp) {
         publicateurAudit.publier(EvenementAudit.de(
                 null,
                 "SUPPRESSION_LIGNE_PRESTATION",
                 "ligne_prestation",
                 ligne.getId(),
-                null,
+                adresseIp,
                 DeltaAudit.nouveau()
                         .contexte("idFicheJournaliere", ligne.getIdFicheJournaliere())
                         .contexte("journee", journee)

@@ -55,6 +55,10 @@ public class ResolutionBeneficiaireService {
      */
     static final String PREFIXE_INCOHERENCE = "INCOHERENCE BENEFICIAIRE";
 
+    private static final String ENTITE_CIBLE = "beneficiaires";
+    private static final String ACTION_CREATION = "CREATION_BENEFICIAIRE";
+    private static final String ACTION_INCOHERENCE = "INCOHERENCE_BENEFICIAIRE";
+
     private final BeneficiaireRepository beneficiaireRepository;
     private final PublicateurAudit publicateurAudit;
 
@@ -77,20 +81,78 @@ public class ResolutionBeneficiaireService {
      */
     @Transactional
     public Beneficiaire resoudre(String nom, String prenom, String numCompteCourant, String codeAgence) {
+        return resoudre(nom, prenom, numCompteCourant, codeAgence, null);
+    }
+
+    /**
+     * Même opération, avec l'adresse d'origine de la requête pour les traces
+     * d'audit. Même surcharge que {@code CreationLigneService.creer} au
+     * Sprint 3.3 : l'appel de base continue de servir les tests écrits avant que
+     * ce service ait un contexte HTTP.
+     *
+     * @param adresseIp origine de la requête, ou {@code null} si inconnue
+     */
+    @Transactional
+    public Beneficiaire resoudre(String nom, String prenom, String numCompteCourant, String codeAgence,
+                                 String adresseIp) {
         Optional<Beneficiaire> existant = beneficiaireRepository.findByNumCompteCourant(numCompteCourant);
         if (existant.isPresent()) {
             Beneficiaire beneficiaire = existant.get();
-            signalerSiIdentiteDivergente(beneficiaire, nom, prenom);
+            signalerSiIdentiteDivergente(beneficiaire, nom, prenom, adresseIp);
             return beneficiaire;
         }
-        return beneficiaireRepository.save(new Beneficiaire(nom, prenom, numCompteCourant, codeAgence));
+        Beneficiaire cree = beneficiaireRepository.save(
+                new Beneficiaire(nom, prenom, numCompteCourant, codeAgence));
+        tracerCreation(cree, adresseIp);
+        return cree;
+    }
+
+    /**
+     * Trace l'entrée d'un bénéficiaire dans la base (omission relevée au
+     * Sprint 6.3, étape 2).
+     *
+     * <p>Ce service est le <b>seul point</b> par lequel un bénéficiaire est créé,
+     * et il n'y a aucun enrôlement en amont (CLAUDE.md §4) : la ligne naît de la
+     * saisie d'un agent, sans validation préalable de personne. Or elle porte le
+     * nom et le {@code num_compte_courant} qui recevront l'argent — c'est la
+     * ligne de crédit de l'ordre de paiement. Sa création est donc un fait à
+     * tracer au même titre que la ligne de prestation qui s'y rattache, et non un
+     * effet de bord technique de celle-ci.
+     *
+     * <p>Le delta est un avant/après depuis {@code null} : à ce stade il n'existe
+     * pas d'état antérieur, et c'est exactement ce que la trace doit dire.
+     *
+     * <p>{@code idUtilisateur} reste nul, décision du Sprint 3.3 reconduite
+     * (le résoudre imposerait un quatrième appel réseau sur le chemin d'écriture
+     * d'une ligne). Limite consignée dans {@code docs/points-en-attente.md},
+     * point A-01.
+     */
+    private void tracerCreation(Beneficiaire cree, String adresseIp) {
+        log.info("Nouveau beneficiaire enregistre : {} {} (compte {}, agence {}, id {}).",
+                cree.getNom(), cree.getPrenom(), cree.getNumCompteCourant(),
+                cree.getCodeAgence(), cree.getId());
+
+        publicateurAudit.publier(EvenementAudit.de(
+                null,
+                ACTION_CREATION,
+                ENTITE_CIBLE,
+                cree.getId(),
+                adresseIp,
+                DeltaAudit.nouveau()
+                        .champ("nom", null, cree.getNom())
+                        .champ("prenom", null, cree.getPrenom())
+                        .champ("numCompteCourant", null, cree.getNumCompteCourant())
+                        .champ("codeAgence", null, cree.getCodeAgence())
+                        .contexte("origine", "cree au fil de la saisie, sans enrolement prealable")
+                        .enJson()));
     }
 
     /**
      * Compare l'identité saisie à celle enregistrée. En cas d'écart réel — après
      * normalisation —, laisse le bénéficiaire intact et émet la double trace.
      */
-    private void signalerSiIdentiteDivergente(Beneficiaire existant, String nomSaisi, String prenomSaisi) {
+    private void signalerSiIdentiteDivergente(Beneficiaire existant, String nomSaisi, String prenomSaisi,
+                                              String adresseIp) {
         boolean memeIdentite = memeValeur(existant.getNom(), nomSaisi)
                 && memeValeur(existant.getPrenom(), prenomSaisi);
         if (memeIdentite) {
@@ -103,15 +165,15 @@ public class ResolutionBeneficiaireService {
                 existant.getNom(), existant.getPrenom(), nomSaisi, prenomSaisi, existant.getId());
 
         // Contrat de PublicateurAudit : ne lève jamais, ne bloque pas. Rien à
-        // rattraper ici (CLAUDE.md section 9.2). idUtilisateur / adresseIp sont
-        // nuls : ce service n'a pas de contexte HTTP au Sprint 3.1 ; l'endpoint
-        // du Sprint 3.2 les renseignera en enveloppant cet appel.
+        // rattraper ici (CLAUDE.md section 9.2). idUtilisateur reste nul
+        // (décision Sprint 3.3) ; adresseIp est désormais transmise depuis le
+        // contrôleur, correction du Sprint 6.3.
         publicateurAudit.publier(EvenementAudit.de(
                 null,
-                "INCOHERENCE_BENEFICIAIRE",
-                "beneficiaires",
+                ACTION_INCOHERENCE,
+                ENTITE_CIBLE,
                 existant.getId(),
-                null,
+                adresseIp,
                 DeltaAudit.nouveau()
                         .contexte("numCompteCourant", existant.getNumCompteCourant())
                         .champ("nom", existant.getNom(), nomSaisi)

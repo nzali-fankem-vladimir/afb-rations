@@ -263,7 +263,8 @@ class CreationLigneServiceTest {
     private void beneficiaireResolu() {
         Beneficiaire beneficiaire = new Beneficiaire("MBALLA", "Paul", "03702009998888", "00002");
         ReflectionTestUtils.setField(beneficiaire, "id", ID_BENEFICIAIRE);
-        when(resolutionBeneficiaireService.resoudre("MBALLA", "Paul", "03702009998888", "00002"))
+        when(resolutionBeneficiaireService.resoudre(eq("MBALLA"), eq("Paul"), eq("03702009998888"),
+                eq("00002"), any()))
                 .thenReturn(beneficiaire);
     }
 
