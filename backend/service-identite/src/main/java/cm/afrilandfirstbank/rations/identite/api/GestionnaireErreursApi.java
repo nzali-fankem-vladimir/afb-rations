@@ -17,6 +17,7 @@ import cm.afrilandfirstbank.rations.commun.audit.EvenementAudit;
 import cm.afrilandfirstbank.rations.commun.audit.PublicateurAudit;
 import cm.afrilandfirstbank.rations.identite.domaine.exception.AutoModificationInterditeException;
 import cm.afrilandfirstbank.rations.identite.domaine.exception.CodeUniteIncoherentException;
+import cm.afrilandfirstbank.rations.identite.domaine.exception.LotTropGrandException;
 import cm.afrilandfirstbank.rations.identite.domaine.exception.DernierAdministrateurException;
 import cm.afrilandfirstbank.rations.identite.domaine.exception.UtilisateurIntrouvableException;
 import cm.afrilandfirstbank.rations.identite.domaine.exception.UtilisateurNonHabiliteException;
@@ -121,6 +122,18 @@ public class GestionnaireErreursApi {
                 LocalDateTime.now(),
                 HttpStatus.BAD_REQUEST.value(),
                 "CODE_UNITE_INCOHERENT",
+                exception.getMessage(),
+                requete.getRequestURI()));
+    }
+
+    /** Lot d'identifiants trop grand sur {@code GET /identite/utilisateurs/libelles} (Sprint 6.1). */
+    @ExceptionHandler(LotTropGrandException.class)
+    public ResponseEntity<ErreurApiDto> lotTropGrand(LotTropGrandException exception,
+            HttpServletRequest requete) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new ErreurApiDto(
+                LocalDateTime.now(),
+                HttpStatus.BAD_REQUEST.value(),
+                "LOT_TROP_GRAND",
                 exception.getMessage(),
                 requete.getRequestURI()));
     }

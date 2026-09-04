@@ -5,6 +5,7 @@ import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -18,11 +19,18 @@ import cm.afrilandfirstbank.rations.workflow.domaine.TypeProcessusEnum;
 /**
  * Acces aux processus mensuels.
  *
+ * <p>{@link JpaSpecificationExecutor} porte la recherche a filtres optionnels du
+ * Sprint 6.1 ({@code ProcessusSpecifications}) : periode, unite et statut se
+ * combinent librement, chacun omis quand il est nul, et la restriction de portee
+ * s'y ajoute toujours. Meme facture que {@code UtilisateurRepository} du service
+ * Identite, plutot que six methodes derivees a combinatoire.
+ *
  * <p>{@code findById}, {@code save} et consorts viennent de {@link JpaRepository} :
  * le detail d'un processus (endpoint {@code GET /processus/{id}}) se sert
  * directement de {@code findById}.
  */
-public interface ProcessusMensuelRepository extends JpaRepository<ProcessusMensuel, Long> {
+public interface ProcessusMensuelRepository extends JpaRepository<ProcessusMensuel, Long>,
+        JpaSpecificationExecutor<ProcessusMensuel> {
 
     /**
      * Cherche le processus d'un type donne pour un couple unite / periode.

@@ -24,6 +24,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import cm.afrilandfirstbank.rations.commun.audit.PublicateurAudit;
 import cm.afrilandfirstbank.rations.workflow.application.IntegrationComptableService;
 import cm.afrilandfirstbank.rations.workflow.application.ProcessusService;
+import cm.afrilandfirstbank.rations.workflow.application.RechercheProcessusService;
 import cm.afrilandfirstbank.rations.workflow.application.ResultatIntegrationComptable;
 import cm.afrilandfirstbank.rations.workflow.application.RetourService;
 import cm.afrilandfirstbank.rations.workflow.application.SoumissionService;
@@ -86,6 +87,10 @@ class IntegrationComptableIT {
 
     @MockitoBean
     private IntegrationComptableService integrationComptableService;
+
+    /** Requis depuis le Sprint 6.1 : le controleur sert aussi les endpoints internes de suivi. */
+    @MockitoBean
+    private RechercheProcessusService rechercheProcessusService;
 
     // --- Le secret partage --------------------------------------------------------
 

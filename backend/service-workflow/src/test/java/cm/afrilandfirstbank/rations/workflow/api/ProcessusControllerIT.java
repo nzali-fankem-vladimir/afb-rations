@@ -45,6 +45,7 @@ import cm.afrilandfirstbank.rations.workflow.application.EtatConsolide;
 import cm.afrilandfirstbank.rations.workflow.application.ManqueCompletude;
 import cm.afrilandfirstbank.rations.workflow.application.IntegrationComptableService;
 import cm.afrilandfirstbank.rations.workflow.application.ProcessusService;
+import cm.afrilandfirstbank.rations.workflow.application.RechercheProcessusService;
 import cm.afrilandfirstbank.rations.workflow.application.RetourService;
 import cm.afrilandfirstbank.rations.workflow.application.DecisionAiguillage;
 import cm.afrilandfirstbank.rations.workflow.application.ResultatAiguillage;
@@ -134,6 +135,16 @@ class ProcessusControllerIT {
      */
     @MockitoBean
     private IntegrationComptableService integrationComptableService;
+
+    /**
+     * Requis depuis le Sprint 6.1 : le controleur sert aussi les deux endpoints
+     * internes de suivi ({@code GET /processus/recherche} et
+     * {@code GET /processus/{id}/historique}). Sans cette doublure, le contexte de
+     * ce {@code @WebMvcTest} ne s'assemble pas. Ces deux endpoints sont eprouves par
+     * {@code RechercheProcessusServiceTest} et par les tests du service Reporting.
+     */
+    @MockitoBean
+    private RechercheProcessusService rechercheProcessusService;
 
     /** Empreinte de reference : 8 caracteres de prefixe plus 64 de SHA-256. */
     private static final String EMPREINTE =

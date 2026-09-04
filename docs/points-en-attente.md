@@ -417,3 +417,46 @@ module qui puisse produire un double paiement.
   `statut = 'CLOTURE' AND transmis_comptabilite = false`.
 * La levée manuelle : aujourd'hui une écriture directe en base, faute d'endpoint
   d'administration — à revoir quand un compte de service existera.
+
+---
+
+## Borne de volume de la recherche du Reporting (Sprint 6.1)
+
+**Date de la decision :** 3 septembre 2026
+**Date de revue exigee :** **3 septembre 2027**, puis chaque annee
+**Voir :** `docs/decisions/2026-09-03-agregation-multi-services-du-reporting.md` section 4
+
+### Ce qui est en place
+
+Le service Reporting n'a pas de base : il croise en memoire les en-tetes rendus par le
+service Workflow et les identifiants rendus par le service Saisie. La pagination se fait
+donc **apres** le croisement, ce qui suppose de ramener toute la portee de l'utilisateur
+avant de la decouper.
+
+Un garde-fou borne ce volume : `app.reporting.limite-resultats`, **defaut 5000**. Au-dela,
+la recherche est refusee en `422 RECHERCHE_TROP_LARGE`, avec un message nommant le nombre
+trouve, la borne et l'action attendue.
+
+### Pourquoi ce point est ouvert
+
+La borne est calibree sur les volumes de 2026 : environ 50 unites, un etat par unite et
+par mois, soit ~600 etats par an, donc ~8 ans de donnees nationales avant qu'elle ne
+morde. **Cette marge se consomme toute seule**, sans qu'aucun evenement ne la signale
+avant le premier refus en production.
+
+Trois choses peuvent la consommer plus vite que prevu : l'ouverture du module a de
+nouvelles unites, l'ouverture des etats COMPLEMENTAIRE (aujourd'hui fermes par le drapeau
+`RATTRAPAGE_ACTIF`), et une reprise d'historique anterieur au module.
+
+### Ce qu'il faut faire a la revue
+
+| Geste | Pourquoi |
+| --- | --- |
+| Compter les lignes de `processus_mensuel` en production | C'est exactement le volume que la borne mesure. |
+| Comparer a 5000 | Au-dela de la moitie, la borne mordra dans les cinq ans. |
+| Relever la borne par variable d'environnement si besoin | Correctif immediat, sans redeploiement de code. |
+| **Programmer la vraie correction** si la borne est relevee deux fois | Descendre la pagination dans les bases (strategie C de la decision) : le Reporting transmet au second service la liste des identifiants retenus par le premier, et la base pagine. |
+
+**Relever la borne n'est pas une solution, c'est un report.** Elle protege la cible de
+trois secondes ; la repousser indefiniment finit par la faire perdre en silence, ce qui est
+pire qu'un refus explicite.

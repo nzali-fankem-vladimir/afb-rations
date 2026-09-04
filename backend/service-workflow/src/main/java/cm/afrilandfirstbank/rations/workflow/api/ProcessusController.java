@@ -12,14 +12,17 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import cm.afrilandfirstbank.rations.workflow.api.dto.DeclenchementProcessusRequest;
 import cm.afrilandfirstbank.rations.workflow.api.dto.EtatProcessusResponse;
+import cm.afrilandfirstbank.rations.workflow.api.dto.HistoriqueProcessusResponse;
 import cm.afrilandfirstbank.rations.workflow.api.dto.IntegrationComptableRequest;
 import cm.afrilandfirstbank.rations.workflow.api.dto.IntegrationComptableResponse;
 import cm.afrilandfirstbank.rations.workflow.api.dto.IntegrationProcessusResponse;
 import cm.afrilandfirstbank.rations.workflow.api.dto.ProcessusResponse;
+import cm.afrilandfirstbank.rations.workflow.api.dto.RechercheProcessusResponse;
 import cm.afrilandfirstbank.rations.workflow.api.dto.RetourRequest;
 import cm.afrilandfirstbank.rations.workflow.api.dto.RetourResponse;
 import cm.afrilandfirstbank.rations.workflow.api.dto.SoumissionResponse;
@@ -28,12 +31,14 @@ import cm.afrilandfirstbank.rations.workflow.api.dto.VerrouTransmissionRequest;
 import cm.afrilandfirstbank.rations.workflow.api.dto.VerrouTransmissionResponse;
 import cm.afrilandfirstbank.rations.workflow.application.IntegrationComptableService;
 import cm.afrilandfirstbank.rations.workflow.application.ProcessusService;
+import cm.afrilandfirstbank.rations.workflow.application.RechercheProcessusService;
 import cm.afrilandfirstbank.rations.workflow.application.ResultatVerrouTransmission;
 import cm.afrilandfirstbank.rations.workflow.application.RetourService;
 import cm.afrilandfirstbank.rations.workflow.application.SoumissionService;
 import cm.afrilandfirstbank.rations.workflow.application.ValidationService;
 import cm.afrilandfirstbank.rations.workflow.application.VerrouTransmissionService;
 import cm.afrilandfirstbank.rations.workflow.domaine.ProcessusMensuel;
+import cm.afrilandfirstbank.rations.workflow.domaine.StatutEnum;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -108,19 +113,22 @@ public class ProcessusController {
     private final RetourService retourService;
     private final IntegrationComptableService integrationComptableService;
     private final VerrouTransmissionService verrouTransmissionService;
+    private final RechercheProcessusService rechercheProcessusService;
 
     public ProcessusController(ProcessusService processusService,
             SoumissionService soumissionService,
             ValidationService validationService,
             RetourService retourService,
             IntegrationComptableService integrationComptableService,
-            VerrouTransmissionService verrouTransmissionService) {
+            VerrouTransmissionService verrouTransmissionService,
+            RechercheProcessusService rechercheProcessusService) {
         this.processusService = processusService;
         this.soumissionService = soumissionService;
         this.validationService = validationService;
         this.retourService = retourService;
         this.integrationComptableService = integrationComptableService;
         this.verrouTransmissionService = verrouTransmissionService;
+        this.rechercheProcessusService = rechercheProcessusService;
     }
 
     /**
@@ -442,6 +450,94 @@ public class ProcessusController {
 
         return ResponseEntity.ok(IntegrationProcessusResponse.depuis(
                 processusService.consulterIntegration(id, enteteAutorisation)));
+    }
+
+    /**
+     * Recherche d'etats mensuels pour le suivi (Sprint 6.1, US-15, CT-30).
+     * <b>Endpoint interne, hors contrat passerelle.</b>
+     *
+     * <pre>
+     *   GET /processus/recherche?mois=8&amp;annee=2026&amp;codeUnite=00002&amp;statut=CLOTURE&amp;limite=5000
+     * </pre>
+     *
+     * <h2>Pourquoi cet endpoint existe</h2>
+     *
+     * <p>Le service Reporting n'a <b>pas de base</b> : la periode, l'unite, le montant
+     * et les deux statuts d'un etat vivent sur {@code processus_mensuel}, ici. Jusqu'a
+     * ce sous-sprint, ce service n'exposait que le detail d'<i>un</i> processus ; une
+     * recherche aurait donc exige un appel par dossier, ce que le guide 6.1 proscrit
+     * explicitement.
+     *
+     * <h2>Aucun parametre de portee, et c'est le point</h2>
+     *
+     * <p>La portee d'acces est resolue <b>depuis le jeton</b> par {@code PorteeService},
+     * jamais recue en parametre. Un appel direct forge sur le port 8084 ne peut donc pas
+     * s'attribuer des unites : il n'existe aucun champ ou les declarer. C'est la doctrine
+     * du Sprint 3.4 — « un parametre fourni par l'appelant ne se croit pas sur parole » —
+     * poussee un cran plus loin.
+     *
+     * <p>Une unite <b>explicitement demandee</b> hors portee est refusee en
+     * {@code 403 UTILISATEUR_NON_HABILITE}, jamais rendue comme une liste vide : la liste
+     * vide affirmerait que cette unite n'a ouvert aucun etat, ce qui serait a la fois une
+     * information non due et, le plus souvent, fausse. En l'absence de filtre d'unite, la
+     * portee restreint sans refuser — c'est le comportement attendu.
+     *
+     * <h2>{@code limite} borne le transport, pas la verite</h2>
+     *
+     * <p>Le compte exact est <b>toujours</b> rendu. Au-dela de {@code limite}, seul le
+     * contenu est omis, et {@code tronque} le dit. Le consommateur peut donc annoncer
+     * « 6 214 etats, affinez votre recherche » au lieu d'une page vide indiscernable
+     * d'une absence de dossiers.
+     *
+     * <p>Refus possibles : {@code 403 ACCES_REFUSE} role hors circuit ;
+     * {@code 403 UTILISATEUR_NON_HABILITE} unite demandee hors portee ;
+     * {@code 503 SERVICE_IDENTITE_INDISPONIBLE} si la portee n'a pas pu etre resolue —
+     * jamais une portee devinee.
+     */
+    @GetMapping("/recherche")
+    @PreAuthorize("hasAnyRole('ARH', 'AGENT_UNITE', 'CHEF_UNITE_DA', 'DIRECTEUR_RESEAU_DR')")
+    public ResponseEntity<RechercheProcessusResponse> rechercher(
+            @RequestParam(required = false) Integer mois,
+            @RequestParam(required = false) Integer annee,
+            @RequestParam(required = false) String codeUnite,
+            @RequestParam(required = false) StatutEnum statut,
+            @RequestParam(defaultValue = "5000") int limite,
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String enteteAutorisation) {
+
+        return ResponseEntity.ok(RechercheProcessusResponse.depuis(
+                rechercheProcessusService.rechercher(
+                        mois, annee, codeUnite, statut, limite, enteteAutorisation)));
+    }
+
+    /**
+     * Historique complet des validations et retours d'un dossier (Sprint 6.1, US-15,
+     * CT-31). <b>Endpoint interne, hors contrat passerelle.</b>
+     *
+     * <p>Il sert {@code GET /reporting/processus/{id}/historique} du contrat d'API
+     * section 6. Le service Reporting n'ayant pas de base, il vient lire ici les etapes
+     * qui vivent sur {@code etape_workflow}.
+     *
+     * <h2>Tous les passages, pas le dernier</h2>
+     *
+     * <p>Un dossier retourne puis resoumis repasse par les memes niveaux, et le rang
+     * d'etape est calcule {@code dernier + 1} depuis le Sprint 4.4 precisement pour que
+     * ces passages restent distincts. Les etapes sont rendues <b>toutes</b>, dans l'ordre
+     * du rang. N'afficher que le dernier passage a chaque niveau cacherait le refus et sa
+     * correction, c'est-a-dire ce que le controle interne vient chercher.
+     *
+     * <p>La portee d'acces est verifiee sur l'unite du dossier aupres du service Identite,
+     * comme pour {@code GET /processus/{id}}. Refus possibles :
+     * {@code 404 PROCESSUS_INTROUVABLE} ; {@code 403 UTILISATEUR_NON_HABILITE} hors
+     * portee ; {@code 503} si le service Identite ne repond pas.
+     */
+    @GetMapping("/{id}/historique")
+    @PreAuthorize("hasAnyRole('ARH', 'AGENT_UNITE', 'CHEF_UNITE_DA', 'DIRECTEUR_RESEAU_DR')")
+    public ResponseEntity<HistoriqueProcessusResponse> consulterHistorique(
+            @PathVariable Long id,
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String enteteAutorisation) {
+
+        return ResponseEntity.ok(HistoriqueProcessusResponse.depuis(
+                rechercheProcessusService.consulterHistorique(id, enteteAutorisation)));
     }
 
 }

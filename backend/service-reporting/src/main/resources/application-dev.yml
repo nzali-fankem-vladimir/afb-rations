@@ -1,4 +1,11 @@
 spring:
+  kafka:
+    # Seule l'adresse des brokers est reprise par le producteur d'audit : ses
+    # bornes de securite (max.block.ms notamment) sont fixees par le module
+    # rations-audit-commun et ne doivent pas etre surchargees ici, sous peine de
+    # rompre la garantie « l'audit ne fait jamais echouer le metier » (Sprint 1.3).
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+
   security:
     oauth2:
       resourceserver:
@@ -11,6 +18,46 @@ spring:
 app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+
+  identite:
+    # Adresse du service Identite. Interroge pour un seul besoin dans ce service :
+    # traduire les identifiants d'acteurs d'un historique en logins lisibles
+    # (GET /identite/utilisateurs/libelles, Sprint 6.1).
+    #
+    # La portee d'acces, elle, n'est PAS resolue ici : elle l'est par les services
+    # qui detiennent les donnees, depuis le jeton relaye. Aucun parametre de portee
+    # ne voyage sur le reseau, donc aucun ne peut etre forge.
+    url: ${IDENTITE_URL:http://localhost:8081}
+
+  saisie:
+    # Adresse du service Saisie. Interroge UNIQUEMENT quand la recherche porte un
+    # critere de ligne (nature, session, beneficiaire) : ces trois criteres vivent
+    # sur ligne_prestation et beneficiaires, dans rations_saisie.
+    #
+    # L'appel passe par l'API, jamais par la base : ce service n'a aucune source de
+    # donnees, et c'est verifie par la cartographie.
+    url: ${SAISIE_URL:http://localhost:8082}
+
+  workflow:
+    # Adresse du service Workflow. Interroge a CHAQUE recherche et a chaque
+    # historique : la periode, l'unite, le montant et les deux statuts d'un etat
+    # vivent sur processus_mensuel, et les etapes sur etape_workflow.
+    url: ${WORKFLOW_URL:http://localhost:8084}
+
+  reporting:
+    # Borne de volume de la recherche (decision du Sprint 6.1,
+    # docs/decisions/2026-09-03-agregation-multi-services-du-reporting.md section 4).
+    #
+    # Ce service n'a pas de base : il croise en memoire les en-tetes du Workflow et
+    # les identifiants de la Saisie, donc il pagine APRES avoir tout recu. Au-dela
+    # de cette borne, la recherche est refusee en 422 RECHERCHE_TROP_LARGE, avec un
+    # message nommant le nombre trouve et l'action attendue - jamais une page vide,
+    # qui ferait croire qu'il n'y a rien a trouver.
+    #
+    # 5000 = environ huit annees de donnees nationales completes (50 unites, un
+    # etat par unite et par mois). Valeur a revoir chaque annee : voir
+    # docs/points-en-attente.md.
+    limite-resultats: ${REPORTING_LIMITE_RESULTATS:5000}
 
 # Pas de base propre pour ce service (document maitre section 3) : il lit via
 # les API des autres services. Aucune datasource ni configuration Flyway ici.
