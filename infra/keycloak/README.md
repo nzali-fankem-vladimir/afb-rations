@@ -63,13 +63,31 @@ d'habilitation ouverte dans le module (decision Sprint 0.4).
 curl -H "Authorization: Bearer <jeton_thomas_ndzana>" http://localhost:8081/identite/moi
 ```
 
-**Ne jamais lui ouvrir de profil local**, ni par la migration `V1000`, ni par un
-`INSERT` en base. Le faire ne casse rien de visible : le build passe, les tests
-passent, et cette verification rend `200` la ou elle attend `403` — un succes a
-la place d'un refus, sur un test de securite, sans aucun message. C'est
-exactement ce qui est arrive a `pierre_belinga` au Sprint 6.3, d'ou son
-remplacement. Une garde au build (`CompteDeControleDuRefusTest`) couvre
-desormais la migration ; elle ne peut rien contre un `INSERT` manuel.
+#### S'y connecter est sans danger. Lui ouvrir un profil le detruit.
+
+La distinction est importante, et elle n'est pas intuitive.
+
+**Se connecter avec ce compte ne cree aucun profil.** Sans profil local,
+`UtilisateurCourantService.resoudre` leve `UtilisateurNonHabiliteException` et
+n'ecrit rien : le module ne cree jamais de profil automatiquement, c'est
+l'invariant meme du Sprint 0.4. Verifie en reel au 6.3 -- cinq connexions
+successives et deux autres endpoints, `403` a chaque fois, zero profil cree.
+Une connexion de verification est donc legitime et attendue : **c'est le test
+lui-meme**.
+
+**Ce qui detruit le compte de controle, c'est l'ouverture d'un profil local.**
+Trois chemins y menent :
+
+| Chemin | Protege ? |
+|---|---|
+| Ajout a la migration `V1000` | Oui — `CompteDeControleDuRefusTest` fait echouer le build |
+| `INSERT` manuel en base | **Non** — chemin exact de l'incident du Sprint 6.3 |
+| Futur endpoint d'administration des profils (annonce hors perimetre au Sprint 0.4) | **Non, et il n'existe pas encore** — a couvrir quand il sera ecrit |
+
+Le faire ne casse rien de visible : le build passe, les tests passent, et cette
+verification rend `200` la ou elle attend `403` — un succes a la place d'un
+refus, sur un test de securite, sans aucun message. C'est exactement ce qui est
+arrive a `pierre_belinga` au Sprint 6.3, d'ou son remplacement.
 
 Besoin d'un profil pre-provisionne non lie, pour eprouver une liaison a la
 premiere connexion ? Creer un compte jetable, jamais celui-ci. Voir

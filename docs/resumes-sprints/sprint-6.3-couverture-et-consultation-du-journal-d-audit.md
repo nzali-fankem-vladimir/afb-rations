@@ -330,7 +330,7 @@ erreur.**
 | Vérifié le jour même | `thomas_ndzana` → **403 UTILISATEUR_NON_HABILITE** ; `pierre_belinga` → **200** |
 | `pierre_belinga` **non restauré** | L'événement `LIAISON_COMPTE_KEYCLOAK` est sur le topic à l'offset 184 et porte le `sub` réellement établi ; effacer le profil ferait mentir le journal — l'inverse de ce que tout ce sprint défend |
 | Garde au build | `CompteDeControleDuRefusTest` relit `V1000` et fait échouer le build si le compte y apparaît |
-| Avertissements | En tête de `V1000`, dans `infra/keycloak/README.md`, dans le commentaire de l'utilisateur au sein de l'export du realm |
+| Avertissements | `backend/service-identite/.../db/dev/README.md` (à côté de la migration), `infra/keycloak/README.md` (là où l'on cherche un identifiant de test), commentaire dans l'export du realm, CLAUDE.md §15 |
 
 **La garde a elle-même été éprouvée dans les deux sens** — et sa première version
 était fausse : elle lisait le fichier entier, or l'en-tête de `V1000` **nomme** les
@@ -339,8 +339,37 @@ permanence, donc aurait été désactivée sous quinze jours. Corrigée pour n'e
 que les instructions SQL, commentaires retirés. Vérifiée : verte à l'état sain,
 rouge sur violation.
 
-Limite assumée : la garde couvre la migration, **pas un `INSERT` manuel en base**
-— chemin exact par lequel l'incident est passé.
+**Ce qui détruit le compte est l'ouverture d'un profil, pas la connexion** —
+distinction vérifiée en réel : cinq connexions successives de `thomas_ndzana`
+plus deux autres endpoints, `403` à chaque fois, **zéro profil créé**. Le module
+ne crée jamais de profil automatiquement (invariant du Sprint 0.4), et une
+connexion de vérification est donc le test lui-même. Trois chemins mènent à
+l'ouverture : la migration (**gardée**), un `INSERT` manuel (**non gardé**,
+chemin de l'incident) et le futur endpoint d'administration des profils annoncé
+hors périmètre au Sprint 0.4 (**non gardé, à couvrir quand il sera écrit**).
+
+### Une seconde régression, introduite puis corrigée dans la foulée
+
+Le premier emplacement choisi pour l'avertissement était l'en-tête de `V1000`.
+**Il a cassé le démarrage du service Identité** :
+
+```
+Validate failed: Migrations have failed validation
+Migration checksum mismatch for migration version 1000
+  Applied to database : -956316021
+  Resolved locally    : 435038405
+```
+
+Flyway scelle l'empreinte de chaque migration appliquée. `mvn clean test`
+restait vert — les tests ne montent pas le contexte contre la vraie base — et les
+sept commits étaient propres. Troisième occurrence dans ce projet d'un défaut
+visible **seulement en démarrant** : bean `ObjectMapper` absent au 5.1,
+`@EnableKafka` manquant au 5.2, empreinte Flyway ici.
+
+`V1000` a été restaurée à l'octet près, l'avertissement déplacé dans un
+`README.md` voisin qu'aucune empreinte ne scelle, et le démarrage revérifié.
+Règle portée en CLAUDE.md §15 : **une migration appliquée est immuable,
+commentaires compris.**
 
 ### Données de test laissées en base
 

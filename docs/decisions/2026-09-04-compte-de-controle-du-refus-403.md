@@ -126,10 +126,66 @@ discipline déjà appliquée par `PerimetreDuModuleTest` au périmètre de
 > veut ajouter ce compte peut éditer le test. Elle transforme un glissement
 > silencieux en acte délibéré et visible en revue.
 
-La garde ne couvre que la migration, pas un `INSERT` manuel en base — c'est
-justement par là que l'erreur est passée. Elle est donc doublée d'un
-avertissement en tête de `V1000` et dans le commentaire de l'utilisateur au sein
-de l'export du realm, aux deux endroits qu'on ouvre avant d'y toucher.
+### Ce qui détruit le compte : l'ouverture d'un profil, pas la connexion
+
+Distinction vérifiée en réel, parce qu'elle n'est pas intuitive et qu'une
+formulation approximative aurait fait redouter le mauvais geste.
+
+**Se connecter avec le compte de contrôle est sans danger.** Sans profil local,
+`UtilisateurCourantService.resoudre` lève `UtilisateurNonHabiliteException` et
+n'écrit rien : le module ne crée jamais de profil automatiquement — c'est
+l'invariant du Sprint 0.4 lui-même. Éprouvé sur le service réel : cinq connexions
+successives sur `/identite/moi`, plus `/identite/utilisateurs` et
+`/identite/habilitation`, **`403` à chaque fois, zéro profil créé**. Couvert
+durablement par `UtilisateurCourantServiceTest.aucunProfilOuvertRefuse`, qui
+exige `verify(utilisateurRepository, never()).save(any())`.
+
+Une connexion de vérification est donc légitime et attendue : **c'est le test
+lui-même.**
+
+**Le geste destructeur est l'ouverture d'un profil local.** Trois chemins y
+mènent, inégalement couverts :
+
+| Chemin | Protégé ? |
+| --- | --- |
+| Ajout à la migration `V1000` | **Oui** — `CompteDeControleDuRefusTest` fait échouer le build |
+| `INSERT` manuel en base | **Non** — chemin exact de l'incident du 6.3 |
+| Futur endpoint d'administration des profils | **Non, et il n'existe pas encore** |
+
+Le troisième mérite attention : la décision du Sprint 0.4 annonce qu'« un
+endpoint d'administration des profils devient nécessaire
+(`/identite/utilisateurs`) », hors périmètre à l'époque. **Le jour où il sera
+écrit, il ouvrira un chemin non gardé vers ce défaut** — à couvrir dans le sprint
+qui le livrera, pas après.
+
+### Où vit l'avertissement, et pourquoi pas dans la migration
+
+Première tentative : un bloc d'avertissement en tête de `V1000`. **Elle a cassé
+le démarrage du service.**
+
+```
+Validate failed: Migrations have failed validation
+Migration checksum mismatch for migration version 1000
+  Applied to database : -956316021
+  Resolved locally    : 435038405
+```
+
+Flyway scelle l'empreinte de chaque migration appliquée : y ajouter un
+commentaire empêche `service-identite` de démarrer sur **tout** environnement où
+elle a déjà tourné. `mvn clean test` restait vert — les tests ne montent pas le
+contexte contre la vraie base. Encore un défaut visible seulement en démarrant,
+comme le bean `ObjectMapper` du Sprint 5.1 et `@EnableKafka` du 5.2.
+
+L'avertissement vit donc dans
+`backend/service-identite/src/main/resources/db/dev/README.md`, à côté de la
+migration, dans un fichier qu'aucune empreinte ne scelle — plus
+`infra/keycloak/README.md`, là où l'on cherche un identifiant de test, et
+CLAUDE.md §15.
+
+**Règle générale qui en sort, portée en CLAUDE.md §15 :** une migration Flyway
+appliquée est immuable, commentaires compris. Pour changer un
+pré-provisionnement, ajouter une migration ; pour avertir un lecteur, écrire à
+côté.
 
 ## 5. Ce qu'il faut faire si l'on doit à nouveau tester une liaison
 
