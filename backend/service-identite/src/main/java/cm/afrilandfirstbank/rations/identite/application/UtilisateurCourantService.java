@@ -9,6 +9,9 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import cm.afrilandfirstbank.rations.commun.audit.DeltaAudit;
+import cm.afrilandfirstbank.rations.commun.audit.EvenementAudit;
+import cm.afrilandfirstbank.rations.commun.audit.PublicateurAudit;
 import cm.afrilandfirstbank.rations.identite.domaine.Utilisateur;
 import cm.afrilandfirstbank.rations.identite.domaine.exception.UtilisateurNonHabiliteException;
 import cm.afrilandfirstbank.rations.identite.infrastructure.persistence.UtilisateurRepository;
@@ -36,10 +39,16 @@ public class UtilisateurCourantService {
 
     static final String REVENDICATION_LOGIN = "preferred_username";
 
-    private final UtilisateurRepository utilisateurRepository;
+    private static final String ACTION_LIAISON = "LIAISON_COMPTE_KEYCLOAK";
+    private static final String ENTITE_UTILISATEUR = "utilisateurs";
 
-    public UtilisateurCourantService(UtilisateurRepository utilisateurRepository) {
+    private final UtilisateurRepository utilisateurRepository;
+    private final PublicateurAudit publicateurAudit;
+
+    public UtilisateurCourantService(UtilisateurRepository utilisateurRepository,
+            PublicateurAudit publicateurAudit) {
         this.utilisateurRepository = utilisateurRepository;
+        this.publicateurAudit = publicateurAudit;
     }
 
     /**
@@ -91,7 +100,46 @@ public class UtilisateurCourantService {
 
         utilisateur.lierAuCompteKeycloak(subKeycloak);
         log.info("Premiere connexion du profil {} : liaison au compte Keycloak {}.", login, subKeycloak);
+        tracerLiaison(utilisateur, subKeycloak);
         return utilisateur;
+    }
+
+    /**
+     * Trace l'établissement du lien entre un compte de l'annuaire et un profil
+     * local (omission relevée au Sprint 6.3, étape 2).
+     *
+     * <p><b>Pourquoi c'est un fait de contrôle interne et non un détail
+     * technique.</b> Cette écriture est le moment, et le seul, où une identité
+     * Keycloak prend le contrôle d'une habilitation du module. Le profil portait
+     * déjà un rôle et un code unité, posés par un administrateur qui ne
+     * connaissait pas le {@code sub} (décision Sprint 0.4) ; c'est ici que ce
+     * rôle devient exerçable, et par ce compte-là. Après coup, plus rien ne dit
+     * quand ni depuis quel compte le rattachement a eu lieu : la colonne
+     * {@code sub_keycloak} porte la valeur finale, pas son histoire.
+     *
+     * <p>Elle survient de surcroît <b>sans qu'aucun administrateur n'agisse</b>,
+     * à la première connexion de l'intéressé — une écriture que personne ne
+     * déclenche est exactement celle qu'un journal doit rattraper.
+     *
+     * <p>{@code idUtilisateur} est renseigné, l'auteur étant le porteur du jeton
+     * lui-même : il se lie à son propre profil. {@code adresseIp} reste nulle,
+     * cette résolution étant appelée depuis plusieurs points sans contexte HTTP
+     * uniforme.
+     */
+    private void tracerLiaison(Utilisateur utilisateur, String subKeycloak) {
+        publicateurAudit.publier(EvenementAudit.de(
+                utilisateur.getId(),
+                ACTION_LIAISON,
+                ENTITE_UTILISATEUR,
+                utilisateur.getId(),
+                null,
+                DeltaAudit.nouveau()
+                        .champ("subKeycloak", null, subKeycloak)
+                        .contexte("login", utilisateur.getLogin())
+                        .contexte("role", utilisateur.getRole())
+                        .contexte("codeUnite", utilisateur.getCodeUnite())
+                        .contexte("origine", "premiere connexion, liaison automatique au profil pre-provisionne")
+                        .enJson()));
     }
 
 }

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
@@ -14,11 +15,14 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.oauth2.jwt.Jwt;
 
+import cm.afrilandfirstbank.rations.commun.audit.EvenementAudit;
+import cm.afrilandfirstbank.rations.commun.audit.PublicateurAudit;
 import cm.afrilandfirstbank.rations.identite.domaine.RoleEnum;
 import cm.afrilandfirstbank.rations.identite.domaine.Utilisateur;
 import cm.afrilandfirstbank.rations.identite.domaine.exception.UtilisateurNonHabiliteException;
@@ -37,6 +41,9 @@ class UtilisateurCourantServiceTest {
 
     @Mock
     private UtilisateurRepository utilisateurRepository;
+
+    @Mock
+    private PublicateurAudit publicateurAudit;
 
     @InjectMocks
     private UtilisateurCourantService service;
@@ -70,6 +77,42 @@ class UtilisateurCourantServiceTest {
         assertThat(resolu.getRole()).isEqualTo(RoleEnum.AGENT_UNITE);
         assertThat(resolu.getCodeUnite()).isEqualTo("00002");
         assertThat(resolu.getDateDernierAcces()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("Sprint 6.3 : la liaison du compte Keycloak publie LIAISON_COMPTE_KEYCLOAK")
+    void premiereConnexionPublieUneTraceDeLiaison() {
+        when(utilisateurRepository.findBySubKeycloak(SUB_JEAN_MBARGA)).thenReturn(Optional.empty());
+        when(utilisateurRepository.findByLogin(LOGIN_JEAN_MBARGA)).thenReturn(Optional.of(jeanMbarga));
+
+        service.resoudre(jeton(SUB_JEAN_MBARGA, LOGIN_JEAN_MBARGA));
+
+        ArgumentCaptor<EvenementAudit> capture = ArgumentCaptor.forClass(EvenementAudit.class);
+        verify(publicateurAudit).publier(capture.capture());
+        EvenementAudit evenement = capture.getValue();
+
+        assertThat(evenement.action()).isEqualTo("LIAISON_COMPTE_KEYCLOAK");
+        assertThat(evenement.entiteCible()).isEqualTo("utilisateurs");
+        // Le sub etabli figure au delta : c'est l'information que la colonne
+        // sub_keycloak porte desormais, mais dont elle ne dit ni la date ni
+        // l'anteriorite.
+        assertThat(evenement.detailJson())
+                .contains(SUB_JEAN_MBARGA)
+                .contains(LOGIN_JEAN_MBARGA)
+                .contains("AGENT_UNITE");
+    }
+
+    @Test
+    @DisplayName("Sprint 6.3 : une connexion ordinaire ne publie rien (pas un evenement par requete HTTP)")
+    void connexionSuivanteNePublieAucuneTrace() {
+        jeanMbarga.lierAuCompteKeycloak(SUB_JEAN_MBARGA);
+        when(utilisateurRepository.findBySubKeycloak(SUB_JEAN_MBARGA)).thenReturn(Optional.of(jeanMbarga));
+
+        service.resoudre(jeton(SUB_JEAN_MBARGA, LOGIN_JEAN_MBARGA));
+
+        // date_dernier_acces est ecrit a chaque requete : le tracer noierait le
+        // journal sous un evenement par appel HTTP, decision Sprint 6.3.
+        verifyNoInteractions(publicateurAudit);
     }
 
     @Test
