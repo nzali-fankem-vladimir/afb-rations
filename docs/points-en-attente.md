@@ -460,3 +460,91 @@ nouvelles unites, l'ouverture des etats COMPLEMENTAIRE (aujourd'hui fermes par l
 **Relever la borne n'est pas une solution, c'est un report.** Elle protege la cible de
 trois secondes ; la repousser indefiniment finit par la faire perdre en silence, ce qui est
 pire qu'un refus explicite.
+
+---
+
+## A-01 — Une recherche « toutes les actions de cette personne » ne verra pas 21 traces sur 30 (Sprint 6.3)
+
+**Ouvert le 4 septembre 2026, à l'étape 2 du Sprint 6.3. Arbitré avec
+l'utilisateur : constaté et consigné maintenant, corrigé au sprint de
+construction du service Audit.**
+
+### Le fait
+
+`audit_log` porte une colonne `id_utilisateur` et un index dédié
+(`idx_audit_log_utilisateur`), posés au Sprint 0.5 précisément pour permettre au
+contrôle interne de retrouver toutes les actions d'une personne.
+
+Or, sur les **30 points de publication** du backend, **21 passent un `null`
+littéral en `idUtilisateur`** — ce ne sont pas des cas de bord, ce sont des
+`null` écrits en dur :
+
+| Service | Traces avec `idUtilisateur` | Traces sans |
+| --- | --- | --- |
+| Identité | `ATTRIBUTION_ROLE`, `LIAISON_COMPTE_KEYCLOAK` | `ACCES_REFUSE` |
+| Grilles | les 5 traces de grille | `ACCES_REFUSE` |
+| Saisie | — | les 6 (décision Sprint 3.3) |
+| Workflow | `SOUMISSION`, `VALIDATION`, `RETOUR` | les 6 autres |
+| Transmission | — | les 7 |
+| Reporting | — | les 2 (Sprint 6.3) |
+
+### Pourquoi c'est un piège et pas seulement un manque
+
+L'information n'est pas absente : le `login` figure dans `detail_json` pour une
+partie de ces traces, et `detail_json` est de type **JSONB**, donc
+interrogeable. Le problème est ailleurs.
+
+**Un contrôle interne écrit `WHERE id_utilisateur = …`**, obtient un résultat qui
+a l'air complet, et n'a aucun moyen de savoir qu'il manque des pans entiers.
+« Trouvable par un chemin que personne n'empruntera » est plus dangereux
+qu'« absent » : l'absence se remarque, le résultat partiel non. C'est exactement
+le type de trace « présente mais introuvable » que le module a évité partout
+ailleurs.
+
+### Requête de contournement, en attendant
+
+```sql
+-- Toutes les actions attribuables a jean_mbarga, par les deux chemins.
+SELECT action, service_emetteur, entite_cible, id_entite, date_action, adresse_ip
+  FROM audit_log
+ WHERE id_utilisateur = (SELECT id FROM ... /* base rations_identite, hors jointure */)
+    OR detail_json ->> 'login' = 'jean_mbarga'
+ ORDER BY date_action DESC;
+```
+
+Un index d'appoint la rend rapide si le besoin devient courant :
+
+```sql
+CREATE INDEX idx_audit_log_login_json ON audit_log ((detail_json ->> 'login'));
+```
+
+**Cette requête reste un pansement.** Elle suppose que celui qui la rédige
+connaisse le piège, ce qui est précisément ce sur quoi on ne peut pas compter.
+
+### Pourquoi ce n'est pas corrigé au Sprint 6.3
+
+Un champ dédié et indexable (`login_acteur`) a été envisagé et **écarté à ce
+sprint**, sur arbitrage de l'utilisateur. Le motif n'est pas le coût du champ
+lui-même mais son emplacement dans le temps :
+
+- il toucherait **21 points dans 5 services**, transformant un sprint d'une
+  journée de vérification en modification active de presque tout le backend ;
+- il déciderait de la **forme de l'écriture avant que la lecture n'ait été
+  conçue**. Le sprint de construction du service Audit doit arrêter l'entité JPA,
+  les index et la structure de consultation ; s'il découvre alors qu'il faut
+  aussi le **rôle** de l'acteur, ou une autre forme, il faudra une V3 de toute
+  façon. L'argument « ça évite une migration » ne tient que si le design est
+  parfait aujourd'hui, ce qui n'est jamais garanti avant d'avoir conçu la lecture.
+
+Même raisonnement qu'au Sprint 5.1 pour la montée de version Kafka : une bonne
+idée mal placée dans le temps.
+
+### Ce qu'il faut faire au sprint de construction du service Audit
+
+| Geste | Pourquoi |
+| --- | --- |
+| Trancher la forme du champ d'acteur — login seul, ou login + rôle | Le rôle figé au moment de l'action est ce qui rend une trace justifiable des années plus tard, et `utilisateurs.role` change dans le temps. |
+| L'ajouter à `EvenementAudit` de façon **additive** | Le contrat de fil le prévoit ; les messages déjà sur le topic restent lisibles. |
+| Le renseigner depuis le `SecurityContextHolder`, **sans appel réseau** | C'est ce que fait déjà `GestionnaireErreursApi` dans quatre services. Le quatrième appel HTTP refusé au Sprint 3.3 n'a pas à être rouvert. |
+| Le laisser nul là où il n'y a pas d'utilisateur | Un message Kafka n'a personne derrière lui : `AccuseComptableConsumer` et `TraitementAccuseService` resteront légitimement sans acteur. |
+| Poser l'index dans la même migration que l'entité | Une seule passe, un seul schéma. |
