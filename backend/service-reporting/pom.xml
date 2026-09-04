@@ -79,6 +79,25 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Spring Boot 4 : la tranche @WebMvcTest vit dans son propre starter.
+             Requise par ReportingControllerIT (Sprint 6.2), qui traverse la
+             chaine jeton -> securite -> controleur. Memes dependances qu'ont
+             ajoutees service-grilles (Sprint 2.2), service-saisie (Sprint 3.3)
+             et service-workflow (Sprint 4.1). -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webmvc-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Utilitaires de test de Spring Security. Sans elle, la tranche
+             @WebMvcTest monte sans filtre de securite et tout endpoint
+             repondrait 200 : les tests de 403 passeraient a cote de ce qu'ils
+             pretendent verifier. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
 </project>

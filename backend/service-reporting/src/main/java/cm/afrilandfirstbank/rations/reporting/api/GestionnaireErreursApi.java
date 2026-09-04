@@ -9,6 +9,8 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+import cm.afrilandfirstbank.rations.reporting.domaine.exception.ExportImpossibleException;
+import cm.afrilandfirstbank.rations.reporting.domaine.exception.FormatExportInvalideException;
 import cm.afrilandfirstbank.rations.reporting.domaine.exception.PeriodeInvalideException;
 import cm.afrilandfirstbank.rations.reporting.domaine.exception.ProcessusIntrouvableException;
 import cm.afrilandfirstbank.rations.reporting.domaine.exception.RechercheTropLargeException;
@@ -124,6 +126,38 @@ public class GestionnaireErreursApi {
                 LocalDateTime.now(),
                 HttpStatus.SERVICE_UNAVAILABLE.value(),
                 "SERVICE_SAISIE_INDISPONIBLE",
+                exception.getMessage(),
+                requete.getRequestURI()));
+    }
+
+    /**
+     * La composition d'un export (PDF ou Excel) a échoué (Sprint 6.2). {@code 500} :
+     * ce n'est pas une règle de gestion qui refuse, c'est une panne de production
+     * documentaire — même parti que {@code DOCUMENT_NON_PRODUIT} au Sprint 4.2.
+     */
+    @ExceptionHandler(ExportImpossibleException.class)
+    public ResponseEntity<ErreurApiDto> exportImpossible(ExportImpossibleException exception,
+            HttpServletRequest requete) {
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ErreurApiDto(
+                LocalDateTime.now(),
+                HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                "EXPORT_IMPOSSIBLE",
+                exception.getMessage(),
+                requete.getRequestURI()));
+    }
+
+    /**
+     * Le paramètre {@code format} de {@code GET /reporting/rapports/export} ne vaut
+     * ni {@code pdf} ni {@code excel} (Sprint 6.2, guide §6). {@code 422} : ce n'est
+     * pas une panne, l'appelant peut corriger.
+     */
+    @ExceptionHandler(FormatExportInvalideException.class)
+    public ResponseEntity<ErreurApiDto> formatExportInvalide(FormatExportInvalideException exception,
+            HttpServletRequest requete) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(new ErreurApiDto(
+                LocalDateTime.now(),
+                HttpStatus.UNPROCESSABLE_ENTITY.value(),
+                "FORMAT_EXPORT_INVALIDE",
                 exception.getMessage(),
                 requete.getRequestURI()));
     }
