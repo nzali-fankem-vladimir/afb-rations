@@ -35,6 +35,7 @@ import cm.afrilandfirstbank.rations.workflow.domaine.RoleEnum;
 import cm.afrilandfirstbank.rations.workflow.domaine.StatutEnum;
 import cm.afrilandfirstbank.rations.workflow.domaine.StatutEtapeEnum;
 import cm.afrilandfirstbank.rations.workflow.domaine.StatutIntegrationEnum;
+import cm.afrilandfirstbank.rations.workflow.domaine.TypeProcessusEnum;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.SeparationTachesException;
 import cm.afrilandfirstbank.rations.workflow.infrastructure.EtapeWorkflowRepository;
 import cm.afrilandfirstbank.rations.workflow.infrastructure.ParametreSystemeRepository;
@@ -102,6 +103,7 @@ class CircuitCompletIT {
     private SeuilService seuilService;
 
     private ProcessusService processusService;
+    private OuvertureComplementaireService ouvertureComplementaireService;
     private SoumissionService soumissionService;
     private ValidationService validationService;
     private RetourService retourService;
@@ -142,6 +144,12 @@ class CircuitCompletIT {
 
         retourService = new RetourService(processusRepository, habilitationService, profilClient,
                 new EnregistrementRetour(processusRepository, etapeRepository, publicateurAudit));
+
+        // Sprint 6bis.1 : l'ouverture d'un etat complementaire, avec le vrai service de
+        // lecture du drapeau derriere — c'est le parametre_systeme reel qui commande.
+        ouvertureComplementaireService = new OuvertureComplementaireService(
+                processusRepository, etapeRepository, habilitationService,
+                new FonctionnaliteService(parametreSystemeRepository), publicateurAudit);
 
         // Toutes les portees sont ouvertes : ce fichier eprouve le circuit, pas le
         // controle de portee, qui a ses propres tests dans chaque service.
@@ -466,6 +474,192 @@ class CircuitCompletIT {
     // =====================================================================
     // Outils
     // =====================================================================
+
+    // =====================================================================
+    // Sprint 6bis.1 : la regularisation d'une periode close, de bout en bout
+    // =====================================================================
+
+    /**
+     * <b>Le scenario complet du sous-sprint 6bis.1</b>, joue par les vrais services :
+     * un dossier qui a connu <i>deux</i> cycles est clos, puis regularise.
+     *
+     * <p>Ce test couvre a lui seul les tests 15, 16 et 17 du guide, et il verrouille au
+     * passage le piege du Sprint 4.4 sur le decoupage en cycles.
+     *
+     * <h2>1. Une origine close sur un SECOND cycle</h2>
+     *
+     * <p>Le dossier depasse le seuil, monte au directeur reseau, en revient <b>retourne</b>,
+     * est corrige, resoumis, revalide, puis clos. Il porte donc plusieurs etapes
+     * {@code VALIDEE}, dont une <i>annulee par un retour</i>.
+     *
+     * <p>C'est exactement le cas ou un calcul naif de la date de cloture — prendre la
+     * premiere etape validee — ferait courir le delai de regularisation depuis un visa
+     * qui ne vaut plus rien. Ici les deux cycles sont recents, donc le test ne prouve pas
+     * la borne ; ce qu'il prouve, c'est que le parcours reellement produit par le circuit
+     * est celui que {@code OuvertureComplementaireService} sait lire. La borne, elle, est
+     * eprouvee sur des dates anciennes dans {@code OuvertureComplementaireServiceTest}.
+     *
+     * <h2>2. La saisie fonctionne sans modification du service Saisie</h2>
+     *
+     * <p>Le complementaire nait {@code EN_COURS_SAISIE}, et c'est tout ce que le service
+     * Saisie regarde : sa liste des statuts modifiables ne connait pas la notion de type
+     * (voir {@code StatutProcessusEnum} cote Saisie). Aucune adaptation n'a ete
+     * necessaire, et ce test dit pourquoi.
+     *
+     * <h2>3. Un complementaire monte TOUJOURS au directeur reseau</h2>
+     *
+     * <p>Le complementaire porte ici 5 000 XAF, tres en dessous du seuil : un etat normal
+     * de ce montant se cloturerait chez le chef d'unite. Celui-ci monte quand meme.
+     *
+     * <p><b>Regle provisoire, retenue au Sprint 6bis.1 avant l'arbitrage du metier.</b>
+     * Trois lectures etaient possibles ; celle-ci est la plus exigeante, et c'est
+     * pourquoi elle est retenue en attendant : quand on decide sans le metier, on decide
+     * dans le sens qui demande <i>plus</i> d'approbation. Comparer le montant du
+     * complementaire au seuil aurait permis de fractionner une regularisation en
+     * plusieurs etats restant chacun sous la barre ; le laisser clore par le seul chef
+     * d'unite aurait autorise un complementaire de n'importe quel montant sans second
+     * regard.
+     *
+     * <p>Si le metier arbitre autrement, la bascule tient dans
+     * {@code AiguillageService} : la comparaison de RG-08 n'existe qu'a cet endroit. Voir
+     * {@code docs/decisions/2026-09-05-ouverture-etat-complementaire-et-drapeau.md} § 8.
+     */
+    @Test
+    @DisplayName("21. Regularisation d'une periode close, apres un dossier a deux cycles")
+    void regularisationApresUnDossierADeuxCycles() throws Exception {
+        long seuil = seuilService.seuilAiguillage();
+
+        // --- Cycle 1 : soumission, visa du chef, montee au DR, puis retour ------------
+        Long idOrigine = unDossierChezLeChefUnite(seuil + 1);
+
+        chefUnite();
+        validationService.valider(idOrigine, JETON, IP);
+        rafraichir();
+        assertThat(statut(idOrigine)).isEqualTo(StatutEnum.EN_ATTENTE_DR);
+
+        directeurReseau();
+        retourService.retourner(idOrigine, "Montant du 12 a verifier", JETON, IP);
+        rafraichir();
+        assertThat(statut(idOrigine)).isEqualTo(StatutEnum.RETOURNE);
+
+        // --- Cycle 2 : correction, resoumission, deux visas, cloture ------------------
+        agent();
+        montantConsolide(idOrigine, seuil + 1);
+        soumissionService.soumettre(idOrigine, JETON, IP);
+        rafraichir();
+
+        chefUnite();
+        validationService.valider(idOrigine, JETON, IP);
+        rafraichir();
+
+        directeurReseau();
+        validationService.valider(idOrigine, JETON, IP);
+        rafraichir();
+
+        ProcessusMensuel origine = processusRepository.findById(idOrigine).orElseThrow();
+        assertThat(origine.getStatut()).isEqualTo(StatutEnum.CLOTURE);
+        assertThat(parcours(idOrigine))
+                .as("deux cycles : six etapes, dont un retour au milieu")
+                .hasSize(6);
+
+        // Photographie de l'origine avant la regularisation.
+        int montantOrigine = origine.getMontantTotal();
+        List<String> signaturesOrigine = parcours(idOrigine).stream()
+                .map(EtapeWorkflow::getSignatureNumerique)
+                .toList();
+
+        // --- La regularisation -------------------------------------------------------
+        ouvrirLeDrapeauDeRattrapage();
+        agent();
+
+        ProcessusMensuel complementaire = ouvertureComplementaireService.ouvrir(
+                new DeclenchementProcessusRequest(
+                        origine.getMoisPaiement(), origine.getAnneePaiement(),
+                        origine.getCodeUnite(), TypeProcessusEnum.COMPLEMENTAIRE,
+                        idOrigine, "TCHOUMBA Isabelle omise le 22"),
+                JETON, IP);
+        rafraichir();
+
+        Long idComplementaire = complementaire.getId();
+        assertThat(complementaire.getTypeProcessus()).isEqualTo(TypeProcessusEnum.COMPLEMENTAIRE);
+        assertThat(complementaire.getIdProcessusOrigine()).isEqualTo(idOrigine);
+        assertThat(statut(idComplementaire))
+                .as("le service Saisie tient EN_COURS_SAISIE pour modifiable, "
+                        + "sans regarder le type : la saisie fonctionne sans adaptation")
+                .isEqualTo(StatutEnum.EN_COURS_SAISIE);
+
+        // --- Le circuit s'applique, avec le second niveau obligatoire ------------------
+        // Montant volontairement DERISOIRE devant le seuil : un etat normal de ce
+        // montant se cloturerait chez le chef d'unite. Le complementaire, lui, monte.
+        long montantComplementaire = 5_000L;
+        assertThat(montantComplementaire).isLessThan(seuil);
+
+        agent();
+        montantConsolide(idComplementaire, montantComplementaire);
+        soumissionService.soumettre(idComplementaire, JETON, IP);
+        rafraichir();
+        assertThat(statut(idComplementaire)).isEqualTo(StatutEnum.EN_ATTENTE_DA);
+
+        chefUnite();
+        ResultatValidation premierNiveauComplementaire =
+                validationService.valider(idComplementaire, JETON, IP);
+        rafraichir();
+
+        assertThat(premierNiveauComplementaire.processus().getStatut())
+                .as("un etat COMPLEMENTAIRE monte au directeur reseau quel que soit son "
+                        + "montant : le visa du chef d'unite ne suffit pas a clore une "
+                        + "regularisation sur une periode deja payee")
+                .isEqualTo(StatutEnum.EN_ATTENTE_DR);
+        assertThat(premierNiveauComplementaire.aiguillage().decision())
+                .isEqualTo(DecisionAiguillage.COMPLEMENTAIRE_ENVOI_DIRECTEUR_RESEAU);
+        assertThat(premierNiveauComplementaire.aiguillage().seuilApplique())
+                .as("aucune comparaison n'a eu lieu : inscrire un seuil ferait croire "
+                        + "le contraire")
+                .isNull();
+
+        directeurReseau();
+        ResultatValidation clotureComplementaire =
+                validationService.valider(idComplementaire, JETON, IP);
+        rafraichir();
+
+        assertThat(clotureComplementaire.processus().getStatut()).isEqualTo(StatutEnum.CLOTURE);
+        assertThat(parcours(idComplementaire))
+                .extracting(EtapeWorkflow::getNomEtape)
+                .as("trois etapes : le second niveau est obligatoire pour un complementaire")
+                .containsExactly(NomEtapeEnum.SOUMISSION_AGENT, NomEtapeEnum.VALIDATION_DA,
+                        NomEtapeEnum.VALIDATION_DR);
+        assertThat(texteDuDocument(idComplementaire))
+                .contains(LOGIN_AGENT)
+                .contains(LOGIN_CHEF)
+                .contains(LOGIN_DIRECTEUR);
+
+        // La cloture transmet, comme pour un etat normal.
+        assertThat(transmissionClient.processusAppeles()).contains(idComplementaire);
+
+        // --- Et l'origine n'a pas bouge d'un iota ------------------------------------
+        ProcessusMensuel origineRelue = processusRepository.findById(idOrigine).orElseThrow();
+        assertThat(origineRelue.getStatut()).isEqualTo(StatutEnum.CLOTURE);
+        assertThat(origineRelue.getMontantTotal()).isEqualTo(montantOrigine);
+        assertThat(origineRelue.getIdProcessusOrigine()).isNull();
+        assertThat(parcours(idOrigine))
+                .as("les six etapes de l'origine, et leurs signatures, sont intactes")
+                .hasSize(6)
+                .extracting(EtapeWorkflow::getSignatureNumerique)
+                .isEqualTo(signaturesOrigine);
+    }
+
+    /**
+     * Ouvre le drapeau pour les besoins du test. La transaction de
+     * {@code @DataJpaTest} l'annule ensuite : la valeur de la migration V2 —
+     * {@code false} — reste celle de la base.
+     */
+    private void ouvrirLeDrapeauDeRattrapage() {
+        entityManager
+                .createQuery("update ParametreSysteme p set p.valeur = 'true' where p.code = :code")
+                .setParameter("code", FonctionnaliteService.CODE_RATTRAPAGE_ACTIF)
+                .executeUpdate();
+        rafraichir();
+    }
 
     private Long declencher() {
         agent();

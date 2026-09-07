@@ -3,6 +3,7 @@ package cm.afrilandfirstbank.rations.workflow.application;
 import org.springframework.stereotype.Service;
 
 import cm.afrilandfirstbank.rations.workflow.domaine.ProcessusMensuel;
+import cm.afrilandfirstbank.rations.workflow.domaine.TypeProcessusEnum;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.SeuilIndisponibleException;
 
 /**
@@ -10,9 +11,30 @@ import cm.afrilandfirstbank.rations.workflow.domaine.exception.SeuilIndisponible
  * d'approbation restant.
  *
  * <pre>
- *   montant &lt;= seuil   -&gt; SOUS_SEUIL_CLOTURE_DIRECTE   l'etat est clos (CT-14)
- *   montant &gt;  seuil   -&gt; ENVOI_DIRECTEUR_RESEAU       l'etat monte au DR (CT-15)
+ *   etat NORMAL, montant &lt;= seuil  -&gt; SOUS_SEUIL_CLOTURE_DIRECTE    clos (CT-14)
+ *   etat NORMAL, montant &gt;  seuil  -&gt; ENVOI_DIRECTEUR_RESEAU        monte au DR (CT-15)
+ *   etat COMPLEMENTAIRE, tout montant
+ *                                  -&gt; COMPLEMENTAIRE_ENVOI_DIRECTEUR_RESEAU
+ *                                     monte au DR, seuil NON lu (Sprint 6bis.1)
  * </pre>
+ *
+ * <h2>L'etat complementaire monte toujours, en attendant l'arbitrage du metier</h2>
+ *
+ * <p>Regle <b>provisoire</b>, retenue au Sprint 6bis.1 avant que le metier ne se
+ * prononce : une regularisation sur une periode close exige le second niveau
+ * d'approbation, quel que soit son montant.
+ *
+ * <p>Elle n'est pas neutre, et c'est voulu. Les deux autres lectures possibles
+ * laissaient chacune un trou : comparer le montant du complementaire au seuil, comme
+ * pour un etat normal, permettait de fractionner une regularisation en plusieurs
+ * etats restant chacun sous la barre ; le laisser clore par le seul Chef d'Unite
+ * autorisait un complementaire de n'importe quel montant sans second regard. La
+ * regle retenue ne peut, elle, que <b>trop</b> demander — et c'est le seul sens dans
+ * lequel on se trompe sans consequence sur un paiement.
+ *
+ * <p>Si le metier arbitre autrement, la bascule tient dans ce fichier : la
+ * comparaison de RG-08 n'existe qu'ici. Voir
+ * {@code docs/decisions/2026-09-05-ouverture-etat-complementaire-et-drapeau.md} § 8.
  *
  * <h2>Une seule comparaison, dans tout le module</h2>
  *
@@ -78,6 +100,17 @@ public class AiguillageService {
             throw new IllegalArgumentException(
                     "Aucun processus fourni a l'aiguillage : RG-08 porte sur un montant "
                             + "enregistre, il n'y a rien a comparer.");
+        }
+
+        // Un etat COMPLEMENTAIRE monte au Directeur Reseau quel que soit son montant :
+        // il n'y a rien a comparer, et le seuil n'est donc PAS lu. Le lire quand meme
+        // ferait echouer une validation sur un parametre qui ne la gouverne pas — le
+        // meme defaut que rappeler l'aiguillage au second niveau (Sprint 4.4).
+        if (processus.getTypeProcessus() == TypeProcessusEnum.COMPLEMENTAIRE) {
+            return new ResultatAiguillage(
+                    DecisionAiguillage.COMPLEMENTAIRE_ENVOI_DIRECTEUR_RESEAU,
+                    processus.getMontantTotal(),
+                    null);
         }
 
         // Le seuil est relu ici, a chaque aiguillage : une modification en base prend

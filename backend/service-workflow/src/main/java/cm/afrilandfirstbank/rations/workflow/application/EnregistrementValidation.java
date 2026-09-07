@@ -169,6 +169,13 @@ public class EnregistrementValidation {
                     TransitionProcessus.cloturerApresValidationChefUnite(processus);
             case ENVOI_DIRECTEUR_RESEAU ->
                     TransitionProcessus.aiguillerVersDirecteurReseau(processus);
+            // Meme transition que la precedente : la consequence est identique, seul le
+            // motif differe (etat complementaire, seuil non lu). Les deux cas restent
+            // distincts a dessein — les fondre ferait disparaitre des traces d'audit la
+            // raison pour laquelle ce dossier est monte, alors que la regle qui la
+            // produit est provisoire et devra etre retrouvee (Sprint 6bis.1).
+            case COMPLEMENTAIRE_ENVOI_DIRECTEUR_RESEAU ->
+                    TransitionProcessus.aiguillerVersDirecteurReseau(processus);
         }
     }
 

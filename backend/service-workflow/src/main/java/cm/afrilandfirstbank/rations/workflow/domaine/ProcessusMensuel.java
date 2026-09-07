@@ -180,6 +180,56 @@ public class ProcessusMensuel {
         this.statut = StatutEnum.EN_COURS_SAISIE;
     }
 
+    /**
+     * Ouvre un etat <b>COMPLEMENTAIRE</b> rattache a un etat d'origine clos
+     * (Sprint 6bis.1, US-17, CT-34).
+     *
+     * <h2>La periode et l'unite sont RECOPIEES de l'origine, jamais recues</h2>
+     *
+     * <p>Un complementaire regularise un oubli sur <i>cette</i> periode et pour
+     * <i>cette</i> unite : les tenir de l'origine plutot que de la demande supprime
+     * la possibilite meme d'un decalage. Ce que l'appelant declare est verifie en
+     * amont, par {@code OuvertureComplementaireService}, mais n'entre jamais ici — un
+     * parametre fourni par l'appelant ne se croit pas sur parole (doctrine Sprint 3.4).
+     *
+     * <h2>L'origine n'est pas modifiee, et ne peut pas l'etre</h2>
+     *
+     * <p>Ce constructeur ne lit l'origine que pour en recopier cinq valeurs. Il ne lui
+     * applique aucun mutateur, ne touche ni a son statut, ni a ses signatures, ni a son
+     * drapeau de transmission. C'est le coeur de la solution retenue : <b>on ne rouvre
+     * jamais l'etat d'origine</b> (CLAUDE.md sections 7 et 15).
+     *
+     * <p>Statut initial {@link StatutEnum#EN_COURS_SAISIE}, comme un etat normal :
+     * l'agent va saisir les lignes oubliees, puis le dossier suivra le meme circuit de
+     * validation (CT-37). {@code montantTotal} a {@code 0},
+     * {@code transmisComptabilite} a {@code false}.
+     *
+     * <p><b>Visibilite paquet</b>, comme l'autre constructeur : la creation est une
+     * transition, elle passe par
+     * {@link TransitionProcessus#ouvrirComplementaire(ProcessusMensuel, String)}.
+     *
+     * @param origine etat clos que ce complementaire regularise, deja enregistre
+     * @param motifOuverture ce qui a motive la regularisation — seule trace du
+     *        signalement, ce module n'ayant pas d'entite Reclamation
+     */
+    ProcessusMensuel(ProcessusMensuel origine, String motifOuverture) {
+        if (origine == null || origine.getId() == null) {
+            throw new IllegalArgumentException(
+                    "Un etat complementaire se rattache a un etat d'origine deja enregistre : "
+                            + "sans identifiant d'origine, id_processus_origine serait nul et le "
+                            + "rattachement introuvable (US-17, CT-34).");
+        }
+        this.moisPaiement = origine.getMoisPaiement();
+        this.anneePaiement = origine.getAnneePaiement();
+        this.codeUnite = origine.getCodeUnite();
+        this.typeProcessus = TypeProcessusEnum.COMPLEMENTAIRE;
+        this.idProcessusOrigine = origine.getId();
+        this.motifOuverture = motifOuverture == null ? null : motifOuverture.strip();
+        this.montantTotal = 0;
+        this.transmisComptabilite = false;
+        this.statut = StatutEnum.EN_COURS_SAISIE;
+    }
+
     @PrePersist
     void avantInsertion() {
         if (dateCreation == null) {

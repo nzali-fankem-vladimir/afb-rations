@@ -23,6 +23,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import cm.afrilandfirstbank.rations.commun.audit.PublicateurAudit;
 import cm.afrilandfirstbank.rations.workflow.application.IntegrationComptableService;
+import cm.afrilandfirstbank.rations.workflow.application.OuvertureComplementaireService;
 import cm.afrilandfirstbank.rations.workflow.application.ProcessusService;
 import cm.afrilandfirstbank.rations.workflow.application.RechercheProcessusService;
 import cm.afrilandfirstbank.rations.workflow.application.ResultatIntegrationComptable;
@@ -72,6 +73,15 @@ class IntegrationComptableIT {
 
     @MockitoBean
     private ProcessusService processusService;
+
+    /**
+     * Requis depuis le Sprint 6bis.1 : {@code POST /processus} aiguille sur le type
+     * demande, et le controleur depend donc des deux services d'ouverture. Sans ce
+     * mock, le contexte ne s'assemble pas et les dix tests de ce fichier echouent
+     * d'un coup, pour une raison etrangere a leur objet.
+     */
+    @MockitoBean
+    private OuvertureComplementaireService ouvertureComplementaireService;
 
     @MockitoBean
     private SoumissionService soumissionService;

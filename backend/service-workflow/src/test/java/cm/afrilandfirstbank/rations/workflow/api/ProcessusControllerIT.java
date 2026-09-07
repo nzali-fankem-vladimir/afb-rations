@@ -44,6 +44,7 @@ import cm.afrilandfirstbank.rations.commun.audit.PublicateurAudit;
 import cm.afrilandfirstbank.rations.workflow.application.EtatConsolide;
 import cm.afrilandfirstbank.rations.workflow.application.ManqueCompletude;
 import cm.afrilandfirstbank.rations.workflow.application.IntegrationComptableService;
+import cm.afrilandfirstbank.rations.workflow.application.OuvertureComplementaireService;
 import cm.afrilandfirstbank.rations.workflow.application.ProcessusService;
 import cm.afrilandfirstbank.rations.workflow.application.RechercheProcessusService;
 import cm.afrilandfirstbank.rations.workflow.application.RetourService;
@@ -114,6 +115,15 @@ class ProcessusControllerIT {
 
     @MockitoBean
     private ProcessusService processusService;
+
+    /**
+     * Requis depuis le Sprint 6bis.1 : {@code POST /processus} aiguille sur le type
+     * demande — {@code NORMAL} vers {@link ProcessusService}, {@code COMPLEMENTAIRE}
+     * vers ce service. Sans ce mock, le contexte ne s'assemble pas et les quarante
+     * tests de ce fichier tombent d'un coup, pour une raison etrangere a leur objet.
+     */
+    @MockitoBean
+    private OuvertureComplementaireService ouvertureComplementaireService;
 
     @MockitoBean
     private SoumissionService soumissionService;
@@ -319,11 +329,23 @@ class ProcessusControllerIT {
         verify(processusService, never()).declencher(any(), anyString(), anyString());
     }
 
+    /**
+     * <b>Revise au Sprint 6bis.1.</b> Le refus n'est plus prononce par
+     * {@link ProcessusService} — il appartient a
+     * {@code OuvertureComplementaireService}, qui lit le drapeau
+     * {@code RATTRAPAGE_ACTIF} en premiere position. Ce que ce test verifie ici est
+     * donc double : que le controleur <b>aiguille</b> une demande COMPLEMENTAIRE vers
+     * le bon service, et que le refus ressort bien en {@code 422} sous son code dedie.
+     *
+     * <p>Le comportement observable est inchange depuis le Sprint 4.1, drapeau ferme —
+     * et c'est voulu : la fonctionnalite s'ouvre desormais par une mise a jour de
+     * parametre, sans reprise de code.
+     */
     @Test
-    @DisplayName("7. Type COMPLEMENTAIRE : 422 FONCTIONNALITE_NON_OUVERTE, message explicite")
+    @DisplayName("7. Type COMPLEMENTAIRE : aiguille vers l'ouverture, 422 FONCTIONNALITE_NON_OUVERTE")
     void typeComplementaireRefuse() throws Exception {
         keycloakEmet("AGENT_UNITE");
-        when(processusService.declencher(any(), anyString(), anyString()))
+        when(ouvertureComplementaireService.ouvrir(any(), anyString(), anyString()))
                 .thenThrow(new FonctionnaliteNonOuverteException(
                         "L'ouverture d'un etat complementaire n'est pas encore ouverte. "
                                 + "Rapprochez-vous de la DRH."));
@@ -341,6 +363,42 @@ class ProcessusControllerIT {
                 // alors que personne ne le peut aujourd'hui.
                 .andExpect(jsonPath("$.message").value(
                         org.hamcrest.Matchers.containsString("DRH")));
+
+        // L'aiguillage a bien eu lieu : le service des etats NORMAL n'a pas ete
+        // sollicite. Sans cette verification, un controleur qui aurait appele les deux
+        // passerait le test.
+        verify(processusService, never()).declencher(any(), anyString(), anyString());
+    }
+
+    /**
+     * Test 12 du guide 6bis.1. L'ouverture d'un etat complementaire est reservee a
+     * {@code AGENT_UNITE}, comme le declenchement ordinaire : c'est lui qui saisira les
+     * lignes oubliees.
+     *
+     * <p>Un chef d'unite qui ouvrirait la regularisation puis la validerait cumulerait
+     * saisie et validation sur un meme dossier — ce que RG-12 interdit. Le
+     * {@code @PreAuthorize} le ferme en amont, et le refus est trace en audit comme tout
+     * refus d'acces (CT-04).
+     *
+     * <p>Le service d'ouverture n'est jamais atteint : la securite refuse avant le
+     * controleur, donc avant meme la lecture du drapeau.
+     */
+    @Test
+    @DisplayName("7b. Ouverture complementaire par un role autre qu'AGENT_UNITE : 403")
+    void ouvertureComplementaireParUnAutreRole() throws Exception {
+        keycloakEmet("CHEF_UNITE_DA");
+
+        mockMvc.perform(post("/processus")
+                        .header(HttpHeaders.AUTHORIZATION, JETON)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"moisPaiement":7,"anneePaiement":2026,"codeUnite":"00002",
+                                 "typeProcessus":"COMPLEMENTAIRE","idProcessusOrigine":512,
+                                 "motifOuverture":"Beneficiaire omis les 10 et 15 juillet"}"""))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCES_REFUSE"));
+
+        verify(ouvertureComplementaireService, never()).ouvrir(any(), anyString(), anyString());
     }
 
     @Test

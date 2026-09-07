@@ -7,6 +7,8 @@ import java.util.EnumSet;
 import java.util.Map;
 import java.util.Set;
 
+import cm.afrilandfirstbank.rations.workflow.domaine.exception.EtatNonClotureException;
+import cm.afrilandfirstbank.rations.workflow.domaine.exception.MotifOuvertureRequisException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.MotifRetourRequisException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.TransitionProcessusInterditeException;
 
@@ -17,6 +19,7 @@ import cm.afrilandfirstbank.rations.workflow.domaine.exception.TransitionProcess
  *
  * <pre>
  *   (creation)       -> EN_COURS_SAISIE   declencher(...)                     l'agent ouvre le mois
+ *   (creation)       -> EN_COURS_SAISIE   ouvrirComplementaire(origine, motif) regularisation (6bis.1)
  *   EN_COURS_SAISIE  -> SOUMIS            soumettre(...)                      informations completes
  *   SOUMIS           -> EN_ATTENTE_DA     transfererAuChefUnite(...)          signature agent apposee
  *   EN_ATTENTE_DA    -> CLOTURE           cloturerApresValidationChefUnite(...)
@@ -139,6 +142,42 @@ public final class TransitionProcessus {
     public static ProcessusMensuel declencher(Integer moisPaiement, Integer anneePaiement,
             String codeUnite) {
         return new ProcessusMensuel(moisPaiement, anneePaiement, codeUnite);
+    }
+
+    /**
+     * <b>1bis. (creation) -&gt; EN_COURS_SAISIE, type COMPLEMENTAIRE.</b> L'agent ouvre
+     * une regularisation sur une periode close (Sprint 6bis.1, US-17, CT-34).
+     *
+     * <p>Seconde et derniere porte de creation d'un {@link ProcessusMensuel}. Elle ne
+     * modifie <b>rien</b> sur l'etat d'origine : on ne rouvre jamais un etat clos
+     * (CLAUDE.md sections 7 et 15).
+     *
+     * <h2>Ce qui est verifie ici, et ce qui ne l'est pas</h2>
+     *
+     * <p>Deux conditions seulement, et ce sont les deux que la machine a etats est
+     * fondee a juger : l'origine est <b>close</b>, et un motif existe.
+     *
+     * <p>Le statut de l'origine appartient bien a cette classe : elle est ce qui dit,
+     * dans ce module, ce qu'un statut permet. La placer ici la rend <b>verifiee par le
+     * compilateur</b> plutot que par discipline — aucun chemin de code ne peut ouvrir
+     * un complementaire sur un etat encore en circuit, meme en contournant le service.
+     *
+     * <p>Tout le reste — drapeau {@code RATTRAPAGE_ACTIF}, delai de regularisation,
+     * portee d'acces, concordance de l'unite et de la periode declarees — releve de
+     * {@code OuvertureComplementaireService} : ce sont des regles d'ouverture, pas des
+     * regles de cycle de vie, et les faire entrer ici rendrait la machine dependante
+     * d'un parametre de configuration (meme raisonnement que pour le seuil, RG-08).
+     *
+     * @param origine etat clos que ce complementaire regularise
+     * @param motif motif d'ouverture, exige non vide — une suite d'espaces n'en est pas
+     *        un. Seule trace du signalement, ce module n'ayant pas d'entite Reclamation
+     * @throws EtatNonClotureException si l'origine n'est pas {@link StatutEnum#CLOTURE}
+     * @throws MotifOuvertureRequisException si le motif est absent ou vide
+     */
+    public static ProcessusMensuel ouvrirComplementaire(ProcessusMensuel origine, String motif) {
+        exigerOrigineClose(origine);
+        exigerMotifOuverture(motif);
+        return new ProcessusMensuel(origine, motif);
     }
 
     /**
@@ -290,6 +329,47 @@ public final class TransitionProcessus {
         if (motif == null || motif.isBlank()) {
             throw new MotifRetourRequisException(
                     "Le retour d'un etat a l'agent exige un motif (RG-10).");
+        }
+    }
+
+    /**
+     * Un complementaire ne se rattache qu'a un etat <b>clos</b>.
+     *
+     * <p>Un etat encore en circuit n'a pas besoin d'etre regularise : il peut etre
+     * retourne a l'agent, corrige et resoumis (RG-11). Ouvrir un complementaire a cote
+     * de lui creerait deux dossiers vivants sur la meme periode, dont les montants se
+     * cumuleraient a l'insu du valideur.
+     */
+    private static void exigerOrigineClose(ProcessusMensuel origine) {
+        if (origine == null) {
+            throw new IllegalArgumentException(
+                    "Aucun etat d'origine fourni a l'ouverture d'un etat complementaire.");
+        }
+        if (origine.getStatut() != StatutEnum.CLOTURE) {
+            throw new EtatNonClotureException(
+                    "L'etat d'origine " + origine.getId() + " porte le statut "
+                            + origine.getStatut() + " : un etat complementaire ne se rattache qu'a "
+                            + "un etat " + StatutEnum.CLOTURE + ". Un dossier encore dans le "
+                            + "circuit se corrige par un retour a l'agent (RG-11), pas par une "
+                            + "regularisation.");
+        }
+    }
+
+    /**
+     * Le motif d'ouverture, exige non vide — pendant de {@link #exigerMotif(String)}
+     * pour le retour (RG-10).
+     *
+     * <p>Le controle porte sur le <b>contenu utile</b> : {@code isBlank} refuse la
+     * chaine vide <i>et</i> la suite d'espaces, qu'{@code isEmpty} aurait laissee
+     * passer. Sans motif, plus rien n'explique pourquoi une periode close a recu un
+     * paiement complementaire : ce module n'a pas d'entite Reclamation, le signalement
+     * du beneficiaire lui est exterieur (CLAUDE.md section 7).
+     */
+    private static void exigerMotifOuverture(String motif) {
+        if (motif == null || motif.isBlank()) {
+            throw new MotifOuvertureRequisException(
+                    "L'ouverture d'un etat complementaire exige un motif : c'est la seule trace "
+                            + "de ce qui a declenche la regularisation.");
         }
     }
 

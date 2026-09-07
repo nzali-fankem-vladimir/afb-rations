@@ -30,6 +30,7 @@ import cm.afrilandfirstbank.rations.workflow.api.dto.ValidationResponse;
 import cm.afrilandfirstbank.rations.workflow.api.dto.VerrouTransmissionRequest;
 import cm.afrilandfirstbank.rations.workflow.api.dto.VerrouTransmissionResponse;
 import cm.afrilandfirstbank.rations.workflow.application.IntegrationComptableService;
+import cm.afrilandfirstbank.rations.workflow.application.OuvertureComplementaireService;
 import cm.afrilandfirstbank.rations.workflow.application.ProcessusService;
 import cm.afrilandfirstbank.rations.workflow.application.RechercheProcessusService;
 import cm.afrilandfirstbank.rations.workflow.application.ResultatVerrouTransmission;
@@ -48,6 +49,7 @@ import jakarta.validation.Valid;
  *
  * <pre>
  *   POST /processus                        declenchement       AGENT_UNITE        (4.1)
+ *                                          + ouverture d'un etat complementaire   (6bis.1)
  *   GET  /processus/{id}                   detail et statut    roles du circuit   (4.1)
  *   GET  /processus/{id}/etat              etat consolide      roles du circuit   (4.1)
  *   POST /processus/{id}/soumission        soumission          AGENT_UNITE        (4.2)
@@ -108,6 +110,7 @@ import jakarta.validation.Valid;
 public class ProcessusController {
 
     private final ProcessusService processusService;
+    private final OuvertureComplementaireService ouvertureComplementaireService;
     private final SoumissionService soumissionService;
     private final ValidationService validationService;
     private final RetourService retourService;
@@ -116,6 +119,7 @@ public class ProcessusController {
     private final RechercheProcessusService rechercheProcessusService;
 
     public ProcessusController(ProcessusService processusService,
+            OuvertureComplementaireService ouvertureComplementaireService,
             SoumissionService soumissionService,
             ValidationService validationService,
             RetourService retourService,
@@ -123,6 +127,7 @@ public class ProcessusController {
             VerrouTransmissionService verrouTransmissionService,
             RechercheProcessusService rechercheProcessusService) {
         this.processusService = processusService;
+        this.ouvertureComplementaireService = ouvertureComplementaireService;
         this.soumissionService = soumissionService;
         this.validationService = validationService;
         this.retourService = retourService;
@@ -132,14 +137,48 @@ public class ProcessusController {
     }
 
     /**
-     * Declenche l'etat mensuel d'une unite. {@code 201} avec le processus cree, au
-     * statut {@code EN_COURS_SAISIE}.
+     * Ouvre un etat mensuel. {@code 201} avec le processus cree, au statut
+     * {@code EN_COURS_SAISIE}.
      *
-     * <p>Refus possibles : {@code 409 PROCESSUS_EXISTANT} si un etat NORMAL est
-     * deja ouvert pour cette unite et cette periode ;
-     * {@code 422 FONCTIONNALITE_NON_OUVERTE} si un type {@code COMPLEMENTAIRE} est
-     * demande ; {@code 403} hors portee ; {@code 503} si le service Identite ne
-     * repond pas.
+     * <h2>Un endpoint, deux gestes, aiguilles sur le type demande</h2>
+     *
+     * <pre>
+     *   NORMAL         le cycle du mois courant                    (Sprint 4.1)
+     *   COMPLEMENTAIRE une regularisation sur une periode close    (Sprint 6bis.1)
+     * </pre>
+     *
+     * <p>Le contrat d'API section 5 ne prevoit qu'un endpoint pour les deux, et son
+     * exemple d'etat complementaire porte exactement le meme corps de requete, enrichi
+     * de {@code typeProcessus}, {@code idProcessusOrigine} et {@code motifOuverture}.
+     * L'aiguillage se lit donc ici, au seul endroit ou le type arrive.
+     *
+     * <p><b>Deux services et non un</b> : les deux gestes ne partagent presque rien.
+     * L'un verifie qu'aucun etat normal n'existe pour la periode ; l'autre verifie un
+     * drapeau de fonctionnalite, l'existence et la cloture d'une origine, un delai de
+     * regularisation et la concordance de ce qui est declare. Les fondre en une methode
+     * a branches aurait produit un service dont la moitie du corps ne s'applique jamais
+     * au cas courant.
+     *
+     * <p><b>Le refus systematique du Sprint 4.1 est leve</b> : il est desormais porte par
+     * le drapeau {@code RATTRAPAGE_ACTIF}, en premiere position de
+     * {@code OuvertureComplementaireService}. Tant que le metier n'a pas confirme le
+     * besoin (point M-01), le comportement observable est le meme —
+     * {@code 422 FONCTIONNALITE_NON_OUVERTE} — mais il s'ouvre desormais par une mise a
+     * jour de parametre, sans reprise de code ni redeploiement.
+     *
+     * <p>Refus possibles, etat NORMAL : {@code 409 PROCESSUS_EXISTANT} si un etat normal
+     * est deja ouvert pour cette unite et cette periode ; {@code 403} hors portee ;
+     * {@code 503} si le service Identite ne repond pas.
+     *
+     * <p>Refus possibles, etat COMPLEMENTAIRE : {@code 422 FONCTIONNALITE_NON_OUVERTE}
+     * drapeau ferme ; {@code 422 ORIGINE_REQUISE} sans identifiant d'origine ;
+     * {@code 422 MOTIF_OBLIGATOIRE} sans motif ; {@code 404 PROCESSUS_INTROUVABLE} ;
+     * {@code 403 UTILISATEUR_NON_HABILITE} hors portee sur l'unite de l'origine ;
+     * {@code 422 ETAT_NON_CLOTURE} origine encore dans le circuit ;
+     * {@code 422 DELAI_REGULARISATION_DEPASSE} origine trop ancienne ;
+     * {@code 403 UNITE_NON_CONCORDANTE} et {@code 422 PERIODE_NON_CONCORDANTE} si la
+     * demande ne decrit pas le dossier qu'elle vise ;
+     * {@code 500 DELAI_REGULARISATION_INDISPONIBLE} si le delai n'est pas exploitable.
      *
      * <p>L'en-tete {@code Location} pointe vers la ressource creee, comme le veut
      * la convention REST pour un {@code 201}.
@@ -151,8 +190,13 @@ public class ProcessusController {
             @RequestHeader(HttpHeaders.AUTHORIZATION) String enteteAutorisation,
             HttpServletRequest requeteHttp) {
 
-        ProcessusMensuel processus = processusService.declencher(
-                requete, enteteAutorisation, requeteHttp.getRemoteAddr());
+        String adresseIp = requeteHttp.getRemoteAddr();
+
+        ProcessusMensuel processus = switch (requete.typeDemande()) {
+            case NORMAL -> processusService.declencher(requete, enteteAutorisation, adresseIp);
+            case COMPLEMENTAIRE ->
+                    ouvertureComplementaireService.ouvrir(requete, enteteAutorisation, adresseIp);
+        };
 
         return ResponseEntity
                 .created(URI.create("/processus/" + processus.getId()))

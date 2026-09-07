@@ -24,11 +24,16 @@ import cm.afrilandfirstbank.rations.commun.audit.EvenementAudit;
 import cm.afrilandfirstbank.rations.commun.audit.PublicateurAudit;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.AccuseContradictoireException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.AgentNonHabiliteException;
+import cm.afrilandfirstbank.rations.workflow.domaine.exception.DelaiRegularisationDepasseException;
+import cm.afrilandfirstbank.rations.workflow.domaine.exception.DelaiRegularisationIndisponibleException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.DocumentNonProduitException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.EtatIncompletException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.EtatNonClotureException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.FonctionnaliteNonOuverteException;
+import cm.afrilandfirstbank.rations.workflow.domaine.exception.MotifOuvertureRequisException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.MotifRetourRequisException;
+import cm.afrilandfirstbank.rations.workflow.domaine.exception.OrigineRequiseException;
+import cm.afrilandfirstbank.rations.workflow.domaine.exception.PeriodeNonConcordanteException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.PieceJointeExistanteException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ProcessusExistantException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ProcessusIntrouvableException;
@@ -39,6 +44,7 @@ import cm.afrilandfirstbank.rations.workflow.domaine.exception.ServiceIdentiteIn
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ServiceSaisieIndisponibleException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.SeuilIndisponibleException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.TransitionProcessusInterditeException;
+import cm.afrilandfirstbank.rations.workflow.domaine.exception.UniteNonConcordanteException;
 
 import jakarta.servlet.http.HttpServletRequest;
 
@@ -141,6 +147,28 @@ public class GestionnaireErreursApi {
         return reponse(requete, HttpStatus.FORBIDDEN, "SEPARATION_TACHES", exception.getMessage());
     }
 
+    /**
+     * L'unite declaree dans une demande d'ouverture ne correspond pas a celle de l'etat
+     * d'origine (Sprint 6bis.1) : {@code 403 UNITE_NON_CONCORDANTE}, meme code que celui
+     * oppose par le service Saisie depuis le Sprint 3.4 pour le meme desaccord.
+     *
+     * <p><b>Trace en audit, et ce n'etait pas negociable.</b> Le scenario derriere ce
+     * refus est une demande qui vise un dossier tout en en declarant un autre — un defaut
+     * de client, ou une tentative de debordement de perimetre, et rien ne permet de les
+     * distinguer au moment du refus. La doctrine du Sprint 6.3 est explicite : tout refus
+     * d'acces se trace (CT-04), sans quoi il n'existe nulle part. Il passe donc par le
+     * meme {@code publierRefus} que les quatre autres refus d'acces de ce fichier, avec
+     * son propre motif — un controle interne doit pouvoir compter les desaccords d'unite
+     * separement des absences d'habilitation.
+     */
+    @ExceptionHandler(UniteNonConcordanteException.class)
+    public ResponseEntity<ErreurApiDto> uniteNonConcordante(UniteNonConcordanteException exception,
+            HttpServletRequest requete) {
+        publierRefus(requete, "UNITE_NON_CONCORDANTE", exception.getMessage());
+        return reponse(requete, HttpStatus.FORBIDDEN, "UNITE_NON_CONCORDANTE",
+                exception.getMessage());
+    }
+
     @ExceptionHandler(ServiceIdentiteIndisponibleException.class)
     public ResponseEntity<ErreurApiDto> identiteIndisponible(
             ServiceIdentiteIndisponibleException exception, HttpServletRequest requete) {
@@ -207,6 +235,67 @@ public class GestionnaireErreursApi {
     public ResponseEntity<ErreurApiDto> fonctionnaliteNonOuverte(
             FonctionnaliteNonOuverteException exception, HttpServletRequest requete) {
         return reponse(requete, HttpStatus.UNPROCESSABLE_ENTITY, "FONCTIONNALITE_NON_OUVERTE",
+                exception.getMessage());
+    }
+
+    /**
+     * Ouverture d'un etat complementaire sans identifiant d'origine (Sprint 6bis.1).
+     *
+     * <p>{@code 422} et non {@code 400} : la requete est syntaxiquement valide — c'est
+     * exactement celle d'un etat NORMAL —, et la contrainte est <b>conditionnelle</b> au
+     * type demande. Un {@code @NotNull} sur le DTO refuserait tous les declenchements
+     * ordinaires du module.
+     */
+    @ExceptionHandler(OrigineRequiseException.class)
+    public ResponseEntity<ErreurApiDto> origineRequise(OrigineRequiseException exception,
+            HttpServletRequest requete) {
+        return reponse(requete, HttpStatus.UNPROCESSABLE_ENTITY, "ORIGINE_REQUISE",
+                exception.getMessage());
+    }
+
+    /**
+     * Ouverture d'un etat complementaire sans motif (Sprint 6bis.1).
+     *
+     * <p><b>Meme code que le retour sans motif</b> : {@code MOTIF_OBLIGATOIRE} est celui
+     * du contrat pour RG-10, repris tel quel au Sprint 2.3 pour le rejet d'une grille.
+     * Meme regle — une decision qui engage doit etre justifiee —, donc meme code. Une
+     * exception distincte pour que les deux messages restent ecrits pour leur lecteur.
+     */
+    @ExceptionHandler(MotifOuvertureRequisException.class)
+    public ResponseEntity<ErreurApiDto> motifOuvertureRequis(MotifOuvertureRequisException exception,
+            HttpServletRequest requete) {
+        return reponse(requete, HttpStatus.UNPROCESSABLE_ENTITY, "MOTIF_OBLIGATOIRE",
+                exception.getMessage());
+    }
+
+    /**
+     * L'etat d'origine est clos depuis plus longtemps que le delai de regularisation
+     * (Sprint 6bis.1).
+     *
+     * <p>{@code 422} et non {@code 409} : rien n'est duplique, une regle de gestion
+     * refuse. Le delai est celui de {@code DELAI_REGULARISATION_JOURS}, dont la valeur
+     * de 90 jours reste <b>provisoire</b> jusqu'a confirmation metier (point M-02) : le
+     * message le nomme, pour qu'un refus contestable puisse etre conteste.
+     */
+    @ExceptionHandler(DelaiRegularisationDepasseException.class)
+    public ResponseEntity<ErreurApiDto> delaiRegularisationDepasse(
+            DelaiRegularisationDepasseException exception, HttpServletRequest requete) {
+        return reponse(requete, HttpStatus.UNPROCESSABLE_ENTITY, "DELAI_REGULARISATION_DEPASSE",
+                exception.getMessage());
+    }
+
+    /**
+     * La periode declaree n'est pas celle de l'etat d'origine (Sprint 6bis.1).
+     *
+     * <p>{@code 422} la ou l'unite vaut {@code 403} : la periode n'ouvre aucun droit, se
+     * tromper de mois est une maladresse et non un franchissement de perimetre. Non
+     * tracee en audit, pour la meme raison — le journal des refus d'acces n'a pas a se
+     * remplir de fautes de frappe.
+     */
+    @ExceptionHandler(PeriodeNonConcordanteException.class)
+    public ResponseEntity<ErreurApiDto> periodeNonConcordante(
+            PeriodeNonConcordanteException exception, HttpServletRequest requete) {
+        return reponse(requete, HttpStatus.UNPROCESSABLE_ENTITY, "PERIODE_NON_CONCORDANTE",
                 exception.getMessage());
     }
 
@@ -293,6 +382,27 @@ public class GestionnaireErreursApi {
             HttpServletRequest requete) {
         return reponse(requete, HttpStatus.INTERNAL_SERVER_ERROR, "SEUIL_INDISPONIBLE",
                 exception.getMessage());
+    }
+
+    /**
+     * Le delai de regularisation n'a pas pu etre exploite (Sprint 6bis.1) : parametre
+     * absent, desactive, valeur illisible ou negative — ou date de cloture de l'origine
+     * introuvable.
+     *
+     * <p><b>Jumeau de {@code SEUIL_INDISPONIBLE}, et pour la meme raison</b> :
+     * {@code 500} et non {@code 422}, parce que l'agent n'a rien a corriger dans sa
+     * demande, c'est la configuration du module qui est en defaut. Aucune valeur de repli
+     * n'est appliquee : un delai devine ouvrirait ou fermerait la regularisation au
+     * hasard sur une periode ou un paiement a deja eu lieu.
+     *
+     * <p>Le detail est deja journalise au prefixe {@code DELAI REGULARISATION
+     * INDISPONIBLE} par {@code FonctionnaliteService} ; on ne le redit pas ici.
+     */
+    @ExceptionHandler(DelaiRegularisationIndisponibleException.class)
+    public ResponseEntity<ErreurApiDto> delaiRegularisationIndisponible(
+            DelaiRegularisationIndisponibleException exception, HttpServletRequest requete) {
+        return reponse(requete, HttpStatus.INTERNAL_SERVER_ERROR,
+                "DELAI_REGULARISATION_INDISPONIBLE", exception.getMessage());
     }
 
     /**

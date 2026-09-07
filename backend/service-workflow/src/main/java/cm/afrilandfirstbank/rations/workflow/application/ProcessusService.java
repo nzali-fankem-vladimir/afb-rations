@@ -14,7 +14,6 @@ import cm.afrilandfirstbank.rations.workflow.domaine.StatutEnum;
 import cm.afrilandfirstbank.rations.workflow.domaine.StatutEtapeEnum;
 import cm.afrilandfirstbank.rations.workflow.domaine.TransitionProcessus;
 import cm.afrilandfirstbank.rations.workflow.domaine.TypeProcessusEnum;
-import cm.afrilandfirstbank.rations.workflow.domaine.exception.FonctionnaliteNonOuverteException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ProcessusExistantException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ProcessusIntrouvableException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ServiceSaisieIndisponibleException;
@@ -59,11 +58,10 @@ public class ProcessusService {
      * <p><b>Ordre des operations</b> (document maitre section 7.3) :
      *
      * <ol>
-     *   <li><b>Fonctionnalite ouverte ?</b> Un type COMPLEMENTAIRE est refuse
-     *       avant tout le reste — inutile d'interroger le service Identite pour
-     *       une demande qui ne peut aboutir, et
-     *       {@code docs/dispositifs_provisoires.md} section 1.3 place ce controle
-     *       en tete.</li>
+     *   <li><b>Type NORMAL ?</b> Invariant de programmation depuis le Sprint 6bis.1 :
+     *       l'ouverture d'un etat complementaire appartient a
+     *       {@link OuvertureComplementaireService}, et le controleur y aiguille sur le
+     *       type demande. Voir {@link #exigerTypeNormal(TypeProcessusEnum)}.</li>
      *   <li><b>Habilitation.</b> Le role {@code AGENT_UNITE} est deja exige par la
      *       securite ; il reste a savoir si <i>cet</i> agent a portee sur
      *       <i>cette</i> unite (RG-12). Appel reseau place avant toute requete :
@@ -84,7 +82,7 @@ public class ProcessusService {
     public ProcessusMensuel declencher(DeclenchementProcessusRequest requete,
             String enteteAutorisation, String adresseIp) {
 
-        exigerTypeOuvert(requete.typeDemande());
+        exigerTypeNormal(requete.typeDemande());
 
         AgentHabilite agent =
                 habilitationService.exigerHabilitationSurUnite(requete.codeUnite(), enteteAutorisation);
@@ -256,22 +254,39 @@ public class ProcessusService {
     // --- Regles ----------------------------------------------------------------
 
     /**
-     * Refuse un type de processus non ouvert.
+     * Ce service ne declenche que des etats <b>NORMAL</b>.
      *
-     * <p><b>Le refus est inconditionnel, il ne lit pas {@code RATTRAPAGE_ACTIF}.</b>
-     * Le drapeau de {@code parametre_systeme} gouverne le Sprint 6bis, ou le code
-     * de l'etat complementaire existera — reference a l'etat d'origine, delai de
-     * regularisation, controle d'unicite inter-etats RG-15. Le lire ici
-     * signifierait « si le drapeau passe a vrai, ceci fonctionne », ce qui est
-     * faux au Sprint 4.1 : un basculement du parametre produirait des etats
-     * complementaires sans aucun de leurs controles. Le drapeau sera consulte le
-     * jour ou il aura quelque chose a ouvrir.
+     * <h2>Ce que ce garde-fou est devenu au Sprint 6bis.1</h2>
+     *
+     * <p>Jusqu'au Sprint 6.3, il portait le refus <i>metier</i> de l'etat
+     * complementaire : {@code 422 FONCTIONNALITE_NON_OUVERTE}, inconditionnel,
+     * puisque le code de la regularisation n'existait pas. Ce refus a desormais un
+     * proprietaire — {@link OuvertureComplementaireService}, qui lit le drapeau
+     * {@code RATTRAPAGE_ACTIF} en premiere position et applique ensuite les
+     * controles d'ouverture. Le controleur aiguille sur le type demande.
+     *
+     * <p>Ce qui reste ici n'est donc plus une regle de gestion mais un <b>invariant
+     * de programmation</b> : si une demande complementaire parvenait jusqu'a cette
+     * methode, c'est que l'aiguillage du controleur serait casse. D'ou une
+     * {@link IllegalArgumentException} — un {@code 500}, comme il se doit pour un
+     * defaut du module — et non un refus metier qui ferait croire a l'agent que sa
+     * demande est en cause.
+     *
+     * <p><b>Le garde-fou ne disparait pas pour autant</b>, et c'est le point :
+     * {@link TransitionProcessus#declencher} cree <i>toujours</i> un
+     * {@link TypeProcessusEnum#NORMAL}. Sans ce controle, une demande complementaire
+     * arrivee ici produirait silencieusement un second etat mensuel ordinaire sur une
+     * periode close — le pire des comportements possibles, celui que la javadoc de
+     * {@code DeclenchementProcessusRequest} met en garde depuis le Sprint 4.1.
      */
-    private void exigerTypeOuvert(TypeProcessusEnum typeDemande) {
+    private void exigerTypeNormal(TypeProcessusEnum typeDemande) {
         if (typeDemande != TypeProcessusEnum.NORMAL) {
-            throw new FonctionnaliteNonOuverteException(
-                    "L'ouverture d'un etat complementaire n'est pas encore ouverte. "
-                            + "Rapprochez-vous de la DRH.");
+            throw new IllegalArgumentException(
+                    "ProcessusService.declencher ne cree que des etats NORMAL, et le type demande "
+                            + "est " + typeDemande + ". L'ouverture d'un etat complementaire passe "
+                            + "par OuvertureComplementaireService ; l'aiguillage se fait dans "
+                            + "ProcessusController. Une demande complementaire arrivee ici "
+                            + "produirait un etat NORMAL sans aucun de ses controles.");
         }
     }
 

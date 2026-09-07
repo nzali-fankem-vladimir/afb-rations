@@ -34,7 +34,6 @@ import cm.afrilandfirstbank.rations.workflow.domaine.ProcessusMensuel;
 import cm.afrilandfirstbank.rations.workflow.domaine.StatutEnum;
 import cm.afrilandfirstbank.rations.workflow.domaine.TypeProcessusEnum;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.AgentNonHabiliteException;
-import cm.afrilandfirstbank.rations.workflow.domaine.exception.FonctionnaliteNonOuverteException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ProcessusExistantException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ProcessusIntrouvableException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ServiceSaisieIndisponibleException;
@@ -179,23 +178,49 @@ class ProcessusServiceTest {
         assertThat(processusService.declencher(demande(4, AUTRE_UNITE), JETON, IP).getId()).isNotNull();
     }
 
+    /**
+     * <b>Revise au Sprint 6bis.1.</b> Jusqu'au Sprint 6.3, ce test verifiait un refus
+     * <i>metier</i> : le type COMPLEMENTAIRE etait refuse en {@code 422
+     * FONCTIONNALITE_NON_OUVERTE}, inconditionnellement, faute de code de
+     * regularisation. Ce refus a desormais un proprietaire —
+     * {@code OuvertureComplementaireService}, qui lit le drapeau {@code RATTRAPAGE_ACTIF}
+     * en premiere position —, et le controleur aiguille sur le type demande.
+     *
+     * <p>Ce qui reste ici est un <b>invariant de programmation</b> : une demande
+     * complementaire parvenue jusqu'a ce service signale un aiguillage casse. Elle leve
+     * donc {@link IllegalArgumentException}, un {@code 500}, et non un refus metier qui
+     * ferait chercher la faute a l'agent.
+     *
+     * <p><b>Les trois garanties de fond sont inchangees, et c'est ce qui compte</b> : rien
+     * n'est cree, le service Identite n'est pas derange, aucune trace d'audit n'est
+     * publiee. Sans ce garde-fou, {@code TransitionProcessus.declencher} — qui cree
+     * <i>toujours</i> un NORMAL — produirait silencieusement un second etat mensuel
+     * ordinaire sur une periode close.
+     */
     @Test
-    @DisplayName("5. Type COMPLEMENTAIRE : refus 422, sans meme interroger le service Identite")
+    @DisplayName("5. Type COMPLEMENTAIRE ici : invariant rompu, rien n'est cree ni trace")
     void typeComplementaireRefuse() {
         DeclenchementProcessusRequest complementaire = new DeclenchementProcessusRequest(
                 6, ANNEE, UNITE, TypeProcessusEnum.COMPLEMENTAIRE, 512L, "Beneficiaire omis le 10");
 
         assertThatThrownBy(() -> processusService.declencher(complementaire, JETON, IP))
-                .isInstanceOf(FonctionnaliteNonOuverteException.class)
-                .hasMessageContaining("complementaire")
-                .hasMessageContaining("DRH");
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("NORMAL")
+                // Le message nomme le service a appeler : un defaut d'aiguillage doit se
+                // diagnostiquer sans ouvrir le code.
+                .hasMessageContaining("OuvertureComplementaireService");
 
         // Controle place en tete : inutile d'interroger Identite pour une demande qui
-        // ne peut pas aboutir (docs/dispositifs_provisoires.md section 1.3).
+        // ne peut pas aboutir ici.
         verifyNoInteractions(habilitationClient);
         assertThat(processusRepository
                 .findByCodeUniteAndMoisPaiementAndAnneePaiementAndTypeProcessus(
                         UNITE, 6, ANNEE, TypeProcessusEnum.COMPLEMENTAIRE))
+                .isEmpty();
+        // Et surtout : aucun etat NORMAL n'a ete cree a la place.
+        assertThat(processusRepository
+                .findByCodeUniteAndMoisPaiementAndAnneePaiementAndTypeProcessus(
+                        UNITE, 6, ANNEE, TypeProcessusEnum.NORMAL))
                 .isEmpty();
         verifyNoInteractions(publicateurAudit);
     }

@@ -20,12 +20,16 @@ package cm.afrilandfirstbank.rations.workflow.application;
  * @param montantTotalFcfa le montant <b>enregistre a la soumission</b>, jamais un
  *        montant recalcule a l'instant de la validation
  * @param seuilApplique la valeur du seuil telle qu'elle a ete lue dans
- *        {@code parametre_systeme} pour cette decision precise
+ *        {@code parametre_systeme} pour cette decision precise. <b>Nul quand aucune
+ *        comparaison n'a eu lieu</b> — cas d'un etat COMPLEMENTAIRE, qui monte au
+ *        Directeur Reseau quel que soit son montant (Sprint 6bis.1). Un {@code 0}
+ *        aurait ete une valeur sentinelle, indiscernable d'un seuil reellement
+ *        configure a zero, que le Sprint 4.3 accepte explicitement
  */
 public record ResultatAiguillage(
         DecisionAiguillage decision,
         long montantTotalFcfa,
-        long seuilApplique) {
+        Long seuilApplique) {
 
     /** Vrai si l'etat se clot sur la seule validation du Chef d'Unite. */
     public boolean estClotureDirecte() {

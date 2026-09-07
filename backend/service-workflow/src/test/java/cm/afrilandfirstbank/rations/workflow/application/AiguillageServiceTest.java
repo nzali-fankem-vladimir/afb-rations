@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import cm.afrilandfirstbank.rations.workflow.domaine.ProcessusMensuel;
 import cm.afrilandfirstbank.rations.workflow.domaine.TransitionProcessus;
@@ -307,6 +308,76 @@ class AiguillageServiceTest {
     }
 
     // =====================================================================
+    // L'etat complementaire : second niveau obligatoire (Sprint 6bis.1)
+    // =====================================================================
+
+    @Nested
+    @DisplayName("Etat complementaire")
+    class Complementaire {
+
+        /**
+         * Un etat COMPLEMENTAIRE monte au directeur reseau <b>quel que soit son
+         * montant</b>. La preuve est faite a la borne basse : un montant de zero, qui
+         * cloturerait immediatement un etat normal, monte quand meme.
+         */
+        @Test
+        @DisplayName("14. Tout complementaire monte au directeur reseau, meme a montant nul")
+        void toutComplementaireMonte() {
+            for (long montant : new long[] {0, 1, seuilLu() - 1, seuilLu(), seuilLu() + 1}) {
+                ResultatAiguillage resultat = aiguillerComplementaire(montant);
+
+                assertThat(resultat.decision())
+                        .as("montant %d : un complementaire ne se clot jamais au premier niveau",
+                                montant)
+                        .isEqualTo(DecisionAiguillage.COMPLEMENTAIRE_ENVOI_DIRECTEUR_RESEAU);
+                assertThat(resultat.estClotureDirecte()).isFalse();
+                assertThat(resultat.montantTotalFcfa()).isEqualTo(montant);
+            }
+        }
+
+        /**
+         * <b>Aucune comparaison n'a eu lieu, et la reponse le dit.</b> Inscrire un seuil
+         * ferait croire a un arbitrage montant/seuil qui n'a pas eu lieu — meme
+         * raisonnement qu'au Sprint 4.4, ou l'audit du second niveau n'inscrit ni seuil
+         * ni decision d'aiguillage.
+         *
+         * <p>Un {@code 0} aurait ete pire qu'un nul : il serait indiscernable d'un seuil
+         * reellement configure a zero, que le Sprint 4.3 accepte explicitement.
+         */
+        @Test
+        @DisplayName("15. Aucun seuil applique : le champ est nul, jamais zero")
+        void aucunSeuilApplique() {
+            assertThat(aiguillerComplementaire(1).seuilApplique()).isNull();
+        }
+
+        /**
+         * <b>Le test qui prouve que le seuil n'est pas lu du tout.</b>
+         *
+         * <p>Le parametre est rendu illisible : un etat normal echouerait en
+         * {@link SeuilIndisponibleException}. Le complementaire, lui, aboutit — donc
+         * aucune lecture n'a eu lieu.
+         *
+         * <p>Ce n'est pas un detail de performance. Lire un parametre qui ne gouverne pas
+         * la decision ferait echouer une validation sur une panne de configuration
+         * etrangere au dossier, exactement le defaut que le Sprint 4.4 a ecarte en ne
+         * rappelant pas l'aiguillage au second niveau.
+         */
+        @Test
+        @DisplayName("16. Seuil illisible : un complementaire s'aiguille quand meme")
+        void seuilIllisibleNEmpechePasLAiguillageDUnComplementaire() {
+            fixerValeurDuSeuil("cent mille");
+
+            assertThat(aiguillerComplementaire(1).decision())
+                    .as("le seuil n'est pas lu : il ne peut donc pas bloquer")
+                    .isEqualTo(DecisionAiguillage.COMPLEMENTAIRE_ENVOI_DIRECTEUR_RESEAU);
+
+            // Et l'autre bord : un etat NORMAL echoue bien sur le meme parametre.
+            assertThatThrownBy(() -> aiguiller(1))
+                    .isInstanceOf(SeuilIndisponibleException.class);
+        }
+    }
+
+    // =====================================================================
     // La garantie du sous-sprint : rien en dur
     // =====================================================================
 
@@ -359,6 +430,28 @@ class AiguillageServiceTest {
         ProcessusMensuel processus = TransitionProcessus.declencher(9, ANNEE, UNITE);
         processus.reporterMontantTotal(Math.toIntExact(montantTotal));
         return aiguillageService.aiguiller(processus);
+    }
+
+    /**
+     * Un etat COMPLEMENTAIRE au montant voulu, ne d'une origine close (Sprint 6bis.1).
+     *
+     * <p>Rien n'est persiste : ce service ne touche pas a la base, il repond a une
+     * question. L'identifiant de l'origine est pose par reflexion — {@code id} est
+     * genere par la base, et {@code ouvrirComplementaire} exige une origine deja
+     * enregistree, a juste titre : sans identifiant, le rattachement serait introuvable.
+     */
+    private ResultatAiguillage aiguillerComplementaire(long montantTotal) {
+        ProcessusMensuel origine = TransitionProcessus.declencher(9, ANNEE, UNITE);
+        ReflectionTestUtils.setField(origine, "id", 4242L);
+        TransitionProcessus.soumettre(origine);
+        TransitionProcessus.transfererAuChefUnite(origine);
+        TransitionProcessus.cloturerApresValidationChefUnite(origine);
+
+        ProcessusMensuel complementaire = TransitionProcessus.ouvrirComplementaire(
+                origine, "Beneficiaire omis, regularisation");
+        complementaire.reporterMontantTotal(Math.toIntExact(montantTotal));
+
+        return aiguillageService.aiguiller(complementaire);
     }
 
     private void fixerValeurDuSeuil(String valeur) {
