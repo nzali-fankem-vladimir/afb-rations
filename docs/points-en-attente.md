@@ -699,3 +699,343 @@ la moitié aval de la chaîne (consommateur, persistance, lecture).
 la portée exacte de l'endpoint — niveau workflow uniquement — y est explicite,
 pour qu'un lecteur du contrat ne suppose pas à tort un journal complet du
 dossier.
+
+---
+
+## M-04 — Rythme de paiement : mensuel ou hebdomadaire (sprint d'ajustement métier)
+
+**Ouvert le 9 septembre 2026**, entre le sous-sprint 6bis.1 et le sous-sprint
+6bis.2. **Le métier a répondu le même jour : lecture (B), tout le cycle devient
+hebdomadaire**, et les trois questions non techniques ont été tranchées dans la
+foulée. Voir
+`docs/decisions/2026-09-09-rythme-de-paiement-et-maille-de-la-periode.md`.
+
+**Ce qui est tranché :** le rythme (lecture B), la valeur du seuil RG-08
+(maintenue à 100 000 XAF), la forme de la période (intervalle de dates), et le
+rattachement d'une semaine à cheval (sans objet, la notion de mois disparaissant
+de l'identité de la période).
+
+**Ce qui reste ouvert, et pour quoi ce point n'est pas clos :** la position de
+la **DFT** sur la forme de la période dans le contrat Kafka publié à la
+comptabilité. Le module ne peut pas la décider seul — la charge est consommée
+par une équipe qui ne fait pas partie de ce projet.
+
+Point voisin : **W-02** (rien n'interdit d'ouvrir un état sur une période
+future), déjà ouvert vers le métier et portant sur la même table — les deux
+questions peuvent partir dans le même échange. *Note de tenue de registre :
+W-02 n'a jamais été porté dans le tableau de `docs/dispositifs_provisoires.md`
+section 3 ; il ne vit que dans les tableaux de questions ouvertes des résumés
+des Sprints 4.1 et 4.2.*
+
+### Le fait
+
+Le métier a indiqué que le paiement des frais de ration et de transport de la
+garde armée se fait **de façon hebdomadaire**, et non mensuelle.
+
+Tout le module est bâti sur l'hypothèse inverse, et cette hypothèse n'a jamais
+été discutée : aucun document du projet — cahier des charges, user stories,
+contrat d'API, guides de sprint, résumés, décisions — ne contient une seule
+occurrence de « hebdomadaire » ou de « semaine » au sens d'un rythme de
+paiement. Le mensuel est un postulat implicite, hérité de la description du
+processus papier (« consolidation mensuelle à la main »), jamais remis en cause
+depuis le Sprint 0.
+
+**L'information est arrivée au meilleur moment possible, malgré les apparences.**
+Le sous-sprint 6bis.2 doit implémenter RG-15, dont l'énoncé est « aucune ligne
+ne peut reproduire une combinaison déjà présente dans un autre état de la même
+unité et de la **même période** ». C'est la première règle du module qui fige en
+code la définition de la période. Une semaine plus tard, elle aurait été écrite,
+testée, commitée — et il aurait fallu la défaire.
+
+### Les trois lectures, et celle qui a été retenue
+
+Trois lectures se cachaient derrière le même mot. Elles ont été posées au métier
+dans ces termes, sans qu'aucune ne soit présentée comme acquise.
+
+**(A) Seul le décaissement est hebdomadaire, le dossier reste mensuel.** L'agent
+touche son argent chaque semaine, mais le module ne change pas : un dossier par
+mois et par unité, la banque découpant ensuite le versement hors du module.
+Impact : quasi nul — le décaissement est hors périmètre (CLAUDE.md section 8).
+
+**(B) Tout le cycle devient hebdomadaire.** Saisie, consolidation, soumission,
+validation, clôture et transmission comptable ont lieu chaque semaine. Impact
+majeur : la maille de la période change dans deux bases, dans le contrat publié
+à la comptabilité, et la valeur du seuil d'approbation de la banque est à
+reconsidérer.
+
+**(C) Cas mixte : validation hebdomadaire, transmission comptable regroupée
+mensuellement.** Le plus lourd des trois : il ajoute un niveau d'agrégation qui
+n'existe nulle part aujourd'hui, entre l'état validé et l'événement publié.
+
+**Valeur provisoire retenue à l'ouverture du point : (A).** Ce n'était pas de la
+paresse : c'était la seule lecture ne demandant aucune modification, donc la
+seule ne fabriquant aucune dette si elle se révélait fausse. Basculer le module
+en hebdomadaire sur une phrase entendue en réunion, puis découvrir que seul le
+décaissement l'était, aurait coûté une reprise complète pour rien.
+
+**Réponse du métier, 9 septembre 2026 : lecture (B).** La valeur provisoire (A)
+est donc écartée. Elle reste consignée ici parce qu'elle explique pourquoi rien
+n'a été écrit avant la réponse.
+
+### Ce qui est gelé, et ce qui ne l'est pas
+
+**Le sous-sprint 6bis.2 est gelé.** Il implémente RG-15 sur « la même période ».
+Écrit aujourd'hui, il le serait sur le couple `(mois_paiement, annee_paiement)`
+recopié sur `fiche_journaliere` par la migration V3 du service Saisie, et sur
+l'index `idx_fiche_journaliere_unite_periode` qui l'accompagne. C'est
+précisément la définition que la réponse (B) invalide.
+
+**Motif du gel, révisé deux fois le 9 septembre 2026.** Le guide du sprint
+d'ajustement prévoyait que 6bis.2 « reprenne dès que le métier a répondu, quelle
+que soit sa réponse ». Cette phrase supposait la lecture (A). La réponse étant
+(B), le gel a d'abord été maintenu dans l'attente de l'arbitrage sur la forme de
+la période. **Cet arbitrage est désormais rendu — intervalle de dates — et le
+gel reste néanmoins en vigueur, pour une raison qui n'est plus une inconnue mais
+un ordre de travaux :** la forme est décidée, la migration qui la porte n'est
+pas écrite. RG-15 porte sur « la même période » ; tant que `processus_mensuel`
+et `fiche_journaliere` portent `(mois_paiement, annee_paiement)`, l'écrire
+reviendrait à écrire faux en connaissance de cause.
+
+**6bis.2 reprend derrière les migrations de la maille**, et non derrière une
+réponse à obtenir. La différence compte pour le planning : ce n'est plus une
+attente, c'est une dépendance. Le découpage de ces travaux — sprint dédié ou
+travaux rattachés à 6bis.2 — reste à arrêter.
+
+**Rien d'autre n'est gelé.** Les sous-sprints 7F.1 (socle et composants), 7F.2
+(layout et navigation), 7F.3 (authentification), 8.1 et 8.2 ne touchent pas à la
+période et peuvent avancer. Vérifié : le répertoire `frontend/src` ne contient
+**aucune** occurrence de `mois`, `periode` ou `annee`. Les sous-sprints 7F.4
+(écrans de saisie), 7F.5 (écrans de validation) et 7F.7 (suivi et reporting)
+dépendent en revanche de la maille — ils ne sont pas gelés parce qu'ils viennent
+après 7F.1 à 7F.3 et que l'arbitrage de la forme aura eu lieu d'ici là. Si ce
+n'était pas le cas, il faudrait les geler à leur tour.
+
+Geler tout le projet pour une question ouverte serait aussi faux que de
+l'ignorer.
+
+### Inventaire d'impact — ce qui CASSE (le code cesse d'être correct)
+
+Établi par balayage du backend le 9 septembre 2026. **Le tableau des points de
+rupture annoncé par le guide du sprint (« section 8 ») n'existait pas dans ce
+guide** — sa section 8 est « Commandes terminal » ; l'inventaire ci-dessous a
+donc été établi de première main, pas recopié.
+
+| Service | Point de rupture | Nature |
+| --- | --- | --- |
+| Saisie | `fiche_journaliere.mois_paiement` / `annee_paiement`, recopiés et **figés** à l'ouverture (migration V3) ; index `idx_fiche_journaliere_unite_periode` | Migration |
+| Workflow | `processus_mensuel.mois_paiement` / `annee_paiement` ; index unique `ux_processus_normal_par_periode` (V1) — c'est lui qui interdit deux états NORMAL sur la même période | Migration |
+| Workflow | `DeclenchementProcessusRequest` : `@Min(1) @Max(12)` sur `moisPaiement`, `@Min(2000) @Max(2100)` sur l'année. Une semaine 13 serait refusée en 400 | Contrat d'entrée |
+| Workflow | `CompletudeService.dansLaPeriode` : `dateJour.getMonthValue() == mois && dateJour.getYear() == annee`. C'est le contrôle LIGNE_HORS_PERIODE de la soumission (CLAUDE.md section 6) | Règle de gestion |
+| Workflow | `NommageDocument` : `{annee}/{mois}/etat-rations-{unite}-{annee}{mois}-p{id}.pdf`. **12 documents déjà archivés** sous cette forme | Convention + artefact existant |
+| Workflow | `DocumentService` : tableau `MOIS[]`, libellé imprimé `TOTAL DU MOIS`, en-tête « mois année » | Document signé |
+| Workflow | `ValidationService.libellePeriode` et `RetourService.libellePeriode` (`%02d/%d`) : « L'état 09/2026 de l'unité 00002 ». Aucune décision n'en dépend, mais en hebdomadaire quatre états porteraient le **même** intitulé dans les messages de refus | Rupture mineure, cosmétique mais réelle |
+| Transmission | Charge publiée sur `rations.etat.valide` : `"periode": { "mois", "annee" }` (contrat d'API section 7.1, ligne 290). **Contrat inter-applicatif**, consommé par un module que cette équipe ne maintient pas | Contrat externe |
+| Transmission | `ConstructionChargeService` : contrôle du mois hors de l'intervalle 1–12 (refus `CHARGE_INCOMPLETE`), et contrôle de concordance de période entre l'en-tête et le détail | Règle de gestion |
+| Reporting | Filtres et réponses portant mois et année (`SuiviService`, `DemandeResponse`, `HistoriqueResponse`, `ReponseWorkflow`, `WorkflowLectureHttpClient`) ; nommage d'export `rapport-rations-<agence>-<AAAAMM>` | Contrat exposé + écran |
+| Reporting | Borne `app.reporting.limite-resultats: 5000`. Calibrée sur ~600 états/an (~8 ans de marge). En hebdomadaire : ~2 600/an, soit **moins de deux ans** avant que `422 RECHERCHE_TROP_LARGE` ne morde en production | Volumétrie |
+| RG-08 | La **valeur** du seuil (100 000 XAF) est calibrée sur un cumul mensuel. Voir la question portée à la DRH et à la DFT ci-dessous | Gouvernance, pas code |
+
+Volume de données concerné, mesuré le 9 septembre 2026 : **15 états** portant une
+période mensuelle (11 `CLOTURE`, 1 `EN_COURS_SAISIE`, 1 `RETOURNE`, 2
+`COMPLEMENTAIRE`), de 2026-09 à 2027-09 ; **18 fiches sur 18** portant la période
+recopiée figée, sur 14 couples unité + période ; **7 états déjà transmis** à la
+comptabilité sous la forme mensuelle du contrat, donc **non rejouables** ; **12
+pièces jointes** archivées sous `{annee}/{mois}`.
+
+### Inventaire d'impact — ce qui RESTE CORRECT mais dont la justification vieillit
+
+À ne pas confondre avec ce qui précède : ici le code est juste, seule sa
+justification écrite date. Les mélanger ferait passer une relecture de javadoc
+pour une migration.
+
+Quatre décisions sont justifiées par la formule « c'est un geste mensuel » :
+
+| Où | Ce qui est écrit | Verdict après vérification |
+| --- | --- | --- |
+| Sprint 4.2 | Soumission à trois appels sortants, 15 s au pire cas, « accepté, geste mensuel » (CLAUDE.md, résumé 4.2) | **Tient.** ~50 unités × 52 semaines ≈ 2 600 soumissions/an, soit ~10 par jour ouvré. Trivial |
+| Sprint 4.3 | `SeuilService` javadoc : le `SELECT` du seuil est « invisible dans un geste mensuel qui fait déjà plusieurs secondes d'appels réseau » | **Tient.** Trois lignes indexées, ×4 en fréquence |
+| Sprint 5.1 | `ConfigurationProducteurEtatValide` javadoc : les microsecondes gagnées « n'ont aucun sens dans un geste mensuel » (justifie `acks=all`) | **Tient.** `acks=all` reste le bon réglage à 2 600 messages/an |
+| Sprint 5.1 | Arbitrage de latence contre la doctrine « aucun réessai » du Sprint 3.2 | **Tient.** Le motif du 3.2 était la latence d'un geste *par ligne*, inchangé |
+
+**Aucun de ces quatre arguments ne tombe.** Seule leur formulation est à reprendre
+le jour de la passe documentaire.
+
+### Inventaire d'impact — ce qui n'est PAS impacté
+
+Cette liste vaut autant que les autres : elle borne le chantier. Un inventaire
+qui ne liste que les dégâts fait croire que tout est à refaire, et cette croyance
+coûte plus cher que le travail réel. **Chaque point a été vérifié dans le code le
+9 septembre 2026, pas recopié.**
+
+- **Tout le grain journalier.** `uk_fiche_journaliere_processus_jour` porte sur
+  `(id_processus, date_jour)` (V1 Saisie) ; l'index RG-04
+  `ux_ligne_par_fiche_beneficiaire_nature_session` porte sur
+  `(id_fiche_journaliere, id_beneficiaire, nature, session)` — la fiche *est*
+  l'identité de la journée, aucune période n'y figure. RG-05 ouvre une fiche
+  vierge par jour. **Un agent saisira exactement comme aujourd'hui.**
+- **Le service Grilles en entier.** `ResolutionMontantService.resoudre(nature,
+  session, LocalDate date)` résout à la **date de la journée**, et le service
+  Saisie lui passe la date de prestation en paramètre de requête. Les 19
+  occurrences du mot « période » dans ce service désignent les **périodes de
+  validité des grilles**, qui ont leurs propres bornes, sans rapport avec le
+  rythme de paiement.
+- **Le service Identité, la passerelle, `rations-audit-commun` et le service
+  Audit : zéro occurrence** de `mois`, `periode` ou `semaine` dans
+  `src/main/java`. Compté, pas supposé.
+- **L'accusé comptable.** `AccuseComptableEvent` porte cinq champs —
+  `idProcessus`, `statutIntegration`, `referenceComptable`, `dateTraitement`,
+  `motif`. Le rapprochement se fait par `idProcessus` **seul** : aucune période,
+  donc insensible au changement de maille.
+- **Le circuit de validation, dans ses décisions.** RG-07 et RG-09 à RG-13 sont
+  formulées sur l'état, jamais sur sa durée. `SeparationTachesService` (RG-12) ne
+  contient aucune occurrence de période. **Deux nuances, contre l'affirmation
+  initiale du guide** : `AiguillageService` lit bien le type de processus — un
+  état `COMPLEMENTAIRE` monte au Directeur Réseau sans que le seuil soit lu
+  (Sprint 6bis.1) —, mais `NORMAL`/`COMPLEMENTAIRE` n'est pas une période et
+  cette lecture est indifférente au rythme ; et `ValidationService` /
+  `RetourService` lisent bien mois et année, pour composer un libellé de message
+  — classé en rupture mineure ci-dessus, pas ici.
+- **Le frontend existant.** `frontend/src` ne contient aucune occurrence de
+  `mois`, `periode` ou `annee`. Le socle du Sprint 0.3 est indemne ; l'incidence
+  « puis dans tout le frontend » portée au registre est **prospective**, pas un
+  dégât constaté.
+
+### Les trois questions non techniques, portées le 9 septembre 2026
+
+Elles ne se résolvent pas en code et n'appartiennent pas à l'équipe technique.
+
+**1. La valeur du seuil RG-08 — devant la DRH et la DFT.** Les 100 000 XAF sont
+calibrés sur le cumul d'un **mois**. Appliqués tels quels à une semaine, ils
+laissent le Chef d'Unité clôturer directement des dossiers qui, ramenés au mois,
+valent plus de 400 000 XAF : le Directeur Réseau sortirait de fait du circuit,
+sans qu'aucune erreur ne soit visible. **Ce n'est pas un réglage technique, c'est
+un changement du niveau d'approbation requis pour engager la banque.** Bonne
+nouvelle à dire au métier : la valeur vit dans `parametre_systeme` et se change
+**sans redéploiement** (RG-08, Sprint 4.3). C'est la *décision* qui manque, pas le
+moyen de l'appliquer. **À porter en premier : c'est celle qui mettra le plus de
+temps à revenir.**
+
+> **Tranchée le 9 septembre 2026 — le seuil est maintenu à 100 000 XAF.**
+> Conséquence mesurée sur les 15 états en base (données de test) : **1 seul**
+> dépassait le seuil en mensuel — l'état 1317, 105 000 XAF, monté au Directeur
+> Réseau ; ramené à la semaine il vaut ~24 249 XAF et se clôturerait chez le
+> Chef d'Unité. **Aucun** des quinze n'atteindrait le Directeur Réseau. Le seuil
+> maintenu divise donc par ~4,33 la fréquence à laquelle un dossier lui parvient.
+> La décision est celle du métier et est appliquée telle quelle ; elle est
+> **réversible sans redéploiement**, la valeur étant relue en base à chaque
+> validation et jamais mise en cache (Sprint 4.3).
+
+**2. Le contrat Kafka — devant la DFT.** La charge publiée sur
+`rations.etat.valide` porte `"periode": { "mois", "annee" }` (contrat d'API
+section 7.1). Elle est consommée par le module de comptabilisation, **qui n'est
+pas maintenu par cette équipe**. Toute autre forme de période est une
+modification de contrat inter-applicatif : la modifier unilatéralement casserait
+un flux de paiement chez quelqu'un d'autre, sans erreur visible de ce côté-ci. À
+poser dans le **même échange que M-03** (seconde transmission sur une période
+déjà traitée) et **D-11** (clé de partition des accusés) : ce sont les trois
+questions ouvertes avec le même interlocuteur. Rappel de contexte utile à
+l'échange : **7 états ont déjà été transmis** sous la forme mensuelle actuelle,
+et ne sont pas rejouables.
+
+> **Position du module arrêtée le 9 septembre 2026 : l'intervalle de dates**,
+> par cohérence avec la forme retenue en interne. **Mais la question reste
+> ouverte au registre**, parce que la charge est consommée par une équipe
+> extérieure au projet : porter cette forme sur le fil suppose que le module de
+> comptabilisation l'accepte et adapte son côté. Modifier la charge sans cet
+> accord casserait un flux de paiement chez quelqu'un d'autre, sans erreur
+> visible de ce côté-ci (CLAUDE.md section 15). **C'est le seul point qui
+> maintient M-04 ouvert.**
+
+**3. Le chevauchement de mois — devant le métier.** Une semaine tombe à cheval
+sur deux mois : du 29 septembre au 5 octobre. Ce cas n'existe pas aujourd'hui —
+mesuré : **zéro** journée concernée en base — et le module n'a **aucun moyen de
+le représenter**, `fiche_journaliere` recopiant et **figeant** le mois et l'année
+du processus (migration V3, Sprint 3.1). Question à poser en clair : *une semaine
+à cheval appartient-elle au mois de son premier jour, à celui de son dernier, ou
+la notion de mois disparaît-elle du module ?* **C'est cette
+réponse qui commande la forme technique, pas l'inverse.**
+
+> **Tranchée le 9 septembre 2026 — la question est sans objet.** Le choix de
+> l'intervalle de dates (forme 2) supprime le champ à remplir : la semaine du 29
+> septembre au 5 octobre est `[2026-09-29, 2026-10-05]`, sans mois
+> d'appartenance à déterminer. **La notion de mois disparaît de l'identité de la
+> période** — pas du module : un rapport pourra toujours porter sur une plage de
+> dates couvrant un mois. Ce qui disparaît, c'est le mois comme **attribut porté
+> par un état et par une fiche**.
+
+### Forme technique de la période — TRANCHÉE le 9 septembre 2026
+
+La réponse étant (B), la question était : par quoi remplacer le couple
+`(mois_paiement, annee_paiement)` ? Deux formes ont été présentées, la seconde
+recommandée. **La seconde est retenue.**
+
+- Forme 1 — numéro de semaine ISO + année ISO (`semaine`, `annee_iso`).
+- **Forme 2 — intervalle de dates (`date_debut`, `date_fin`). RETENUE.**
+
+Décision consignée dans
+`docs/decisions/2026-09-09-rythme-de-paiement-et-maille-de-la-periode.md`
+section 4. Les quatre motifs qui l'ont emportée :
+
+1. Le contrôle LIGNE_HORS_PERIODE devient « la date de la journée est-elle entre
+   les deux bornes », plus simple **et** plus robuste que l'égalité mois + année
+   d'aujourd'hui (`CompletudeService.dansLaPeriode`).
+2. Le chevauchement de mois **disparaît en tant que problème**, au lieu d'être
+   traité cas par cas en six endroits.
+3. La forme survit à tout changement ultérieur de cadence — quinzaine, décade,
+   mois de nouveau — **sans nouvelle migration**. Le métier vient de changer
+   d'avis une fois ; rien ne dit qu'il ne le fera pas deux.
+4. Elle évite les pièges de la semaine ISO : l'existence d'une **semaine 53**, et
+   une année ISO qui diffère de l'année calendaire aux premiers jours de janvier.
+   Elle évite aussi que la borne haute de `moisPaiement` sur
+   `DeclenchementProcessusRequest` et le contrôle équivalent de
+   `ConstructionChargeService` refusent une semaine 13.
+
+### Passe documentaire à prévoir — liste préparée, rien de corrigé
+
+Préparée pour que la correction soit une **liste** et non une chasse. Elle
+s'exécute après l'arbitrage de la forme, pas avant.
+
+**Famille 1 — ce qui devient faux.**
+
+- `docs/resumes-sprints/sprint-3.4-consolidation-mensuelle.md` — à commencer par
+  son **nom de fichier** et son titre.
+- `docs/resumes-sprints/sprint-6.1-suivi-des-demandes-et-recherche-multicritere.md`
+  : « ~50 unités × un état par mois = ~600/an ; 5 000 représente ~8 ans »
+  (ligne 98). En hebdomadaire : ~2 600/an, **moins de deux ans**.
+- `docs/resumes-sprints/sprint-4.1-domaine-du-workflow.md` : « Second
+  déclenchement même unité et période » (lignes 100 et 137).
+- **RG-06 elle-même**, dont le libellé porte le mot « mensuelle » (CLAUDE.md
+  section 6), ainsi que US-06, US-07 et US-16.
+- Le nom même de la table `processus_mensuel` et de la classe `ProcessusMensuel`.
+
+**Famille 2 — ce qui reste vrai mais dont la justification vieillit.** Les quatre
+décisions du tableau ci-dessus. **Reformulation seulement.**
+
+**Famille 3 — artefacts physiques déjà produits.** La convention
+`{annee}/{mois}/etat-rations-{unite}-{annee}{mois}-p{id}.pdf` et le libellé
+`TOTAL DU MOIS` imprimé dans les documents signés. **12 fichiers existent déjà**
+sous cette forme, dont 7 rattachés à des états transmis à la comptabilité. La
+question n'est pas seulement de changer la convention, mais de décider **ce qu'on
+fait des documents déjà archivés** — les laisser en place sous l'ancienne forme
+est probablement la seule réponse acceptable, un document signé ne se
+réécrivant pas.
+
+### Ce qu'il faut pour fermer M-04
+
+| | Condition | État au 9 septembre 2026 |
+| --- | --- | --- |
+| 1 | Lecture retenue du rythme de paiement | **Tranchée** — lecture (B), tout le cycle devient hebdomadaire |
+| 2 | Décision sur la **valeur** du seuil RG-08 | **Tranchée** — maintenue à 100 000 XAF |
+| 3 | Réponse sur le **rattachement d'une semaine à cheval** | **Sans objet** — conséquence de la condition 4 |
+| 4 | Arbitrage de la **forme technique** de la période | **Tranché** — intervalle de dates (`date_debut`, `date_fin`) |
+| 5 | Position de la **DFT sur le contrat Kafka** | **En attente** — seul point restant |
+
+**M-04 se ferme sur la seule condition 5.** Les quatre autres sont acquises et
+consignées dans
+`docs/decisions/2026-09-09-rythme-de-paiement-et-maille-de-la-periode.md`.
+
+Le sous-sprint 6bis.2 ne dépend pas de la condition 5 : il reprend derrière les
+migrations qui portent la nouvelle maille, lesquelles peuvent être écrites sans
+attendre la DFT — le contrat Kafka est un point de sortie du module, pas sa
+représentation interne. La condition 5 bloque la **mise en production** de la
+bascule, pas l'écriture de RG-15.

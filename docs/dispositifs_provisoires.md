@@ -232,6 +232,7 @@ Un fichier unique, tenu à jour, qui répond à une question simple : où en est
 | M-01 | Confirmation du besoin d'état complémentaire | Métier | | `RATTRAPAGE_ACTIF = false` | Fonctionnalité livrée mais fermée | En attente |
 | M-02 | Délai de régularisation d'une période close | Métier | | 90 jours, marqué provisoire | Délai arbitraire appliqué | En attente |
 | M-03 | Position sur une seconde transmission comptable | DFT | | Autorisée, un envoi par processus | Risque de rejet côté comptabilité | En attente |
+| M-04 | Rythme de paiement, mensuel ou hebdomadaire | Métier, puis DFT | 2026-09-09 | Cycle hebdomadaire (lecture B) ; période en intervalle de dates ; seuil RG-08 maintenu à 100 000 XAF | **Tranché sauf la forme de la période dans le contrat Kafka** : la charge `rations.etat.valide` reste en `{mois, annee}` tant que la DFT n'a pas statué. Sous-sprint 6bis.2 gelé derrière les migrations de la maille | Partiellement résolu |
 | D-01 | Namespace Kubernetes | DSI | | `A_CONFIRMER_DSI_NAMESPACE` | Déploiement production impossible | En attente |
 | D-02 | Adresse du registre Harbor | DSI | | `A_CONFIRMER_DSI_REGISTRE` | Publication des images impossible | En attente |
 | D-03 | Convention de nommage des déploiements | DSI | | `A_CONFIRMER_DSI_PREFIXE` | Nommage à reprendre après coup | En attente |
