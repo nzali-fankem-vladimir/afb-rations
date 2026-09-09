@@ -14,13 +14,14 @@ sous-sprint 6bis.2 gelé, forme de la période arbitrée
 
 **Aucune ligne de code.** C'est sa propriété définissante, et elle est vérifiée :
 `git status` ne montre **aucune** modification sous `backend/`, ni sous
-`frontend/`. Quatre fichiers de documentation, dont deux créés.
+`frontend/`. Six fichiers de documentation, dont trois créés.
 
 | Fichier | Nature |
 | --- | --- |
 | `docs/dispositifs_provisoires.md` | Ligne M-04 ajoutée au registre (section 3), sept colonnes servies, puis mise à jour après arbitrage |
 | `docs/points-en-attente.md` | Section narrative M-04 — 338 lignes : trois lectures, gel motivé, inventaire d'impact en trois familles, trois questions portées, forme technique, passe documentaire préparée |
 | `docs/decisions/2026-09-09-rythme-de-paiement-et-maille-de-la-periode.md` | **Créé** — porte les trois arbitrages rendus dans la journée |
+| `docs/decisions/2026-09-09-contenu-de-la-charge-comptable.md` | **Créé** — six décisions sur l'événement publié à la comptabilité |
 | `docs/resumes-sprints/sprint-ajustement-metier-rythme-de-paiement.md` | **Créé** — le présent résumé |
 
 ## 2. La question posée, et la réponse du métier
@@ -73,6 +74,67 @@ plus de mois d'appartenance à déterminer parce qu'il n'y a plus de champ à
 remplir. **La notion de mois disparaît de l'identité de la période** — pas du
 module : un rapport pourra toujours porter sur une plage couvrant un mois.
 
+## 3bis. Le contenu de la charge comptable — six décisions de plus
+
+Un extrait du cahier des charges, porté à l'analyse en préparant l'échange avec
+la DFT, a fait apparaître ce que l'écriture attendue contient réellement :
+
+```
+DEBIT  : CODE UNITE - 64380090200 - cle - MONTANT - Libelle (RATION / TAXI GARDE ARMEE DU MM/AAAA)
+CREDIT : AGENCE COMPTE COURANT - N° COMPTE - CLE - MONTANT - Libelle (…)
+```
+
+**Ce qu'il révèle, et qui n'avait pas été vu : le mois est dans le LIBELLÉ de
+l'écriture**, donc sur le relevé de compte que lit le bénéficiaire. En
+hebdomadaire, la forme mensuelle produirait **quatre lignes rigoureusement
+identiques** par mois, rendant toute réclamation inarbitrable. C'est l'argument
+le plus concret en faveur de l'intervalle de dates déjà retenu — `DU 07/09/2026
+AU 13/09/2026` se lit sur un relevé, `SEMAINE 37 DE 2026` ne se lit pas.
+
+Six décisions ont été prises, consignées dans
+`docs/decisions/2026-09-09-contenu-de-la-charge-comptable.md` :
+
+| | Décision |
+| --- | --- |
+| 1 | **La clé est calculée par le CBS**, le module ne la publie pas et ne la demande pas à l'agent — un chiffre de contrôle recopié à la main ne contrôle plus rien |
+| 2 | **Grain fin conservé** : une entrée par (bénéficiaire, nature, session). Une information détaillée s'agrège, une information agrégée ne se reconstitue pas |
+| 3 | **Le module publie `periode.libelle`**, la comptabilité compose le préfixe — seul le module connaît sa cadence |
+| 4 | **Transition par champ `versionCharge`**, doctrine additive du projet. `mois`/`annee` ne peuvent pas cohabiter : dès qu'une semaine chevauche deux mois, aucune valeur n'est vraie |
+| 5 | **`compteCharge` publié à la racine**, valeur unique, lue dans `parametre_systeme` et portée par l'en-tête que Transmission lit déjà — **zéro appel réseau ajouté**, modifiable par un `UPDATE` sans redéploiement |
+| 6 | **Relu à chaque transmission, jamais mis en cache** ; absent ou vide → **refus de publier** (`500 CHARGE_INCOMPLETE`, code existant), jamais un repli |
+
+La décision 5 est un **écart assumé** à CLAUDE.md sections 8 et 15 : il avait été
+recommandé d'exclure le compte de charge du message. L'utilisateur a tranché de
+l'y maintenir, sous condition qu'il soit configurable. L'écart est borné — le
+module transporte une valeur de paramétrage, il ne code toujours ni le sens
+débit/crédit, ni la structure de l'écriture.
+
+**Rien de tout cela n'est implémenté**, et la position reste à faire accepter par
+la DFT.
+
+## 3ter. Un défaut sans rapport avec le rythme : le numéro de compte courant
+
+Le numéro de compte fait **11 chiffres**. Le module ne le vérifie pas : le seul
+contrôle est `@Size(max = 20)`. **44 des 45 bénéficiaires en base portent un
+numéro à 14 chiffres**, donc faux — et **l'exemple du contrat d'API section 7.1
+lui-même est faux**, c'est lui qui a propagé l'erreur.
+
+Ce champ cumule deux rôles critiques : il est le **seul critère d'identification
+d'un bénéficiaire** (Sprint 3.1) et la **ligne de crédit du paiement**. Une faute
+de frappe fabrique un agent fantôme *et* envoie son argent ailleurs, sans qu'aucun
+contrôle ne s'y oppose. Le défaut préexistait ; la cadence hebdomadaire quadruple
+les occasions de saisie, donc de frappe fautive.
+
+Une piste de contrôle croisé — le préfixe du compte égalerait le code agence — a
+été **écartée par le métier** : les codes guichets sont séquentiels (`00001`,
+`00002`, … `00050`) et sans rapport avec la composition du compte. Le contrôle de
+format est le seul filet possible.
+
+Ouvert comme point **T-02** au registre. Correction recommandée
+(`@Pattern(regexp = "^[0-9]{11}$")`, aucune migration) **à poser avant 7F.4**,
+avec deux décisions qui l'accompagnent : le sort des 44 lignes fausses, et la
+correction de l'exemple du contrat d'API.
+
 ## 4. Ce qui reste ouvert
 
 **Un seul point maintient M-04 ouvert : la position de la DFT sur le contrat
@@ -83,6 +145,9 @@ côté module est l'intervalle de dates ; la porter sur le fil suppose que l'éq
 consommatrice l'accepte. À poser dans le même échange que **M-03** et **D-11**,
 mêmes interlocuteurs. Contexte utile : **7 états ont déjà été transmis** sous la
 forme mensuelle et ne sont pas rejouables.
+
+**La position du module sur le contenu de la charge est arrêtée** (section 3bis),
+avec cinq questions précises à leur poser. Ce sont des positions, pas un accord.
 
 M-04 est passé au registre à l'état **« Partiellement résolu »**.
 

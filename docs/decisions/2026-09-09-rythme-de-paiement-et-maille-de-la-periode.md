@@ -171,6 +171,20 @@ et ne sont pas rejouables.
 
 M-04 reste donc ouvert au registre sur ce seul point.
 
+**Position du module arrêtée le même jour**, après lecture de l'extrait du cahier
+des charges décrivant l'écriture attendue :
+`docs/decisions/2026-09-09-contenu-de-la-charge-comptable.md`. Six décisions y
+sont prises — forme de la période, partage du libellé, granularité, transition
+par champ de version, compte de charge configurable, clé calculée par le CBS.
+**Ce sont des positions à porter devant la DFT, pas un accord obtenu.**
+
+Cet examen a de surcroît confirmé la décision 2 par un argument qui manquait :
+le mois figure dans le **libellé de l'écriture**, donc sur le relevé de compte du
+bénéficiaire. En hebdomadaire, la forme mensuelle produirait quatre lignes
+identiques par mois. Il a aussi mis au jour un défaut sans rapport avec le
+rythme — le numéro de compte courant n'est contrôlé ni en longueur ni en format,
+et 44 des 45 bénéficiaires en base sont faux (point **T-02**).
+
 ## 7. Ce que la mise en œuvre suppose
 
 Cette décision **n'écrit aucun code** et n'en a écrit aucun. Elle fixe la cible.

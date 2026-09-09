@@ -945,6 +945,18 @@ et ne sont pas rejouables.
 > accord casserait un flux de paiement chez quelqu'un d'autre, sans erreur
 > visible de ce côté-ci (CLAUDE.md section 15). **C'est le seul point qui
 > maintient M-04 ouvert.**
+>
+> **Position du module précisée le 9 septembre 2026, après lecture du cahier des
+> charges.** L'extrait décrivant l'écriture attendue a révélé que **le mois
+> figure dans le LIBELLÉ de l'écriture** — `RATION / TAXI GARDE ARMEE DU
+> MM/AAAA` —, donc sur le relevé de compte que lit le bénéficiaire. En
+> hebdomadaire, la forme mensuelle produirait **quatre lignes identiques** par
+> mois, rendant toute réclamation inarbitrable. Argument le plus concret en
+> faveur de l'intervalle de dates. Le contenu complet de la charge — six
+> décisions, dont le compte de charge configurable et le partage du libellé —
+> est arrêté dans
+> `docs/decisions/2026-09-09-contenu-de-la-charge-comptable.md`. **Position du
+> module, pas accord de la DFT : le point reste ouvert.**
 
 **3. Le chevauchement de mois — devant le métier.** Une semaine tombe à cheval
 sur deux mois : du 29 septembre au 5 octobre. Ce cas n'existe pas aujourd'hui —
@@ -1028,7 +1040,7 @@ réécrivant pas.
 | 2 | Décision sur la **valeur** du seuil RG-08 | **Tranchée** — maintenue à 100 000 XAF |
 | 3 | Réponse sur le **rattachement d'une semaine à cheval** | **Sans objet** — conséquence de la condition 4 |
 | 4 | Arbitrage de la **forme technique** de la période | **Tranché** — intervalle de dates (`date_debut`, `date_fin`) |
-| 5 | Position de la **DFT sur le contrat Kafka** | **En attente** — seul point restant |
+| 5 | Position de la **DFT sur le contrat Kafka** | **En attente** — seul point restant. Position du module arrêtée le 9 septembre 2026 (`docs/decisions/2026-09-09-contenu-de-la-charge-comptable.md`) : cinq questions à leur poser |
 
 **M-04 se ferme sur la seule condition 5.** Les quatre autres sont acquises et
 consignées dans
@@ -1039,3 +1051,76 @@ migrations qui portent la nouvelle maille, lesquelles peuvent être écrites san
 attendre la DFT — le contrat Kafka est un point de sortie du module, pas sa
 représentation interne. La condition 5 bloque la **mise en production** de la
 bascule, pas l'écriture de RG-15.
+
+---
+
+## T-02 — Le numéro de compte courant n'est contrôlé ni en longueur ni en format
+
+**Ouvert le 9 septembre 2026**, au cours de l'analyse du contenu de la charge
+comptable (M-04). Voir `docs/decisions/2026-09-09-contenu-de-la-charge-comptable.md`
+section 6.
+
+### Le fait
+
+Le numéro de compte courant fait **11 chiffres** — établi par le métier le
+9 septembre 2026. Le module ne le vérifie pas. Seul contrôle en vigueur, sur
+`IdentiteBeneficiaireRequest` (service Saisie) :
+
+```java
+@NotBlank(message = "le numéro de compte courant est obligatoire")
+@Size(max = 20, message = "le numéro de compte courant ne peut pas dépasser 20 caractères")
+String numCompteCourant,
+```
+
+Aucune longueur exacte, aucun format. N'importe quelle chaîne de 1 à 20
+caractères est acceptée.
+
+**Constat mesuré en base le 9 septembre 2026 :** **44 des 45 bénéficiaires**
+portent un numéro à 14 chiffres, donc faux ; un seul est correct
+(`03702099911`). **L'exemple du contrat d'API section 7.1 lui-même
+(`00002000123456`) est faux**, et c'est lui qui a propagé l'erreur.
+
+### Pourquoi ce champ mérite un contrôle plus que tout autre
+
+Il cumule **deux rôles critiques** :
+
+1. Il est le **seul critère d'identification d'un bénéficiaire** — ni le nom, ni
+   le couple nom + prénom, ni aucune combinaison avec le code agence (décision du
+   Sprint 3.1, `docs/decisions/2026-08-28-resolution-beneficiaire-et-incoherence-nom.md`).
+   Une faute de frappe ne corrige rien : elle **crée silencieusement un second
+   bénéficiaire**.
+2. Il est la **ligne de crédit du paiement** — le compte qui reçoit l'argent.
+
+Une faute de frappe fabrique donc un agent fantôme **et** envoie son argent
+ailleurs, sans qu'aucun contrôle ne s'y oppose. Les 44 lignes fausses en base le
+prouvent : personne n'a rien vu, pendant six sprints.
+
+**Le défaut préexistait ; le passage en cadence hebdomadaire l'aggrave** — il
+quadruple les occasions de saisie, donc de frappe fautive.
+
+### Aucun contrôle croisé n'est disponible pour le doubler
+
+Une piste de cohérence gratuite avait été envisagée — le préfixe du compte
+égalerait le code agence — puis **écartée par le métier**. `code_agence` et
+`code_unite` suivent le référentiel des codes guichets (`00001`, `00002`,
+`00003`, … `00050`, séquentiels, CLAUDE.md section 13) et n'ont aucun rapport
+avec la composition du numéro de compte. **Le contrôle de format est donc le seul
+filet possible.**
+
+### Ce qu'il faut faire, et quand
+
+Ajouter `@Pattern(regexp = "^[0-9]{11}$")` sur le DTO d'entrée, avec un message
+qui nomme la règle. **Aucune migration** : la colonne reste `VARCHAR(20)`, seul
+le contrôle d'entrée change.
+
+**À poser avant le sous-sprint 7F.4** (écrans de saisie), pour que l'écran et le
+backend refusent exactement la même chose. Posé après, l'écran serait à
+reprendre.
+
+**Deux décisions accompagnent la correction, non tranchées :**
+
+1. **Le sort des 44 lignes de test fausses** — correction sur place, ou jeu de
+   données neuf. Elles feraient échouer toute reprise qui contrôlerait le format.
+2. **La correction de l'exemple du contrat d'API section 7.1**, source de
+   l'erreur. À reprendre dans la même passe que la forme de la période, quand la
+   DFT aura statué (M-04).

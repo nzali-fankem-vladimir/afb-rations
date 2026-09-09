@@ -245,6 +245,7 @@ Un fichier unique, tenu à jour, qui répond à une question simple : où en est
 | D-10 | Compte de service Keycloak pour les appels sans utilisateur | DSI | 2026-09-02 | Secret partagé `X-Cle-Interne` (§3bis) | Reprise d'une transmission manquée impossible ; secret à gérer hors Keycloak | En attente |
 | D-11 | Clé de partition des accusés sur `rations.etat.accuse` | DFT | 2026-09-02 | Ordre supposé par `idProcessus` | L'ordre n'est pas garanti ; le refus de contradiction reste le filet | En attente |
 | T-01 | Montée de `spring-kafka` 3.3.0 → 4.1.0 (sprint technique dédié) | Équipe | 2026-09-02 | Épinglage conservé | Client Kafka en retard de deux majeures ; test bout en bout non automatisable | En attente |
+| T-02 | Numéro de compte courant sans contrôle de longueur ni de format (11 chiffres attendus) | Équipe | 2026-09-09 | `@Size(max = 20)` seul ; 44 des 45 bénéficiaires en base sont faux | Une faute de frappe crée un bénéficiaire fantôme **et** crédite un mauvais compte, sans erreur visible. À corriger avant 7F.4 | En attente |
 
 La colonne « demandé le » sert à relancer : un point en attente depuis trois semaines n'a pas le même statut qu'un point demandé hier.
 
