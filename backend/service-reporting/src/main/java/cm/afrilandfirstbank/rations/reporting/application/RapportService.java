@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.reporting.application;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -64,10 +65,11 @@ public class RapportService {
      * @param loginUtilisateur  login de l'utilisateur qui produit le rapport, pour l'en-tête
      * @param enteteAutorisation en-tête {@code Authorization} de l'utilisateur final, relayé tel quel
      */
-    public Rapport produire(int mois, int annee, String codeUnite, String loginUtilisateur,
+    public Rapport produire(LocalDate dateDebut, LocalDate dateFin, String codeUnite,
+            String loginUtilisateur,
             String enteteAutorisation) {
 
-        CriteresRecherche criteres = new CriteresRecherche(mois, annee, codeUnite, null, null, null);
+        CriteresRecherche criteres = new CriteresRecherche(dateDebut, dateFin, codeUnite, null, null, null);
         List<EnTeteDemande> enTetes = agregationService.rechercher(criteres, enteteAutorisation);
 
         List<LigneRapport> lignes = enTetes.stream()
@@ -83,7 +85,7 @@ public class RapportService {
 
         Synthese synthese = lignes.isEmpty() ? Synthese.vide() : synthetiser(lignes);
 
-        return new Rapport(mois, annee, codeUnite, LocalDateTime.now(), loginUtilisateur,
+        return new Rapport(dateDebut, dateFin, codeUnite, LocalDateTime.now(), loginUtilisateur,
                 lignes, sousTotaux, synthese, lignes.isEmpty());
     }
 

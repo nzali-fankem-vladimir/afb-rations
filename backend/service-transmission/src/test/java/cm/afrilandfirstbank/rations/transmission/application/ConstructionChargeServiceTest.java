@@ -42,10 +42,14 @@ class ConstructionChargeServiceTest {
     private static final String UNITE = "00002";
     private static final int MOIS = 7;
     private static final int ANNEE = 2026;
+
+    /** Les bornes de la periode d'essai — juillet 2026, un mois entier (Maille 1). */
+    private static final LocalDate DEBUT = LocalDate.of(ANNEE, MOIS, 1);
+    private static final LocalDate FIN = LocalDate.of(ANNEE, MOIS, 31);
     private static final long ID_PROCESSUS = 740L;
 
     private static EnTeteProcessus enTete(int montantTotal) {
-        return new EnTeteProcessus(ID_PROCESSUS, "CLOTURE", UNITE, MOIS, ANNEE, "NORMAL",
+        return new EnTeteProcessus(ID_PROCESSUS, "CLOTURE", UNITE, DEBUT, FIN, MOIS, ANNEE, "NORMAL",
                 montantTotal, false);
     }
 
@@ -77,7 +81,7 @@ class ConstructionChargeServiceTest {
                 .sum();
         int nombreLignes = journees.stream().mapToInt(j -> j.lignes().size()).sum();
 
-        return new EtatConsolide(ID_PROCESSUS, UNITE, MOIS, ANNEE, journees.size(), nombreLignes,
+        return new EtatConsolide(ID_PROCESSUS, UNITE, DEBUT, FIN, MOIS, ANNEE, journees.size(), nombreLignes,
                 nombreLignes, total, journees);
     }
 
@@ -223,7 +227,7 @@ class ConstructionChargeServiceTest {
         @Test
         @DisplayName("aucune charge ne part sans code unite")
         void refusSansCodeUnite() {
-            EnTeteProcessus sansUnite = new EnTeteProcessus(ID_PROCESSUS, "CLOTURE", "   ", MOIS,
+            EnTeteProcessus sansUnite = new EnTeteProcessus(ID_PROCESSUS, "CLOTURE", "   ", DEBUT, FIN, MOIS,
                     ANNEE, "NORMAL", TOTAL_ATTENDU, false);
 
             ResultatConstruction resultat =
@@ -338,7 +342,7 @@ class ConstructionChargeServiceTest {
         @Test
         @DisplayName("etat sans aucune ligne")
         void etatVide() {
-            EtatConsolide vide = new EtatConsolide(ID_PROCESSUS, UNITE, MOIS, ANNEE, 0, 0, 0, 0L,
+            EtatConsolide vide = new EtatConsolide(ID_PROCESSUS, UNITE, DEBUT, FIN, MOIS, ANNEE, 0, 0, 0, 0L,
                     List.of());
 
             ResultatConstruction resultat = service.construire(enTete(0), vide);
@@ -393,7 +397,7 @@ class ConstructionChargeServiceTest {
         @DisplayName("periode hors de 1 a 12")
         void periodeInvalide() {
             EnTeteProcessus moisImpossible = new EnTeteProcessus(ID_PROCESSUS, "CLOTURE", UNITE,
-                    13, ANNEE, "NORMAL", TOTAL_ATTENDU, false);
+                    DEBUT, FIN, 13, ANNEE, "NORMAL", TOTAL_ATTENDU, false);
 
             assertThat(codes(service.construire(moisImpossible, etat(deuxJourneesQuatreLignes()))))
                     .contains(CodeAnomalieEnum.PERIODE_INVALIDE);
@@ -403,7 +407,7 @@ class ConstructionChargeServiceTest {
         @DisplayName("en-tete et detail portant sur des dossiers differents")
         void sourcesDiscordantes() {
             EnTeteProcessus autreUnite = new EnTeteProcessus(ID_PROCESSUS, "CLOTURE", "00050",
-                    MOIS, ANNEE, "NORMAL", TOTAL_ATTENDU, false);
+                    DEBUT, FIN, MOIS, ANNEE, "NORMAL", TOTAL_ATTENDU, false);
 
             assertThat(codes(service.construire(autreUnite, etat(deuxJourneesQuatreLignes()))))
                     .contains(CodeAnomalieEnum.SOURCES_DISCORDANTES);
@@ -441,7 +445,7 @@ class ConstructionChargeServiceTest {
                     List.of(ligne(incomplet, null, null, null)))));
 
             EnTeteProcessus enTeteCasse =
-                    new EnTeteProcessus(null, "CLOTURE", null, null, null, null, null, false);
+                    new EnTeteProcessus(null, "CLOTURE", null, null, null, null, null, null, null, false);
 
             assertThat(codes(service.construire(enTeteCasse, consolide)))
                     .contains(CodeAnomalieEnum.IDENTIFIANT_ABSENT,

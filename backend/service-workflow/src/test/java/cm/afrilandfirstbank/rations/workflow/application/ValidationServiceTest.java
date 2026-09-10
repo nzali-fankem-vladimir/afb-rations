@@ -391,7 +391,7 @@ class ValidationServiceTest {
         @DisplayName("7. Etat en cours de saisie : validation refusee")
         void etatEnCoursDeSaisie() {
             ProcessusMensuel processus = processusRepository.save(
-                    TransitionProcessus.declencher(prochainMois(), ANNEE, UNITE));
+                    declencherSur(prochainMois(), ANNEE, UNITE));
 
             assertThatThrownBy(() -> validationService.valider(processus.getId(), JETON, IP))
                     .isInstanceOf(TransitionProcessusInterditeException.class)
@@ -494,7 +494,7 @@ class ValidationServiceTest {
         @Test
         @DisplayName("12. Aucun document pour un etat en attente : refus signale")
         void documentAbsent() {
-            ProcessusMensuel processus = TransitionProcessus.declencher(prochainMois(), ANNEE, UNITE);
+            ProcessusMensuel processus = declencherSur(prochainMois(), ANNEE, UNITE);
             processus.reporterMontantTotal(1_000);
             TransitionProcessus.soumettre(processus);
             TransitionProcessus.transfererAuChefUnite(processus);
@@ -822,7 +822,7 @@ class ValidationServiceTest {
     private Dossier unDossierSoumis(long montantTotal) {
         int mois = prochainMois();
 
-        ProcessusMensuel processus = TransitionProcessus.declencher(mois, ANNEE, UNITE);
+        ProcessusMensuel processus = declencherSur(mois, ANNEE, UNITE);
         processus.reporterMontantTotal(Math.toIntExact(montantTotal));
         TransitionProcessus.soumettre(processus);
         TransitionProcessus.transfererAuChefUnite(processus);
@@ -855,14 +855,14 @@ class ValidationServiceTest {
         EtatConsolide.Ligne ligne = new EtatConsolide.Ligne(
                 101L, 11L, 55L, mballa, "RATION", "JOUR",
                 Math.toIntExact(montantTotal), 12L,
-                LocalDateTime.of(ANNEE, processus.getMoisPaiement(), 10, 9, 0));
+                processus.getDateDebut().withDayOfMonth(10).atTime(9, 0));
 
         EtatConsolide.Journee journee = new EtatConsolide.Journee(
-                11L, LocalDate.of(ANNEE, processus.getMoisPaiement(), 10), "ENREGISTREE",
+                11L, processus.getDateDebut().withDayOfMonth(10), "ENREGISTREE",
                 1, montantTotal, List.of(ligne));
 
-        return new EtatConsolide(processus.getId(), UNITE, processus.getMoisPaiement(),
-                ANNEE, 1, 1, 1, montantTotal, List.of(journee));
+        return new EtatConsolide(processus.getId(), UNITE, processus.getDateDebut(),
+                processus.getDateFin(), 1, 1, 1, montantTotal, List.of(journee));
     }
 
     /**
@@ -950,6 +950,25 @@ class ValidationServiceTest {
         requete.executeUpdate();
         entityManager.flush();
         entityManager.clear();
+    }
+
+
+    /**
+     * Un etat declenche sur le mois indique, borne du premier au dernier jour.
+     *
+     * <p><b>Le mois n'est evalue qu'une fois</b>, ce qui compte : les jeux d'essai
+     * l'obtiennent souvent d'un compteur {@code prochainMois()} a effet de bord, et
+     * l'inliner deux fois pour composer les deux bornes produirait une periode a
+     * cheval sur deux mois differents.
+     *
+     * <p>Les periodes mensuelles restent DISJOINTES entre elles, ce qui est
+     * desormais indispensable : la contrainte d'exclusion
+     * {@code ex_processus_normal_sans_chevauchement} refuse deux etats NORMAL dont
+     * les periodes se recouvrent, meme partiellement (Maille 1).
+     */
+    private static ProcessusMensuel declencherSur(int mois, int annee, String codeUnite) {
+        LocalDate debut = LocalDate.of(annee, mois, 1);
+        return TransitionProcessus.declencher(debut, debut.plusMonths(1).minusDays(1), codeUnite);
     }
 
 }

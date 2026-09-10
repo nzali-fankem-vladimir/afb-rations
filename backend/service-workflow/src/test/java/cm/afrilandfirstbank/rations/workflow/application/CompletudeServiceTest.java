@@ -32,7 +32,7 @@ class CompletudeServiceTest {
 
     private final CompletudeService service = new CompletudeService();
 
-    private final ProcessusMensuel processus = TransitionProcessus.declencher(MOIS, ANNEE, UNITE);
+    private final ProcessusMensuel processus = declencherSur(MOIS, ANNEE, UNITE);
 
     // --- 1. Cas nominal --------------------------------------------------------
 
@@ -57,7 +57,7 @@ class CompletudeServiceTest {
         @Test
         @DisplayName("2. aucune journee : refus, avec la periode et l'unite nommees")
         void aucuneJournee() {
-            EtatConsolide etat = new EtatConsolide(1L, UNITE, MOIS, ANNEE, 0, 0, 0, 0L, List.of());
+            EtatConsolide etat = new EtatConsolide(1L, UNITE, LocalDate.of(ANNEE, MOIS, 1), LocalDate.of(ANNEE, MOIS, 1).plusMonths(1).minusDays(1), 0, 0, 0, 0L, List.of());
 
             ResultatCompletude resultat = service.verifier(processus, etat);
 
@@ -74,7 +74,7 @@ class CompletudeServiceTest {
         @DisplayName("3. compteur de lignes absent de la reponse : refus, jamais un laissez-passer")
         void compteurAbsent() {
             EtatConsolide etat = new EtatConsolide(
-                    1L, UNITE, MOIS, ANNEE, 0, null, 0, 0L, List.of());
+                    1L, UNITE, LocalDate.of(ANNEE, MOIS, 1), LocalDate.of(ANNEE, MOIS, 1).plusMonths(1).minusDays(1), 0, null, 0, 0L, List.of());
 
             ResultatCompletude resultat = service.verifier(processus, etat);
 
@@ -94,7 +94,7 @@ class CompletudeServiceTest {
         @Test
         @DisplayName("5. compteur non nul mais aucun detail : refus, et le message dit l'incoherence")
         void compteurEnDesaccordAvecLeDetail() {
-            EtatConsolide etat = new EtatConsolide(1L, UNITE, MOIS, ANNEE, 0, 3, 1, 7500L, List.of());
+            EtatConsolide etat = new EtatConsolide(1L, UNITE, LocalDate.of(ANNEE, MOIS, 1), LocalDate.of(ANNEE, MOIS, 1).plusMonths(1).minusDays(1), 0, 3, 1, 7500L, List.of());
 
             ResultatCompletude resultat = service.verifier(processus, etat);
 
@@ -108,7 +108,7 @@ class CompletudeServiceTest {
         @Test
         @DisplayName("6. l'etat vide court-circuite : un seul manque, jamais quatre")
         void etatVideCourtCircuiteLesAutresControles() {
-            EtatConsolide etat = new EtatConsolide(1L, UNITE, MOIS, ANNEE, 0, 0, 0, 0L, List.of());
+            EtatConsolide etat = new EtatConsolide(1L, UNITE, LocalDate.of(ANNEE, MOIS, 1), LocalDate.of(ANNEE, MOIS, 1).plusMonths(1).minusDays(1), 0, 0, 0, 0L, List.of());
 
             ResultatCompletude resultat = service.verifier(processus, etat);
 
@@ -333,7 +333,7 @@ class CompletudeServiceTest {
         @Test
         @DisplayName("20. journees nulles dans la reponse : refus propre, jamais une NullPointerException")
         void reponseTronqueeNeLevePas() {
-            EtatConsolide etat = new EtatConsolide(1L, UNITE, MOIS, ANNEE, 2, 3, 1, 7500L, null);
+            EtatConsolide etat = new EtatConsolide(1L, UNITE, LocalDate.of(ANNEE, MOIS, 1), LocalDate.of(ANNEE, MOIS, 1).plusMonths(1).minusDays(1), 2, 3, 1, 7500L, null);
 
             ResultatCompletude resultat = service.verifier(processus, etat);
 
@@ -372,7 +372,7 @@ class CompletudeServiceTest {
                         : journee.lignes().stream())
                 .mapToLong(ligne -> ligne.montantApplique() == null ? 0 : ligne.montantApplique())
                 .sum();
-        return new EtatConsolide(1L, UNITE, MOIS, ANNEE, liste.size(), nombreLignes, 1, total, liste);
+        return new EtatConsolide(1L, UNITE, LocalDate.of(ANNEE, MOIS, 1), LocalDate.of(ANNEE, MOIS, 1).plusMonths(1).minusDays(1), liste.size(), nombreLignes, 1, total, liste);
     }
 
     private EtatConsolide.Journee journee(LocalDate dateJour, EtatConsolide.Ligne... lignes) {
@@ -391,6 +391,25 @@ class CompletudeServiceTest {
 
     private EtatConsolide.Beneficiaire beneficiaire(String nom, String prenom, String numCompteCourant) {
         return new EtatConsolide.Beneficiaire(55L, nom, prenom, numCompteCourant, "00002");
+    }
+
+
+    /**
+     * Un etat declenche sur le mois indique, borne du premier au dernier jour.
+     *
+     * <p><b>Le mois n'est evalue qu'une fois</b>, ce qui compte : les jeux d'essai
+     * l'obtiennent souvent d'un compteur {@code prochainMois()} a effet de bord, et
+     * l'inliner deux fois pour composer les deux bornes produirait une periode a
+     * cheval sur deux mois differents.
+     *
+     * <p>Les periodes mensuelles restent DISJOINTES entre elles, ce qui est
+     * desormais indispensable : la contrainte d'exclusion
+     * {@code ex_processus_normal_sans_chevauchement} refuse deux etats NORMAL dont
+     * les periodes se recouvrent, meme partiellement (Maille 1).
+     */
+    private static ProcessusMensuel declencherSur(int mois, int annee, String codeUnite) {
+        LocalDate debut = LocalDate.of(annee, mois, 1);
+        return TransitionProcessus.declencher(debut, debut.plusMonths(1).minusDays(1), codeUnite);
     }
 
 }

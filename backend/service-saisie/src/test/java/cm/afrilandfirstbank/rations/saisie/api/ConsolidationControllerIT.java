@@ -102,7 +102,7 @@ class ConsolidationControllerIT {
                 12L, LocalDate.of(2026, 8, 11), StatutFicheEnum.EN_SAISIE, 1, 2_500L,
                 List.of(ligne(103L, 12L, NatureEnum.RATION, SessionEnum.SOIR, 2_500, mballa)));
 
-        return new EtatConsolide(740L, "00002", 8, 2026, 2, 3, 1, 9_000L, List.of(le10, le11));
+        return new EtatConsolide(740L, "00002", LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 31), 2, 3, 1, 9_000L, List.of(le10, le11));
     }
 
     private static LigneAvecBeneficiaire ligne(Long id, Long idFiche, NatureEnum nature,
@@ -237,8 +237,8 @@ class ConsolidationControllerIT {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.idProcessus").value(740))
                 .andExpect(jsonPath("$.codeUnite").value("00002"))
-                .andExpect(jsonPath("$.moisPaiement").value(8))
-                .andExpect(jsonPath("$.anneePaiement").value(2026))
+                .andExpect(jsonPath("$.dateDebut").value("2026-08-01"))
+                .andExpect(jsonPath("$.dateFin").value("2026-08-31"))
                 .andExpect(jsonPath("$.nombreJournees").value(2))
                 .andExpect(jsonPath("$.nombreLignes").value(3))
                 .andExpect(jsonPath("$.nombreBeneficiaires").value(1))

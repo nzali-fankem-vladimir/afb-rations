@@ -1,6 +1,8 @@
 package cm.afrilandfirstbank.rations.reporting.api;
 
-import java.time.YearMonth;
+import java.time.LocalDate;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.Locale;
 
@@ -58,6 +60,9 @@ import cm.afrilandfirstbank.rations.reporting.domaine.exception.PeriodeInvalideE
 @PreAuthorize("hasAnyRole('ARH', 'AGENT_UNITE', 'CHEF_UNITE_DA', 'DIRECTEUR_RESEAU_DR')")
 public class ReportingController {
 
+    /** Jour de debut en {@code AAAAMMJJ}, pour le nom des fichiers exportes. */
+    private static final DateTimeFormatter JOUR_COMPACT = DateTimeFormatter.ofPattern("yyyyMMdd");
+
     private final SuiviService suiviService;
     private final RapportService rapportService;
     private final ExportPdfService exportPdfService;
@@ -93,7 +98,8 @@ public class ReportingController {
      */
     @GetMapping("/demandes")
     public ResponseEntity<PageResponse<DemandeResponse>> rechercherDemandes(
-            @RequestParam(required = false) String periode,
+            @RequestParam(required = false) LocalDate dateDebut,
+            @RequestParam(required = false) LocalDate dateFin,
             @RequestParam(required = false) String codeUnite,
             @RequestParam(required = false) SessionEnum session,
             @RequestParam(required = false) NatureEnum nature,
@@ -102,11 +108,9 @@ public class ReportingController {
             @RequestParam(defaultValue = "20") int size,
             @RequestHeader(HttpHeaders.AUTHORIZATION) String enteteAutorisation) {
 
-        YearMonth moisAnnee = analyserPeriode(periode);
-        Integer mois = moisAnnee == null ? null : moisAnnee.getMonthValue();
-        Integer annee = moisAnnee == null ? null : moisAnnee.getYear();
+        exigerBornesOrdonnees(dateDebut, dateFin);
 
-        CriteresRecherche criteres = new CriteresRecherche(mois, annee, codeUnite, nature,
+        CriteresRecherche criteres = new CriteresRecherche(dateDebut, dateFin, codeUnite, nature,
                 session, beneficiaire);
 
         PageResponse<DemandeResponse> reponse = mapperVersReponse(
@@ -138,17 +142,18 @@ public class ReportingController {
     @GetMapping("/rapports")
     @PreAuthorize("hasRole('ARH')")
     public ResponseEntity<RapportResponse> produireRapport(
-            @RequestParam(required = false) String periode,
+            @RequestParam(required = false) LocalDate dateDebut,
+            @RequestParam(required = false) LocalDate dateFin,
             @RequestParam(required = false) String codeUnite,
             @RequestHeader(HttpHeaders.AUTHORIZATION) String enteteAutorisation,
             @AuthenticationPrincipal Jwt jeton,
             HttpServletRequest requeteHttp) {
 
-        YearMonth moisAnnee = exigerPeriode(periode);
+        exigerPeriode(dateDebut, dateFin);
 
         Rapport rapport = rapportService.produire(
-                moisAnnee.getMonthValue(),
-                moisAnnee.getYear(),
+                dateDebut,
+                dateFin,
                 codeUnite,
                 login(jeton),
                 enteteAutorisation);
@@ -184,17 +189,18 @@ public class ReportingController {
     @GetMapping("/rapports/export")
     @PreAuthorize("hasRole('ARH')")
     public ResponseEntity<byte[]> exporterRapport(
-            @RequestParam(required = false) String periode,
+            @RequestParam(required = false) LocalDate dateDebut,
+            @RequestParam(required = false) LocalDate dateFin,
             @RequestParam(required = false) String codeUnite,
             @RequestParam(required = false) String format,
             @RequestHeader(HttpHeaders.AUTHORIZATION) String enteteAutorisation,
             @AuthenticationPrincipal Jwt jeton,
             HttpServletRequest requeteHttp) {
 
-        YearMonth moisAnnee = exigerPeriode(periode);
+        exigerPeriode(dateDebut, dateFin);
         FormatExport formatExport = exigerFormat(format);
 
-        Rapport rapport = rapportService.produire(moisAnnee.getMonthValue(), moisAnnee.getYear(),
+        Rapport rapport = rapportService.produire(dateDebut, dateFin,
                 codeUnite, login(jeton), enteteAutorisation);
 
         byte[] contenu = formatExport == FormatExport.PDF
@@ -253,8 +259,11 @@ public class ReportingController {
     /** {@code rapport-rations-<agence>-<AAAAMM>.<pdf|xlsx>} (guide 6.2, étape 6). */
     private String nomFichier(Rapport rapport, FormatExport formatExport) {
         String agence = rapport.codeUnite() == null ? "toutes-unites" : rapport.codeUnite();
-        return String.format(Locale.ROOT, "rapport-rations-%s-%04d%02d.%s",
-                agence, rapport.periodeAnnee(), rapport.periodeMois(), formatExport.extension);
+        // AAAAMMJJ du premier jour, sans separateur : un tri alphabetique du dossier
+        // reste un tri chronologique — propriete voulue depuis le Sprint 6.2 —, et
+        // quatre periodes hebdomadaires d'un meme mois ne portent plus le meme nom.
+        return String.format(Locale.ROOT, "rapport-rations-%s-%s.%s",
+                agence, rapport.periodeDebut().format(JOUR_COMPACT), formatExport.extension);
     }
 
     /**
@@ -281,18 +290,6 @@ public class ReportingController {
      * @throws PeriodeInvalideException le paramètre est présent mais ne suit pas
      *         le format {@code AAAA-MM}
      */
-    private YearMonth analyserPeriode(String periode) {
-        if (periode == null || periode.isBlank()) {
-            return null;
-        }
-        try {
-            return YearMonth.parse(periode);
-        } catch (DateTimeParseException erreurFormat) {
-            throw new PeriodeInvalideException(
-                    "Le parametre periode doit suivre le format AAAA-MM (exemple : 2026-08), "
-                            + "recu : \"" + periode + "\".");
-        }
-    }
 
     /**
      * Comme {@link #analyserPeriode}, mais la période est obligatoire : un rapport
@@ -300,13 +297,31 @@ public class ReportingController {
      *
      * @throws PeriodeInvalideException le paramètre est absent, vide ou mal formé
      */
-    private YearMonth exigerPeriode(String periode) {
-        if (periode == null || periode.isBlank()) {
+    /**
+     * Les deux bornes sont fournies et dans l'ordre.
+     *
+     * <p><b>Le format {@code AAAA-MM} a disparu</b> avec la Maille 1 : il ne pouvait
+     * pas exprimer une semaine, et le cycle de paiement est desormais hebdomadaire
+     * (M-04). Deux bornes en ISO 8601 le remplacent, et elles rendent en prime
+     * possible un rapport sur n'importe quelle plage — une semaine, un mois entier,
+     * un trimestre — ce que l'ancien parametre interdisait.
+     */
+    private void exigerPeriode(LocalDate dateDebut, LocalDate dateFin) {
+        if (dateDebut == null || dateFin == null) {
             throw new PeriodeInvalideException(
-                    "Le parametre periode est obligatoire et suit le format AAAA-MM "
-                            + "(exemple : 2026-08).");
+                    "Les parametres dateDebut et dateFin sont obligatoires pour produire un "
+                            + "rapport, au format AAAA-MM-JJ (exemple : 2026-09-07). Sans bornes, "
+                            + "le rapport porterait sur toute l'histoire du module.");
         }
-        return analyserPeriode(periode);
+        exigerBornesOrdonnees(dateDebut, dateFin);
+    }
+
+    private void exigerBornesOrdonnees(LocalDate dateDebut, LocalDate dateFin) {
+        if (dateDebut != null && dateFin != null && dateFin.isBefore(dateDebut)) {
+            throw new PeriodeInvalideException(
+                    "La date de fin (" + dateFin + ") precede la date de debut (" + dateDebut
+                            + ") : cette periode ne veut rien dire.");
+        }
     }
 
     /**

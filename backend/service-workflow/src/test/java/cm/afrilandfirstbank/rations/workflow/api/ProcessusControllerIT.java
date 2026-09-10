@@ -101,7 +101,7 @@ class ProcessusControllerIT {
     private static final Long ID = 740L;
 
     private static final String CORPS_NORMAL = """
-            {"moisPaiement":8,"anneePaiement":2026,"codeUnite":"00002"}""";
+            {"dateDebut":"2026-08-01","dateFin":"2026-08-31","codeUnite":"00002"}""";
 
     @Autowired
     private MockMvc mockMvc;
@@ -199,7 +199,7 @@ class ProcessusControllerIT {
 
     /** Processus d'aout 2026 pour l'unite 00002, en cours de saisie. */
     private static ProcessusMensuel unProcessus() {
-        ProcessusMensuel processus = TransitionProcessus.declencher(8, 2026, UNITE);
+        ProcessusMensuel processus = declencherSur(8, 2026, UNITE);
         ReflectionTestUtils.setField(processus, "id", ID);
         ReflectionTestUtils.setField(processus, "dateCreation", LocalDateTime.of(2026, 8, 1, 9, 0));
         return processus;
@@ -222,7 +222,7 @@ class ProcessusControllerIT {
                 List.of(new EtatConsolide.Ligne(103L, 12L, 55L, mballa, "RATION", "SOIR",
                         2_500, 14L, LocalDateTime.of(2026, 8, 11, 9, 0))));
 
-        return new EtatConsolide(ID, UNITE, 8, 2026, 2, 3, 1, 9_000L, List.of(le10, le11));
+        return new EtatConsolide(ID, UNITE, LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 1).plusMonths(1).minusDays(1), 2, 3, 1, 9_000L, List.of(le10, le11));
     }
 
     // =====================================================================
@@ -297,18 +297,19 @@ class ProcessusControllerIT {
     }
 
     @Test
-    @DisplayName("5. Mois hors bornes : 400 REQUETE_INVALIDE, le service n'est pas appele")
-    void moisInvalideRefuse() throws Exception {
+    @DisplayName("4. Bornes a l\'envers : refus en 400, avec la regle nommee")
+    void periodeALEnversRefusee() throws Exception {
         keycloakEmet("AGENT_UNITE");
 
         mockMvc.perform(post("/processus")
                         .header(HttpHeaders.AUTHORIZATION, JETON)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"moisPaiement":13,"anneePaiement":2026,"codeUnite":"00002"}"""))
+                                {"dateDebut":"2026-08-31","dateFin":"2026-08-01","codeUnite":"00002"}"""))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("REQUETE_INVALIDE"))
-                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("mois")));
+                .andExpect(jsonPath("$.message")
+                        .value(org.hamcrest.Matchers.containsString("date de fin")));
 
         verify(processusService, never()).declencher(any(), anyString(), anyString());
     }
@@ -322,7 +323,7 @@ class ProcessusControllerIT {
                         .header(HttpHeaders.AUTHORIZATION, JETON)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"moisPaiement":8,"anneePaiement":2026,"codeUnite":"2"}"""))
+                                {"dateDebut":"2026-08-01","dateFin":"2026-08-31","codeUnite":"2"}"""))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("REQUETE_INVALIDE"));
 
@@ -354,7 +355,7 @@ class ProcessusControllerIT {
                         .header(HttpHeaders.AUTHORIZATION, JETON)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"moisPaiement":7,"anneePaiement":2026,"codeUnite":"00002",
+                                {"dateDebut":"2026-07-01","dateFin":"2026-07-31","codeUnite":"00002",
                                  "typeProcessus":"COMPLEMENTAIRE","idProcessusOrigine":512,
                                  "motifOuverture":"Beneficiaire omis les 10 et 15 juillet"}"""))
                 .andExpect(status().isUnprocessableEntity())
@@ -392,7 +393,7 @@ class ProcessusControllerIT {
                         .header(HttpHeaders.AUTHORIZATION, JETON)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"moisPaiement":7,"anneePaiement":2026,"codeUnite":"00002",
+                                {"dateDebut":"2026-07-01","dateFin":"2026-07-31","codeUnite":"00002",
                                  "typeProcessus":"COMPLEMENTAIRE","idProcessusOrigine":512,
                                  "motifOuverture":"Beneficiaire omis les 10 et 15 juillet"}"""))
                 .andExpect(status().isForbidden())
@@ -475,8 +476,8 @@ class ProcessusControllerIT {
                 .andExpect(jsonPath("$.idProcessus").value(740))
                 .andExpect(jsonPath("$.statut").value("EN_COURS_SAISIE"))
                 .andExpect(jsonPath("$.codeUnite").value("00002"))
-                .andExpect(jsonPath("$.moisPaiement").value(8))
-                .andExpect(jsonPath("$.anneePaiement").value(2026));
+                .andExpect(jsonPath("$.dateDebut").value("2026-08-01"))
+                .andExpect(jsonPath("$.dateFin").value("2026-08-31"));
     }
 
     @Test
@@ -1108,6 +1109,25 @@ class ProcessusControllerIT {
         ReflectionTestUtils.setField(etape, "dateCreation", LocalDateTime.of(2026, 9, 3, 14, 40));
 
         return new ResultatRetour(processus, etape, niveau);
+    }
+
+
+    /**
+     * Un etat declenche sur le mois indique, borne du premier au dernier jour.
+     *
+     * <p><b>Le mois n'est evalue qu'une fois</b>, ce qui compte : les jeux d'essai
+     * l'obtiennent souvent d'un compteur {@code prochainMois()} a effet de bord, et
+     * l'inliner deux fois pour composer les deux bornes produirait une periode a
+     * cheval sur deux mois differents.
+     *
+     * <p>Les periodes mensuelles restent DISJOINTES entre elles, ce qui est
+     * desormais indispensable : la contrainte d'exclusion
+     * {@code ex_processus_normal_sans_chevauchement} refuse deux etats NORMAL dont
+     * les periodes se recouvrent, meme partiellement (Maille 1).
+     */
+    private static ProcessusMensuel declencherSur(int mois, int annee, String codeUnite) {
+        LocalDate debut = LocalDate.of(annee, mois, 1);
+        return TransitionProcessus.declencher(debut, debut.plusMonths(1).minusDays(1), codeUnite);
     }
 
 }

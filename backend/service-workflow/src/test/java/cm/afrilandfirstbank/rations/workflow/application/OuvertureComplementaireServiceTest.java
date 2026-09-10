@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.workflow.application;
 
+import java.time.LocalDate;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -166,7 +167,7 @@ class OuvertureComplementaireServiceTest {
         @DisplayName("2. Drapeau ferme : le refus precede TOUT, meme sur une origine inexistante")
         void refusDuDrapeauPrecedeToutAutreControle() {
             DeclenchementProcessusRequest surOrigineFantome = new DeclenchementProcessusRequest(
-                    1, ANNEE, UNITE, TypeProcessusEnum.COMPLEMENTAIRE, 999_999_999L, MOTIF);
+                    LocalDate.of(ANNEE, 1, 1), LocalDate.of(ANNEE, 1, 1).plusMonths(1).minusDays(1), UNITE, TypeProcessusEnum.COMPLEMENTAIRE, 999_999_999L, MOTIF);
 
             assertThatThrownBy(() -> ouvertureService.ouvrir(surOrigineFantome, JETON, IP))
                     .as("le drapeau se lit avant l'existence de l'origine")
@@ -185,7 +186,7 @@ class OuvertureComplementaireServiceTest {
         @DisplayName("3. Drapeau ferme : ni le motif absent ni l'origine absente ne changent le refus")
         void refusDuDrapeauPrecedeLesFautesDeRequete() {
             DeclenchementProcessusRequest videe = new DeclenchementProcessusRequest(
-                    1, ANNEE, UNITE, TypeProcessusEnum.COMPLEMENTAIRE, null, "   ");
+                    LocalDate.of(ANNEE, 1, 1), LocalDate.of(ANNEE, 1, 1).plusMonths(1).minusDays(1), UNITE, TypeProcessusEnum.COMPLEMENTAIRE, null, "   ");
 
             assertThatThrownBy(() -> ouvertureService.ouvrir(videe, JETON, IP))
                     .isInstanceOf(FonctionnaliteNonOuverteException.class);
@@ -219,7 +220,7 @@ class OuvertureComplementaireServiceTest {
             ouvrirLeDrapeau();
 
             DeclenchementProcessusRequest surOrigineFantome = new DeclenchementProcessusRequest(
-                    1, ANNEE, UNITE, TypeProcessusEnum.COMPLEMENTAIRE, 999_999_999L, MOTIF);
+                    LocalDate.of(ANNEE, 1, 1), LocalDate.of(ANNEE, 1, 1).plusMonths(1).minusDays(1), UNITE, TypeProcessusEnum.COMPLEMENTAIRE, 999_999_999L, MOTIF);
 
             assertThatThrownBy(() -> ouvertureService.ouvrir(surOrigineFantome, JETON, IP))
                     .as("le drapeau ne bloque plus : c'est l'origine qui manque")
@@ -262,8 +263,8 @@ class OuvertureComplementaireServiceTest {
 
             // La periode et l'unite viennent de l'origine, jamais de la requete.
             assertThat(complementaire.getCodeUnite()).isEqualTo(origine.getCodeUnite());
-            assertThat(complementaire.getMoisPaiement()).isEqualTo(origine.getMoisPaiement());
-            assertThat(complementaire.getAnneePaiement()).isEqualTo(origine.getAnneePaiement());
+            assertThat(complementaire.getDateDebut()).isEqualTo(origine.getDateDebut());
+            assertThat(complementaire.getDateFin()).isEqualTo(origine.getDateFin());
 
             // Reellement en base, pas seulement en memoire.
             assertThat(processusRepository.findById(complementaire.getId())).isPresent();
@@ -349,12 +350,11 @@ class OuvertureComplementaireServiceTest {
             // Comparaison sur l'identifiant : ProcessusMensuel ne redefinit pas equals(),
             // et l'entite relue apres vidage du contexte est une autre instance.
             assertThat(processusRepository
-                    .findByCodeUniteAndMoisPaiementAndAnneePaiementAndTypeProcessus(
-                            origine.getCodeUnite(), origine.getMoisPaiement(),
-                            origine.getAnneePaiement(), TypeProcessusEnum.NORMAL))
-                    .as("il n'y a toujours qu'un seul etat NORMAL pour ce couple, et c'est l'origine")
-                    .isPresent()
-                    .get()
+                    .chevauchant(
+                            origine.getCodeUnite(), origine.getDateDebut(),
+                            origine.getDateFin(), TypeProcessusEnum.NORMAL))
+                    .as("il n'y a toujours qu'un seul etat NORMAL sur cette periode, et c'est l'origine")
+                    .singleElement()
                     .extracting(ProcessusMensuel::getId)
                     .isEqualTo(origine.getId());
         }
@@ -411,7 +411,7 @@ class OuvertureComplementaireServiceTest {
         @DisplayName("11. Origine inexistante : 404, sans interroger le service Identite")
         void origineInexistante() {
             DeclenchementProcessusRequest demande = new DeclenchementProcessusRequest(
-                    1, ANNEE, UNITE, TypeProcessusEnum.COMPLEMENTAIRE, 999_999_999L, MOTIF);
+                    LocalDate.of(ANNEE, 1, 1), LocalDate.of(ANNEE, 1, 1).plusMonths(1).minusDays(1), UNITE, TypeProcessusEnum.COMPLEMENTAIRE, 999_999_999L, MOTIF);
 
             assertThatThrownBy(() -> ouvertureService.ouvrir(demande, JETON, IP))
                     .isInstanceOf(ProcessusIntrouvableException.class);
@@ -433,7 +433,7 @@ class OuvertureComplementaireServiceTest {
         @DisplayName("12. Aucun identifiant d'origine : refus, sans toucher a la base")
         void origineAbsente() {
             DeclenchementProcessusRequest sansOrigine = new DeclenchementProcessusRequest(
-                    1, ANNEE, UNITE, TypeProcessusEnum.COMPLEMENTAIRE, null, MOTIF);
+                    LocalDate.of(ANNEE, 1, 1), LocalDate.of(ANNEE, 1, 1).plusMonths(1).minusDays(1), UNITE, TypeProcessusEnum.COMPLEMENTAIRE, null, MOTIF);
 
             assertThatThrownBy(() -> ouvertureService.ouvrir(sansOrigine, JETON, IP))
                     .isInstanceOf(OrigineRequiseException.class)
@@ -478,7 +478,7 @@ class OuvertureComplementaireServiceTest {
         @DisplayName("14. Origine non cloturee : refus, quel que soit son statut")
         void origineNonClotureeRefusee() {
             ProcessusMensuel enSaisie = processusRepository.save(
-                    TransitionProcessus.declencher(prochainMois(), ANNEE, UNITE));
+                    declencherSur(prochainMois(), ANNEE, UNITE));
             vider();
 
             assertThatThrownBy(() -> ouvertureService.ouvrir(demandePour(enSaisie), JETON, IP))
@@ -595,7 +595,7 @@ class OuvertureComplementaireServiceTest {
             ProcessusMensuel origine = uneOrigineCloturee(10);
 
             DeclenchementProcessusRequest demande = new DeclenchementProcessusRequest(
-                    origine.getMoisPaiement(), ANNEE, AUTRE_UNITE,
+                    origine.getDateDebut(), origine.getDateFin(), AUTRE_UNITE,
                     TypeProcessusEnum.COMPLEMENTAIRE, origine.getId(), MOTIF);
 
             assertThatThrownBy(() -> ouvertureService.ouvrir(demande, JETON, IP))
@@ -620,7 +620,8 @@ class OuvertureComplementaireServiceTest {
             ProcessusMensuel origine = uneOrigineCloturee(10);
 
             DeclenchementProcessusRequest demande = new DeclenchementProcessusRequest(
-                    origine.getMoisPaiement(), ANNEE - 1, origine.getCodeUnite(),
+                    origine.getDateDebut().minusYears(1), origine.getDateFin().minusYears(1),
+                    origine.getCodeUnite(),
                     TypeProcessusEnum.COMPLEMENTAIRE, origine.getId(), MOTIF);
 
             assertThatThrownBy(() -> ouvertureService.ouvrir(demande, JETON, IP))
@@ -748,7 +749,7 @@ class OuvertureComplementaireServiceTest {
 
     private DeclenchementProcessusRequest demandePour(ProcessusMensuel origine, String motif) {
         return new DeclenchementProcessusRequest(
-                origine.getMoisPaiement(), origine.getAnneePaiement(), origine.getCodeUnite(),
+                origine.getDateDebut(), origine.getDateFin(), origine.getCodeUnite(),
                 TypeProcessusEnum.COMPLEMENTAIRE, origine.getId(), motif);
     }
 
@@ -787,7 +788,7 @@ class OuvertureComplementaireServiceTest {
      */
     private ProcessusMensuel unProcessusClos(String codeUnite) {
         ProcessusMensuel processus =
-                TransitionProcessus.declencher(prochainMois(), ANNEE, codeUnite);
+                declencherSur(prochainMois(), ANNEE, codeUnite);
         processus.reporterMontantTotal(45_000);
         TransitionProcessus.soumettre(processus);
         TransitionProcessus.transfererAuChefUnite(processus);
@@ -865,6 +866,25 @@ class OuvertureComplementaireServiceTest {
     private static int prochainMois() {
         prochainMois = prochainMois % 12 + 1;
         return prochainMois;
+    }
+
+
+    /**
+     * Un etat declenche sur le mois indique, borne du premier au dernier jour.
+     *
+     * <p><b>Le mois n'est evalue qu'une fois</b>, ce qui compte : les jeux d'essai
+     * l'obtiennent souvent d'un compteur {@code prochainMois()} a effet de bord, et
+     * l'inliner deux fois pour composer les deux bornes produirait une periode a
+     * cheval sur deux mois differents.
+     *
+     * <p>Les periodes mensuelles restent DISJOINTES entre elles, ce qui est
+     * desormais indispensable : la contrainte d'exclusion
+     * {@code ex_processus_normal_sans_chevauchement} refuse deux etats NORMAL dont
+     * les periodes se recouvrent, meme partiellement (Maille 1).
+     */
+    private static ProcessusMensuel declencherSur(int mois, int annee, String codeUnite) {
+        LocalDate debut = LocalDate.of(annee, mois, 1);
+        return TransitionProcessus.declencher(debut, debut.plusMonths(1).minusDays(1), codeUnite);
     }
 
 }

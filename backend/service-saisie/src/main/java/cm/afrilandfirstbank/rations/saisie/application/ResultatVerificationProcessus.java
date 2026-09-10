@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.saisie.application;
 
+import java.time.LocalDate;
 import cm.afrilandfirstbank.rations.saisie.domaine.StatutProcessusEnum;
 
 /**
@@ -23,7 +24,7 @@ public sealed interface ResultatVerificationProcessus {
     /**
      * Le service Workflow a repondu {@code 200}. Porte tout ce dont la Saisie a
      * besoin, obtenu en UN SEUL appel : le {@code statut} pour savoir si
-     * l'ecriture est permise, et le triplet unite / mois / annee pour la portee
+     * l'ecriture est permise, et le triplet unite / debut / fin de periode pour la portee
      * d'acces (RG-12) et pour la recopie figee sur la fiche
      * ({@code docs/rattachement-processus.md} section 5).
      *
@@ -33,8 +34,8 @@ public sealed interface ResultatVerificationProcessus {
     record ProcessusVerifie(long idProcessus,
                             StatutProcessusEnum statut,
                             String codeUnite,
-                            int moisPaiement,
-                            int anneePaiement) implements ResultatVerificationProcessus {
+                            LocalDate dateDebut,
+                            LocalDate dateFin) implements ResultatVerificationProcessus {
 
         public boolean estModifiable() {
             return statut.estModifiable();

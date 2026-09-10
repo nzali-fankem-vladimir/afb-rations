@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.reporting.domaine;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
@@ -27,8 +28,8 @@ import java.time.LocalDateTime;
  */
 public record EnTeteDemande(
         Long id,
-        Integer moisPaiement,
-        Integer anneePaiement,
+        LocalDate dateDebut,
+        LocalDate dateFin,
         String codeUnite,
         String typeProcessus,
         int montantTotal,

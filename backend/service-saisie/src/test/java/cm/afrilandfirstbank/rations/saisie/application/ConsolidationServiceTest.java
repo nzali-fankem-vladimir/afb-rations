@@ -157,7 +157,7 @@ class ConsolidationServiceTest {
 
     private Long ouvrirFiche(Long idProcessus, LocalDate jour) {
         return ficheRepository.saveAndFlush(
-                new FicheJournaliere(idProcessus, jour, UNITE, 8, 2026)).getId();
+                new FicheJournaliere(idProcessus, jour, UNITE, LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 31))).getId();
     }
 
     private void saisir(Long idFiche, Long idBeneficiaire, NatureEnum nature, SessionEnum session,
@@ -313,8 +313,10 @@ class ConsolidationServiceTest {
 
         assertThat(etat.idProcessus()).isEqualTo(PROCESSUS);
         assertThat(etat.codeUnite()).isEqualTo(UNITE);
-        assertThat(etat.moisPaiement()).isEqualTo(8);
-        assertThat(etat.anneePaiement()).isEqualTo(2026);
+        assertThat(etat.dateDebut()).isEqualTo(LocalDate.of(2026, 8, 1));
+        assertThat(etat.dateFin())
+                .as("borne de fin INCLUSE : le dernier jour, pas le premier du mois suivant")
+                .isEqualTo(LocalDate.of(2026, 8, 31));
     }
 
     // === Montants figes, jamais recalcules ===================================
@@ -392,8 +394,8 @@ class ConsolidationServiceTest {
         assertThat(etat.codeUnite())
                 .as("echo du code unite declare : c'est l'unite sur laquelle la question porte")
                 .isEqualTo(UNITE);
-        assertThat(etat.moisPaiement()).isNull();
-        assertThat(etat.anneePaiement()).isNull();
+        assertThat(etat.dateDebut()).isNull();
+        assertThat(etat.dateFin()).isNull();
         assertThat(etat.journees()).isEmpty();
         assertThat(etat.nombreJournees()).isZero();
         assertThat(etat.nombreLignes()).isZero();

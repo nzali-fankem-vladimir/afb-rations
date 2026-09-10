@@ -171,7 +171,7 @@ public class RetourService {
     private NiveauValidation niveauAttenduOuRefus(ProcessusMensuel processus) {
         return NiveauValidation.attenduPour(processus.getStatut())
                 .orElseThrow(() -> new TransitionProcessusInterditeException(
-                        "L'etat " + libellePeriode(processus) + " de l'unite "
+                        "L'etat " + processus.libellePeriode() + " de l'unite "
                                 + processus.getCodeUnite() + " ne peut pas etre retourne : son "
                                 + "statut est " + processus.getStatut() + ", alors qu'un retour "
                                 + "exige " + StatutEnum.EN_ATTENTE_DA + " ou "
@@ -200,7 +200,7 @@ public class RetourService {
         }
 
         throw new RoleNonAttenduException(
-                "L'etat " + libellePeriode(processus) + " de l'unite " + processus.getCodeUnite()
+                "L'etat " + processus.libellePeriode() + " de l'unite " + processus.getCodeUnite()
                         + " est entre les mains du " + niveau.libelle() + " (role "
                         + niveau.roleRequis() + "), et votre profil porte le role "
                         + acteur.role() + ". Ce dossier ne vous revient pas a ce stade du "
@@ -223,8 +223,5 @@ public class RetourService {
         };
     }
 
-    private String libellePeriode(ProcessusMensuel processus) {
-        return String.format("%02d/%d", processus.getMoisPaiement(), processus.getAnneePaiement());
-    }
 
 }

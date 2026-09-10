@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.reporting.infrastructure.workflow;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -32,8 +33,8 @@ public final class ReponseWorkflow {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record EnTete(
             Long id,
-            Integer moisPaiement,
-            Integer anneePaiement,
+            LocalDate dateDebut,
+            LocalDate dateFin,
             String codeUnite,
             String typeProcessus,
             Integer montantTotal,
@@ -47,8 +48,8 @@ public final class ReponseWorkflow {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Historique(
             Long idProcessus,
-            Integer moisPaiement,
-            Integer anneePaiement,
+            LocalDate dateDebut,
+            LocalDate dateFin,
             String codeUnite,
             String statut,
             List<Etape> etapes) {

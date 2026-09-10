@@ -45,7 +45,7 @@ import cm.afrilandfirstbank.rations.workflow.infrastructure.stockage.StockageDoc
 class SignatureServiceTest {
 
     private static final String UNITE = "00002";
-    private static final String CHEMIN = "2026/09/etat-rations-00002-202609-p109.pdf";
+    private static final String CHEMIN = "2026/09/etat-rations-00002-20260901-p109.pdf";
 
     private static final LocalDateTime T_AGENT = LocalDateTime.of(2026, 9, 1, 10, 24);
     private static final LocalDateTime T_CHEF = LocalDateTime.of(2026, 9, 2, 8, 5);
@@ -310,7 +310,7 @@ class SignatureServiceTest {
     }
 
     private ProcessusMensuel processus(Long id) {
-        ProcessusMensuel cree = TransitionProcessus.declencher(9, 2026, UNITE);
+        ProcessusMensuel cree = declencherSur(9, 2026, UNITE);
         try {
             var champ = ProcessusMensuel.class.getDeclaredField("id");
             champ.setAccessible(true);
@@ -335,12 +335,31 @@ class SignatureServiceTest {
         var jour4 = new EtatConsolide.Journee(12L, LocalDate.of(2026, 9, 4), "EN_SAISIE", 1, 4000L,
                 List.of(ligne(103L, beneficiaire, 4000)));
 
-        return new EtatConsolide(109L, UNITE, 9, 2026, 2, 3, 2, 8000L, List.of(jour3, jour4));
+        return new EtatConsolide(109L, UNITE, LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 1).plusMonths(1).minusDays(1), 2, 3, 2, 8000L, List.of(jour3, jour4));
     }
 
     private EtatConsolide.Ligne ligne(Long id, EtatConsolide.Beneficiaire beneficiaire, int montant) {
         return new EtatConsolide.Ligne(id, 11L, beneficiaire.id(), beneficiaire,
                 "RATION", "JOUR", montant, 12L, LocalDateTime.of(2026, 9, 3, 9, 0));
+    }
+
+
+    /**
+     * Un etat declenche sur le mois indique, borne du premier au dernier jour.
+     *
+     * <p><b>Le mois n'est evalue qu'une fois</b>, ce qui compte : les jeux d'essai
+     * l'obtiennent souvent d'un compteur {@code prochainMois()} a effet de bord, et
+     * l'inliner deux fois pour composer les deux bornes produirait une periode a
+     * cheval sur deux mois differents.
+     *
+     * <p>Les periodes mensuelles restent DISJOINTES entre elles, ce qui est
+     * desormais indispensable : la contrainte d'exclusion
+     * {@code ex_processus_normal_sans_chevauchement} refuse deux etats NORMAL dont
+     * les periodes se recouvrent, meme partiellement (Maille 1).
+     */
+    private static ProcessusMensuel declencherSur(int mois, int annee, String codeUnite) {
+        LocalDate debut = LocalDate.of(annee, mois, 1);
+        return TransitionProcessus.declencher(debut, debut.plusMonths(1).minusDays(1), codeUnite);
     }
 
 }

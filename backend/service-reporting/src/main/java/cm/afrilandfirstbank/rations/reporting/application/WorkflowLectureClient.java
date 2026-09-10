@@ -1,5 +1,7 @@
 package cm.afrilandfirstbank.rations.reporting.application;
 
+import java.time.LocalDate;
+
 /**
  * Port de lecture vers le service Workflow (Sprint 6.1).
  *
@@ -32,7 +34,7 @@ public interface WorkflowLectureClient {
      *        <b>compte reste rendu</b>, ce qui permet de refuser en nommant le
      *        nombre trouve au lieu de rendre une page vide
      */
-    ResultatRechercheDemandes rechercher(Integer mois, Integer annee, String codeUnite,
+    ResultatRechercheDemandes rechercher(LocalDate dateDebut, LocalDate dateFin, String codeUnite,
             String statut, int limite, String enteteAutorisation);
 
     /** Toutes les etapes d'un dossier, dans l'ordre du rang — y compris les passages repetes. */

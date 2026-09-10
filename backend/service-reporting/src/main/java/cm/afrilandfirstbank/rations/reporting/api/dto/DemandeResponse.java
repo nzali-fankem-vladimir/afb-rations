@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.reporting.api.dto;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 import cm.afrilandfirstbank.rations.reporting.domaine.EnTeteDemande;
@@ -17,8 +18,8 @@ import cm.afrilandfirstbank.rations.reporting.domaine.SituationIntegration;
  */
 public record DemandeResponse(
         Long idProcessus,
-        Integer moisPaiement,
-        Integer anneePaiement,
+        LocalDate dateDebut,
+        LocalDate dateFin,
         String codeUnite,
         String typeProcessus,
         int montantTotal,
@@ -31,8 +32,8 @@ public record DemandeResponse(
     public static DemandeResponse depuis(EnTeteDemande enTete) {
         return new DemandeResponse(
                 enTete.id(),
-                enTete.moisPaiement(),
-                enTete.anneePaiement(),
+                enTete.dateDebut(),
+                enTete.dateFin(),
                 enTete.codeUnite(),
                 enTete.typeProcessus(),
                 enTete.montantTotal(),

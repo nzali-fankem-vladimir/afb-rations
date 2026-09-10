@@ -1,6 +1,8 @@
 package cm.afrilandfirstbank.rations.workflow.domaine;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -47,15 +49,42 @@ import jakarta.persistence.Table;
 @Table(name = "processus_mensuel")
 public class ProcessusMensuel {
 
+    /** Forme lisible d'une borne : « 07/09/2026 ». */
+    private static final DateTimeFormatter FORMAT_JOUR = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "mois_paiement", nullable = false)
-    private Integer moisPaiement;
+    /**
+     * Premier jour de la periode de paiement, <b>inclus</b>.
+     *
+     * <h2>Le nom de la table ne dit plus la verite, et c'est assume</h2>
+     *
+     * <p>La table s'appelle toujours {@code processus_mensuel} alors que la
+     * periode n'est plus mensuelle (Maille 1, point M-04). Le renommage a ete
+     * examine puis ecarte : la chaine {@code "processus_mensuel"} est ecrite
+     * comme <b>valeur</b> dans {@code audit_log.entite_cible}, et 193 evenements
+     * la portent deja. Renommer couperait l'historique du journal a l'endroit
+     * exact ou on le consulte, et le reecrire est ce que son immuabilite
+     * interdit. Voir
+     * {@code docs/decisions/2026-09-09-rythme-de-paiement-et-maille-de-la-periode.md}.
+     */
+    @Column(name = "date_debut", nullable = false)
+    private LocalDate dateDebut;
 
-    @Column(name = "annee_paiement", nullable = false)
-    private Integer anneePaiement;
+    /**
+     * Dernier jour de la periode de paiement, <b>inclus</b> — et non le premier
+     * jour de la periode suivante.
+     *
+     * <p>La convention est celle de la contrainte d'exclusion posee en base
+     * ({@code DATERANGE(date_debut, date_fin, '[]')}) : deux periodes
+     * consecutives, du 7 au 13 puis du 14 au 20, ne se chevauchent pas. La
+     * choisir exclusive aurait fait cohabiter deux lectures du meme champ dans
+     * le code et dans le SQL.
+     */
+    @Column(name = "date_fin", nullable = false)
+    private LocalDate dateFin;
 
     /**
      * Unite qui supporte la charge (ligne de <i>debit</i>). Format du referentiel
@@ -164,13 +193,13 @@ public class ProcessusMensuel {
      * propres controles (drapeau {@code RATTRAPAGE_ACTIF}, delai de
      * regularisation, RG-15).
      *
-     * @param moisPaiement mois du cycle, 1 a 12
-     * @param anneePaiement annee du cycle
+     * @param dateDebut premier jour de la periode, inclus
+     * @param dateFin dernier jour de la periode, inclus
      * @param codeUnite unite qui supporte la charge, cinq chiffres
      */
-    ProcessusMensuel(Integer moisPaiement, Integer anneePaiement, String codeUnite) {
-        this.moisPaiement = moisPaiement;
-        this.anneePaiement = anneePaiement;
+    ProcessusMensuel(LocalDate dateDebut, LocalDate dateFin, String codeUnite) {
+        this.dateDebut = dateDebut;
+        this.dateFin = dateFin;
         this.codeUnite = codeUnite;
         this.typeProcessus = TypeProcessusEnum.NORMAL;
         this.idProcessusOrigine = null;
@@ -219,8 +248,8 @@ public class ProcessusMensuel {
                             + "sans identifiant d'origine, id_processus_origine serait nul et le "
                             + "rattachement introuvable (US-17, CT-34).");
         }
-        this.moisPaiement = origine.getMoisPaiement();
-        this.anneePaiement = origine.getAnneePaiement();
+        this.dateDebut = origine.getDateDebut();
+        this.dateFin = origine.getDateFin();
         this.codeUnite = origine.getCodeUnite();
         this.typeProcessus = TypeProcessusEnum.COMPLEMENTAIRE;
         this.idProcessusOrigine = origine.getId();
@@ -444,12 +473,26 @@ public class ProcessusMensuel {
         return id;
     }
 
-    public Integer getMoisPaiement() {
-        return moisPaiement;
+    public LocalDate getDateDebut() {
+        return dateDebut;
     }
 
-    public Integer getAnneePaiement() {
-        return anneePaiement;
+    public LocalDate getDateFin() {
+        return dateFin;
+    }
+
+    /**
+     * La periode, telle qu'elle se lit dans un message d'erreur ou sur un
+     * document : « du 07/09/2026 au 13/09/2026 ».
+     *
+     * <p>Portee par l'entite plutot que recopiee dans chaque service : le module
+     * comptait <b>quatre</b> methodes {@code libellePeriode} privees et
+     * identiques avant la Maille 1, plus une cinquieme nommee autrement. Quatre
+     * copies d'un meme formatage, c'est quatre occasions qu'une diverge — et le
+     * jour ou elle diverge, deux ecrans affichent la meme periode differemment.
+     */
+    public String libellePeriode() {
+        return "du " + dateDebut.format(FORMAT_JOUR) + " au " + dateFin.format(FORMAT_JOUR);
     }
 
     public String getCodeUnite() {

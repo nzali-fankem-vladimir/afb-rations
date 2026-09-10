@@ -1,5 +1,7 @@
 package cm.afrilandfirstbank.rations.workflow.infrastructure;
 
+import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.domain.Page;
@@ -45,8 +47,33 @@ public interface ProcessusMensuelRepository extends JpaRepository<ProcessusMensu
      * <p>Le type est un parametre : plusieurs {@link TypeProcessusEnum#COMPLEMENTAIRE}
      * peuvent partager le meme couple, ce que cette methode n'a pas a decider.
      */
-    Optional<ProcessusMensuel> findByCodeUniteAndMoisPaiementAndAnneePaiementAndTypeProcessus(
-            String codeUnite, Integer moisPaiement, Integer anneePaiement, TypeProcessusEnum typeProcessus);
+    /**
+     * Processus d'un type donne dont la periode <b>chevauche</b> celle proposee,
+     * pour une unite.
+     *
+     * <h2>Pourquoi une requete, et non une methode derivee</h2>
+     *
+     * <p>Avant la Maille 1, la question etait une egalite —
+     * {@code findByCodeUniteAndMoisPaiementAndAnneePaiement...} — parce que deux
+     * periodes mensuelles etaient egales ou disjointes. Avec un intervalle, elles
+     * peuvent se superposer partiellement, et <b>aucun nom de methode derivee
+     * n'exprime un recouvrement</b>.
+     *
+     * <p>{@code debut <= finProposee AND fin >= debutPropose} est la forme
+     * canonique du recouvrement de deux intervalles <b>a bornes incluses</b> — la
+     * meme que celle de la contrainte d'exclusion posee en base, ecrite deux fois
+     * a dessein : le code produit le message, la base produit la garantie.
+     */
+    @Query("""
+            select p from ProcessusMensuel p
+             where p.codeUnite = :codeUnite
+               and p.typeProcessus = :typeProcessus
+               and p.dateDebut <= :dateFin
+               and p.dateFin >= :dateDebut
+             order by p.dateDebut
+            """)
+    List<ProcessusMensuel> chevauchant(String codeUnite, LocalDate dateDebut, LocalDate dateFin,
+            TypeProcessusEnum typeProcessus);
 
     /**
      * Liste paginee des processus d'une unite dans un statut donne — suivi du

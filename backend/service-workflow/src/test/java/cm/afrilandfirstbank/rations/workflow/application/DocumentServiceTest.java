@@ -128,7 +128,7 @@ class DocumentServiceTest {
         // creerait un second chemin de calcul, que la decision du Sprint 3.4
         // interdit -- et le document afficherait alors un montant different de
         // celui que porte le processus.
-        EtatConsolide etat = new EtatConsolide(109L, UNITE, 9, 2026, 2, 3, 2, 99_000L,
+        EtatConsolide etat = new EtatConsolide(109L, UNITE, LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 1).plusMonths(1).minusDays(1), 2, 3, 2, 99_000L,
                 etatDeReference().journees());
 
         String texte = texteDe(service.genererEtatMensuel(processus, etat,
@@ -261,9 +261,9 @@ class DocumentServiceTest {
     @DisplayName("14. le nom du fichier porte l'unite, la periode triable et l'identifiant du processus")
     void conventionDeNommage() {
         assertThat(NommageDocument.cheminRelatif(processus))
-                .isEqualTo("2026/09/etat-rations-00002-202609-p109.pdf");
+                .isEqualTo("2026/09/etat-rations-00002-20260901-p109.pdf");
         assertThat(NommageDocument.nomFichier(processus))
-                .isEqualTo("etat-rations-00002-202609-p109.pdf");
+                .isEqualTo("etat-rations-00002-20260901-p109.pdf");
     }
 
     @Test
@@ -325,7 +325,7 @@ class DocumentServiceTest {
      * l'entite pour les seuls besoins du test.
      */
     private ProcessusMensuel processus(int mois, int annee, Long id) {
-        ProcessusMensuel cree = TransitionProcessus.declencher(mois, annee, UNITE);
+        ProcessusMensuel cree = declencherSur(mois, annee, UNITE);
         try {
             var champ = ProcessusMensuel.class.getDeclaredField("id");
             champ.setAccessible(true);
@@ -352,7 +352,7 @@ class DocumentServiceTest {
                 .mapToInt(journee -> journee.lignes().size()).sum();
         long total = liste.stream()
                 .mapToLong(journee -> journee.sousTotalFcfa()).sum();
-        return new EtatConsolide(109L, UNITE, 9, 2026, liste.size(), nombreLignes, 2, total, liste);
+        return new EtatConsolide(109L, UNITE, LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 1).plusMonths(1).minusDays(1), liste.size(), nombreLignes, 2, total, liste);
     }
 
     private EtatConsolide.Journee journee(LocalDate dateJour, EtatConsolide.Ligne... lignes) {
@@ -369,6 +369,25 @@ class DocumentServiceTest {
 
     private EtatConsolide.Beneficiaire beneficiaire(String nom, String prenom, String compte) {
         return new EtatConsolide.Beneficiaire(55L, nom, prenom, compte, "00002");
+    }
+
+
+    /**
+     * Un etat declenche sur le mois indique, borne du premier au dernier jour.
+     *
+     * <p><b>Le mois n'est evalue qu'une fois</b>, ce qui compte : les jeux d'essai
+     * l'obtiennent souvent d'un compteur {@code prochainMois()} a effet de bord, et
+     * l'inliner deux fois pour composer les deux bornes produirait une periode a
+     * cheval sur deux mois differents.
+     *
+     * <p>Les periodes mensuelles restent DISJOINTES entre elles, ce qui est
+     * desormais indispensable : la contrainte d'exclusion
+     * {@code ex_processus_normal_sans_chevauchement} refuse deux etats NORMAL dont
+     * les periodes se recouvrent, meme partiellement (Maille 1).
+     */
+    private static ProcessusMensuel declencherSur(int mois, int annee, String codeUnite) {
+        LocalDate debut = LocalDate.of(annee, mois, 1);
+        return TransitionProcessus.declencher(debut, debut.plusMonths(1).minusDays(1), codeUnite);
     }
 
 }

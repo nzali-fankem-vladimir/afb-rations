@@ -83,7 +83,7 @@ public class ExportExcelService {
 
         } catch (IOException | RuntimeException echec) {
             throw new ExportImpossibleException(
-                    "Le rapport Excel de " + rapport.periodeMois() + "/" + rapport.periodeAnnee()
+                    "Le rapport Excel du " + rapport.periodeDebut() + " au " + rapport.periodeFin()
                             + " n'a pas pu etre produit (" + echec.getMessage() + ").",
                     echec);
         }
@@ -229,7 +229,7 @@ public class ExportExcelService {
 
         int ligneCourante = ligneDepart;
         ligneCourante = ligneTexte(feuille, ligneCourante, "Periode",
-                rapport.periodeMois() + "/" + rapport.periodeAnnee(), styleEntete);
+                "du " + rapport.periodeDebut() + " au " + rapport.periodeFin(), styleEntete);
         ligneCourante = ligneTexte(feuille, ligneCourante, "Agence",
                 rapport.codeUnite() == null ? "Toutes les unites" : rapport.codeUnite(), styleEntete);
         ligneCourante = ligneTexte(feuille, ligneCourante, "Date de generation",

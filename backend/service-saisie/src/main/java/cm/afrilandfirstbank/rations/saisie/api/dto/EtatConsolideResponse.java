@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.saisie.api.dto;
 
+import java.time.LocalDate;
 import java.util.List;
 
 import cm.afrilandfirstbank.rations.saisie.application.EtatConsolide;
@@ -30,8 +31,8 @@ import cm.afrilandfirstbank.rations.saisie.application.EtatConsolide;
  * <p>Un processus dont l'agent n'a encore rien saisi est rendu avec
  * {@code journees} vide et {@code montantTotalFcfa} à zéro, en {@code 200} —
  * jamais en {@code 404}. Même parti qu'au Sprint 2.4 pour
- * {@code GET /grilles/active}. Dans ce cas seulement, {@code moisPaiement} et
- * {@code anneePaiement} sont nuls : ils sont lus sur les fiches, et il n'y en a
+ * {@code GET /grilles/active}. Dans ce cas seulement, {@code dateDebut} et
+ * {@code dateFin} sont nuls : ils sont lus sur les fiches, et il n'y en a
  * aucune. {@code codeUnite} reste renseigné — c'est l'unité sur laquelle
  * l'appelant a posé la question.
  *
@@ -41,8 +42,8 @@ import cm.afrilandfirstbank.rations.saisie.application.EtatConsolide;
 public record EtatConsolideResponse(
         Long idProcessus,
         String codeUnite,
-        Integer moisPaiement,
-        Integer anneePaiement,
+        LocalDate dateDebut,
+        LocalDate dateFin,
         int nombreJournees,
         int nombreLignes,
         int nombreBeneficiaires,
@@ -57,8 +58,8 @@ public record EtatConsolideResponse(
         return new EtatConsolideResponse(
                 etat.idProcessus(),
                 etat.codeUnite(),
-                etat.moisPaiement(),
-                etat.anneePaiement(),
+                etat.dateDebut(),
+                etat.dateFin(),
                 etat.nombreJournees(),
                 etat.nombreLignes(),
                 etat.nombreBeneficiaires(),

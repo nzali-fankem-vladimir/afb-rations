@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.saisie.application;
 
+import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -197,8 +198,8 @@ public class ConsolidationService {
         return new EtatConsolide(
                 idProcessus,
                 premiere.getCodeUnite() != null ? premiere.getCodeUnite() : codeUniteDeclare,
-                premiere.getMoisPaiement(),
-                premiere.getAnneePaiement(),
+                premiere.getDateDebut(),
+                premiere.getDateFin(),
                 journees.size(),
                 nombreLignes,
                 nombreBeneficiaires,

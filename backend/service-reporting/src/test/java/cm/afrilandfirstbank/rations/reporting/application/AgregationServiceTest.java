@@ -12,6 +12,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Set;
@@ -60,7 +61,7 @@ class AgregationServiceTest {
     }
 
     private EnTeteDemande enTete(long id) {
-        return new EnTeteDemande(id, 8, 2026, "00002", "NORMAL", 50_000, "CLOTURE",
+        return new EnTeteDemande(id, LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 1).plusMonths(1).minusDays(1), "00002", "NORMAL", 50_000, "CLOTURE",
                 true, "INTEGRE", LocalDateTime.now());
     }
 
@@ -79,9 +80,9 @@ class AgregationServiceTest {
     @Test
     @DisplayName("2. filtre sur la periode seule : transmis au Workflow, la Saisie n'est pas appelee")
     void filtrePeriodeSeule_transmisAuWorkflow_sansLaSaisie() {
-        CriteresRecherche criteres = new CriteresRecherche(8, 2026, null, null, null, null);
+        CriteresRecherche criteres = new CriteresRecherche(LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 1).plusMonths(1).minusDays(1), null, null, null, null);
 
-        when(workflowClient.rechercher(eq(8), eq(2026), isNull(), isNull(), eq(LIMITE), eq(JETON)))
+        when(workflowClient.rechercher(eq(LocalDate.of(2026, 8, 1)), eq(LocalDate.of(2026, 8, 31)), isNull(), isNull(), eq(LIMITE), eq(JETON)))
                 .thenReturn(new ResultatRechercheDemandes.Obtenue(List.of(enTete(5))));
 
         List<EnTeteDemande> resultat = service.rechercher(criteres, JETON);
@@ -109,11 +110,11 @@ class AgregationServiceTest {
     @Test
     @DisplayName("4. filtres combines periode et beneficiaire : croisement strict des deux sources")
     void filtresCombines_periodeEtBeneficiaire_croisentLesDeuxSources() {
-        CriteresRecherche criteres = new CriteresRecherche(8, 2026, null, null, null, "10001234567");
+        CriteresRecherche criteres = new CriteresRecherche(LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 1).plusMonths(1).minusDays(1), null, null, null, "10001234567");
 
-        when(workflowClient.rechercher(eq(8), eq(2026), isNull(), isNull(), eq(LIMITE), eq(JETON)))
+        when(workflowClient.rechercher(eq(LocalDate.of(2026, 8, 1)), eq(LocalDate.of(2026, 8, 31)), isNull(), isNull(), eq(LIMITE), eq(JETON)))
                 .thenReturn(new ResultatRechercheDemandes.Obtenue(List.of(enTete(10), enTete(11), enTete(12))));
-        when(saisieClient.identifiantsAvecLigne(eq(8), eq(2026), isNull(), isNull(),
+        when(saisieClient.identifiantsAvecLigne(eq(LocalDate.of(2026, 8, 1)), eq(LocalDate.of(2026, 8, 31)), isNull(), isNull(),
                 eq("10001234567"), eq(JETON)))
                 .thenReturn(ResultatIdentifiantsAvecLigne.Obtenus.de(List.of(11L, 99L)));
 

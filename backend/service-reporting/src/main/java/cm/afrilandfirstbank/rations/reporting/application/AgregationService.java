@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.reporting.application;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
 
@@ -108,7 +109,7 @@ public class AgregationService {
      */
     private List<EnTeteDemande> lireEnTetes(CriteresRecherche criteres, String enteteAutorisation) {
         ResultatRechercheDemandes resultat = workflowClient.rechercher(
-                criteres.mois(), criteres.annee(), criteres.codeUnite(), null,
+                criteres.dateDebut(), criteres.dateFin(), criteres.codeUnite(), null,
                 limiteResultats, enteteAutorisation);
 
         return switch (resultat) {
@@ -143,7 +144,7 @@ public class AgregationService {
             String enteteAutorisation) {
 
         ResultatIdentifiantsAvecLigne resultat = saisieClient.identifiantsAvecLigne(
-                criteres.mois(), criteres.annee(), criteres.nature(), criteres.session(),
+                criteres.dateDebut(), criteres.dateFin(), criteres.nature(), criteres.session(),
                 criteres.beneficiaire(), enteteAutorisation);
 
         return switch (resultat) {

@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.reporting.application;
 
+import java.time.LocalDate;
 import cm.afrilandfirstbank.rations.reporting.domaine.NatureEnum;
 import cm.afrilandfirstbank.rations.reporting.domaine.SessionEnum;
 
@@ -27,7 +28,7 @@ public interface SaisieLectureClient {
      * @param beneficiaire numero de compte courant exact, ou fragment de nom ou de
      *        prenom, insensible a la casse
      */
-    ResultatIdentifiantsAvecLigne identifiantsAvecLigne(Integer mois, Integer annee,
+    ResultatIdentifiantsAvecLigne identifiantsAvecLigne(LocalDate dateDebut, LocalDate dateFin,
             NatureEnum nature, SessionEnum session, String beneficiaire,
             String enteteAutorisation);
 

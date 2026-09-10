@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.workflow.api.dto;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 import cm.afrilandfirstbank.rations.workflow.application.ProcessusService.DetailProcessus;
@@ -36,8 +37,8 @@ public record ProcessusResponse(
         Long idProcessus,
         StatutEnum statut,
         String codeUnite,
-        Integer moisPaiement,
-        Integer anneePaiement,
+        LocalDate dateDebut,
+        LocalDate dateFin,
         TypeProcessusEnum typeProcessus,
         Long idProcessusOrigine,
         String motifOuverture,
@@ -77,8 +78,8 @@ public record ProcessusResponse(
                 processus.getId(),
                 processus.getStatut(),
                 processus.getCodeUnite(),
-                processus.getMoisPaiement(),
-                processus.getAnneePaiement(),
+                processus.getDateDebut(),
+                processus.getDateFin(),
                 processus.getTypeProcessus(),
                 processus.getIdProcessusOrigine(),
                 processus.getMotifOuverture(),

@@ -574,7 +574,7 @@ class CircuitCompletIT {
 
         ProcessusMensuel complementaire = ouvertureComplementaireService.ouvrir(
                 new DeclenchementProcessusRequest(
-                        origine.getMoisPaiement(), origine.getAnneePaiement(),
+                        origine.getDateDebut(), origine.getDateFin(),
                         origine.getCodeUnite(), TypeProcessusEnum.COMPLEMENTAIRE,
                         idOrigine, "TCHOUMBA Isabelle omise le 22"),
                 JETON, IP);
@@ -664,7 +664,7 @@ class CircuitCompletIT {
     private Long declencher() {
         agent();
         ProcessusMensuel processus = processusService.declencher(
-                new DeclenchementProcessusRequest(prochainMois(), ANNEE, UNITE, null, null, null),
+                requeteSurUnePeriodeNeuve(),
                 JETON, IP);
         rafraichir();
         return processus.getId();
@@ -706,14 +706,14 @@ class CircuitCompletIT {
         EtatConsolide.Ligne ligne = new EtatConsolide.Ligne(
                 301L, 31L, 88L, beneficiaire, "RATION", "JOUR",
                 Math.toIntExact(montantTotal), 12L,
-                LocalDateTime.of(ANNEE, processus.getMoisPaiement(), 12, 7, 45));
+                processus.getDateDebut().withDayOfMonth(12).atTime(7, 45));
 
         EtatConsolide.Journee journee = new EtatConsolide.Journee(
-                31L, LocalDate.of(ANNEE, processus.getMoisPaiement(), 12), "ENREGISTREE",
+                31L, processus.getDateDebut().withDayOfMonth(12), "ENREGISTREE",
                 1, montantTotal, List.of(ligne));
 
-        EtatConsolide etat = new EtatConsolide(idProcessus, UNITE, processus.getMoisPaiement(),
-                ANNEE, 1, 1, 1, montantTotal, List.of(journee));
+        EtatConsolide etat = new EtatConsolide(idProcessus, UNITE, processus.getDateDebut(),
+                processus.getDateFin(), 1, 1, 1, montantTotal, List.of(journee));
 
         when(consolidationClient.consolider(anyLong(), anyString(), anyString()))
                 .thenReturn(new ResultatConsolidation.EtatObtenu(etat));
@@ -761,6 +761,22 @@ class CircuitCompletIT {
     private static int prochainMois() {
         prochainMois = prochainMois % 12 + 1;
         return prochainMois;
+    }
+
+
+    /**
+     * Une demande de declenchement sur une periode neuve, disjointe des precedentes.
+     *
+     * <p>Le mois du compteur n'est evalue <b>qu'une fois</b> : compose deux fois pour
+     * former les deux bornes, il produirait une periode a cheval sur deux mois
+     * differents. Et les periodes doivent rester disjointes — la contrainte
+     * {@code ex_processus_normal_sans_chevauchement} refuse desormais deux etats
+     * NORMAL qui se recouvrent, meme partiellement (Maille 1).
+     */
+    private DeclenchementProcessusRequest requeteSurUnePeriodeNeuve() {
+        LocalDate debut = LocalDate.of(ANNEE, prochainMois(), 1);
+        return new DeclenchementProcessusRequest(
+                debut, debut.plusMonths(1).minusDays(1), UNITE, null, null, null);
     }
 
 }

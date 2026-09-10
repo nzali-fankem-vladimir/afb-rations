@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.workflow.infrastructure;
 
+import java.time.LocalDate;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
@@ -40,11 +41,15 @@ class ProcessusSpecificationsTest {
     private static final Integer MOIS = 3;
     private static final Integer ANNEE = 2099;
 
+    /** Les bornes de la periode d'essai — mars 2099, un mois entier. */
+    private static final LocalDate DEBUT = LocalDate.of(ANNEE, MOIS, 1);
+    private static final LocalDate FIN = LocalDate.of(ANNEE, MOIS, 31);
+
     @Autowired
     private ProcessusMensuelRepository repository;
 
     private ProcessusMensuel enregistrer(String codeUnite) {
-        return repository.saveAndFlush(TransitionProcessus.declencher(MOIS, ANNEE, codeUnite));
+        return repository.saveAndFlush(declencherSur(MOIS, ANNEE, codeUnite));
     }
 
     @Test
@@ -55,7 +60,7 @@ class ProcessusSpecificationsTest {
         enregistrer("09099");
 
         List<ProcessusMensuel> resultat = repository.findAll(
-                ProcessusSpecifications.avecFiltres(MOIS, ANNEE, null, null, Set.of("09001", "09002")));
+                ProcessusSpecifications.avecFiltres(DEBUT, FIN, null, null, Set.of("09001", "09002")));
 
         assertThat(resultat)
                 .extracting(ProcessusMensuel::getCodeUnite)
@@ -70,7 +75,7 @@ class ProcessusSpecificationsTest {
 
         // null = portee nationale, aucun filtre d'unite (voir ProcessusSpecifications).
         List<ProcessusMensuel> resultat = repository.findAll(
-                ProcessusSpecifications.avecFiltres(MOIS, ANNEE, null, null, null));
+                ProcessusSpecifications.avecFiltres(DEBUT, FIN, null, null, null));
 
         assertThat(resultat)
                 .extracting(ProcessusMensuel::getCodeUnite)
@@ -83,7 +88,7 @@ class ProcessusSpecificationsTest {
         enregistrer("09005");
 
         List<ProcessusMensuel> resultat = repository.findAll(
-                ProcessusSpecifications.avecFiltres(MOIS, ANNEE, null, null, Set.of()));
+                ProcessusSpecifications.avecFiltres(DEBUT, FIN, null, null, Set.of()));
 
         assertThat(resultat).isEmpty();
     }
@@ -94,9 +99,28 @@ class ProcessusSpecificationsTest {
         enregistrer("09006");
 
         List<ProcessusMensuel> resultat = repository.findAll(
-                ProcessusSpecifications.avecFiltres(MOIS, ANNEE, "09006", null, Set.of("09001")));
+                ProcessusSpecifications.avecFiltres(DEBUT, FIN, "09006", null, Set.of("09001")));
 
         assertThat(resultat).isEmpty();
+    }
+
+
+    /**
+     * Un etat declenche sur le mois indique, borne du premier au dernier jour.
+     *
+     * <p><b>Le mois n'est evalue qu'une fois</b>, ce qui compte : les jeux d'essai
+     * l'obtiennent souvent d'un compteur {@code prochainMois()} a effet de bord, et
+     * l'inliner deux fois pour composer les deux bornes produirait une periode a
+     * cheval sur deux mois differents.
+     *
+     * <p>Les periodes mensuelles restent DISJOINTES entre elles, ce qui est
+     * desormais indispensable : la contrainte d'exclusion
+     * {@code ex_processus_normal_sans_chevauchement} refuse deux etats NORMAL dont
+     * les periodes se recouvrent, meme partiellement (Maille 1).
+     */
+    private static ProcessusMensuel declencherSur(int mois, int annee, String codeUnite) {
+        LocalDate debut = LocalDate.of(annee, mois, 1);
+        return TransitionProcessus.declencher(debut, debut.plusMonths(1).minusDays(1), codeUnite);
     }
 
 }

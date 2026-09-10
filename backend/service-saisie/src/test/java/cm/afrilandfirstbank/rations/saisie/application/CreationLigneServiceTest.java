@@ -255,7 +255,7 @@ class CreationLigneServiceTest {
     // --- Utilitaires ------------------------------------------------------
 
     private void ficheExistante() {
-        FicheJournaliere fiche = new FicheJournaliere(7_800_003L, JOURNEE_PASSEE, "00002", 7, 2026);
+        FicheJournaliere fiche = new FicheJournaliere(7_800_003L, JOURNEE_PASSEE, "00002", LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31));
         ReflectionTestUtils.setField(fiche, "id", ID_FICHE);
         when(ficheJournaliereRepository.findById(ID_FICHE)).thenReturn(Optional.of(fiche));
     }

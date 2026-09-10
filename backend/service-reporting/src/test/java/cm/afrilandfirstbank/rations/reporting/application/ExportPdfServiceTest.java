@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -37,12 +38,12 @@ class ExportPdfServiceTest {
                 SituationIntegration.INTEGRE, LocalDateTime.of(2026, 8, 20, 14, 0));
         Synthese synthese = new Synthese(1, 42_000L, 42_000L, 0L, 0L,
                 Map.of("CLOTURE", 1), Map.of(SituationIntegration.INTEGRE, 1));
-        return new Rapport(8, 2026, "00002", LocalDateTime.of(2026, 9, 4, 10, 0), "claire_nkolo",
+        return new Rapport(LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 1).plusMonths(1).minusDays(1), "00002", LocalDateTime.of(2026, 9, 4, 10, 0), "claire_nkolo",
                 List.of(ligne), List.of(), synthese, false);
     }
 
     private Rapport rapportSansDonnees() {
-        return new Rapport(9, 2026, null, LocalDateTime.of(2026, 9, 4, 10, 0), "claire_nkolo",
+        return new Rapport(LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 1).plusMonths(1).minusDays(1), null, LocalDateTime.of(2026, 9, 4, 10, 0), "claire_nkolo",
                 List.of(), List.of(), Synthese.vide(), true);
     }
 

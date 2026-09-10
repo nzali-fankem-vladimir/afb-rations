@@ -181,7 +181,7 @@ public final class VerrouTransmission {
                 : "suite comptable : " + processus.getStatutIntegration();
 
         return "L'etat " + processus.getId() + " de l'unite " + processus.getCodeUnite() + " ("
-                + processus.getMoisPaiement() + "/" + processus.getAnneePaiement()
+                + processus.libellePeriode()
                 + ") a deja ete transmis a la comptabilite le "
                 + processus.getDateReservationTransmission() + " ; " + suite
                 + ". Aucune seconde publication n'a lieu : elle produirait un second jeu "

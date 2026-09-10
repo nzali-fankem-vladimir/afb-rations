@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.saisie.infrastructure.workflow;
 
+import java.time.LocalDate;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 /**
@@ -7,7 +8,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
  *
  * <p><b>Contrat ecrit, non verifie.</b> Le service Workflow n'existe pas avant le
  * Sprint 4 : ces noms de champs sont repris du contrat d'API section 5, ou
- * {@code POST /processus} recoit {@code moisPaiement}, {@code anneePaiement} et
+ * {@code POST /processus} recoit {@code dateDebut}, {@code dateFin} et
  * {@code codeUnite}, et ou l'exemple de validation rend {@code idProcessus} et
  * {@code statut}. Le Sprint 4 doit s'y conformer ou ce client cassera —
  * exactement le genre de defaut qui « marche en test » et se decouvre en
@@ -28,6 +29,6 @@ public record ProcessusReponse(
         Long idProcessus,
         String statut,
         String codeUnite,
-        Integer moisPaiement,
-        Integer anneePaiement) {
+        LocalDate dateDebut,
+        LocalDate dateFin) {
 }

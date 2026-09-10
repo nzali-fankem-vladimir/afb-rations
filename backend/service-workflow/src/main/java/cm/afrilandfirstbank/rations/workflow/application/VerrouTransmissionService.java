@@ -247,8 +247,8 @@ public class VerrouTransmissionService {
                         .contexte("partition", partition)
                         .contexte("offset", offset)
                         .contexte("codeUnite", processus.getCodeUnite())
-                        .contexte("moisPaiement", processus.getMoisPaiement())
-                        .contexte("anneePaiement", processus.getAnneePaiement())
+                        .contexte("dateDebut", processus.getDateDebut())
+                        .contexte("dateFin", processus.getDateFin())
                         .contexte("montantTotal", montantTotal)
                         .contexte("nombreLignes", nombreLignes)
                         .enJson()));
@@ -279,8 +279,8 @@ public class VerrouTransmissionService {
                         .contexte("statutIntegration", processus.getStatutIntegration())
                         .contexte("referenceComptable", processus.getReferenceComptable())
                         .contexte("codeUnite", processus.getCodeUnite())
-                        .contexte("moisPaiement", processus.getMoisPaiement())
-                        .contexte("anneePaiement", processus.getAnneePaiement())
+                        .contexte("dateDebut", processus.getDateDebut())
+                        .contexte("dateFin", processus.getDateFin())
                         .contexte("montantTotal", processus.getMontantTotal())
                         .enJson()));
     }
@@ -306,8 +306,8 @@ public class VerrouTransmissionService {
                         .champ("dateReservationTransmission", reservationLevee, null)
                         .contexte("motif", motif)
                         .contexte("codeUnite", processus.getCodeUnite())
-                        .contexte("moisPaiement", processus.getMoisPaiement())
-                        .contexte("anneePaiement", processus.getAnneePaiement())
+                        .contexte("dateDebut", processus.getDateDebut())
+                        .contexte("dateFin", processus.getDateFin())
                         .enJson()));
     }
 

@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.workflow.api.dto;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -27,8 +28,8 @@ import cm.afrilandfirstbank.rations.workflow.domaine.StatutEtapeEnum;
  */
 public record HistoriqueProcessusResponse(
         Long idProcessus,
-        Integer moisPaiement,
-        Integer anneePaiement,
+        LocalDate dateDebut,
+        LocalDate dateFin,
         String codeUnite,
         String statut,
         List<EtapeHistoriqueDto> etapes) {
@@ -36,8 +37,8 @@ public record HistoriqueProcessusResponse(
     public static HistoriqueProcessusResponse depuis(HistoriqueProcessus historique) {
         return new HistoriqueProcessusResponse(
                 historique.processus().getId(),
-                historique.processus().getMoisPaiement(),
-                historique.processus().getAnneePaiement(),
+                historique.processus().getDateDebut(),
+                historique.processus().getDateFin(),
                 historique.processus().getCodeUnite(),
                 historique.processus().getStatut().name(),
                 historique.etapes().stream().map(EtapeHistoriqueDto::depuis).toList());

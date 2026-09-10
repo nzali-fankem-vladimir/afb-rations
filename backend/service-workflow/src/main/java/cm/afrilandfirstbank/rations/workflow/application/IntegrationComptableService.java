@@ -191,8 +191,8 @@ public class IntegrationComptableService {
                         .contexte("dateTraitement", processus.getDateTraitement())
                         .contexte("motifIntegration", processus.getMotifIntegration())
                         .contexte("codeUnite", processus.getCodeUnite())
-                        .contexte("moisPaiement", processus.getMoisPaiement())
-                        .contexte("anneePaiement", processus.getAnneePaiement())
+                        .contexte("dateDebut", processus.getDateDebut())
+                        .contexte("dateFin", processus.getDateFin())
                         .contexte("montantTotal", processus.getMontantTotal())
                         .enJson()));
     }

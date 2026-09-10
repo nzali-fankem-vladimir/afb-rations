@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.transmission.application;
 
+import java.time.LocalDate;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 /**
@@ -41,6 +42,8 @@ public record EnTeteProcessus(
         Long idProcessus,
         String statut,
         String codeUnite,
+        LocalDate dateDebut,
+        LocalDate dateFin,
         Integer moisPaiement,
         Integer anneePaiement,
         String typeProcessus,

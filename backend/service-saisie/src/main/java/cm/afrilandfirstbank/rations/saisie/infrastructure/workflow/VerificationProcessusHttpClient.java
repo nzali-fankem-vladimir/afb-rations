@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.saisie.infrastructure.workflow;
 
+import java.time.LocalDate;
 import java.util.Optional;
 
 import org.slf4j.Logger;
@@ -29,7 +30,7 @@ import cm.afrilandfirstbank.rations.saisie.domaine.StatutProcessusEnum;
  * au Sprint 4 ({@code docs/rattachement-processus.md} §6). Le service Workflow
  * ayant été livré au Sprint 4.1, {@code ProcessusResponse} y expose exactement
  * les cinq champs lus ici — {@code idProcessus}, {@code statut},
- * {@code codeUnite}, {@code moisPaiement}, {@code anneePaiement} — et un test
+ * {@code codeUnite}, {@code dateDebut}, {@code dateFin} — et un test
  * d'intégration de ce service les verrouille (action B-04,
  * {@code docs/dispositifs_provisoires.md}).
  *
@@ -136,15 +137,15 @@ public class VerificationProcessusHttpClient implements VerificationProcessusCli
         }
 
         if (reponse.codeUnite() == null || reponse.codeUnite().isBlank()
-                || reponse.moisPaiement() == null || reponse.anneePaiement() == null) {
+                || reponse.dateDebut() == null || reponse.dateFin() == null) {
             journal.warn("Reponse incomplete du service Workflow pour le processus {} "
-                            + "(codeUnite={}, mois={}, annee={}). Operation refusee.",
-                    idProcessus, reponse.codeUnite(), reponse.moisPaiement(), reponse.anneePaiement());
+                            + "(codeUnite={}, dateDebut={}, dateFin={}). Operation refusee.",
+                    idProcessus, reponse.codeUnite(), reponse.dateDebut(), reponse.dateFin());
             return new ServiceWorkflowIndisponible("reponse 200 sans unite ni periode exploitables");
         }
 
         return new ProcessusVerifie(idProcessus, statut.get(), reponse.codeUnite(),
-                reponse.moisPaiement(), reponse.anneePaiement());
+                reponse.dateDebut(), reponse.dateFin());
     }
 
 }

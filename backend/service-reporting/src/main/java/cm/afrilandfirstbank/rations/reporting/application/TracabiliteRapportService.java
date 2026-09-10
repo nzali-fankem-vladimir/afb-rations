@@ -108,8 +108,8 @@ public class TracabiliteRapportService {
     private DeltaAudit socle(Rapport rapport) {
         return DeltaAudit.nouveau()
                 .contexte("login", rapport.loginUtilisateur())
-                .contexte("periodeMois", rapport.periodeMois())
-                .contexte("periodeAnnee", rapport.periodeAnnee())
+                .contexte("periodeDebut", rapport.periodeDebut())
+                .contexte("periodeFin", rapport.periodeFin())
                 .contexte("codeUnite",
                         rapport.codeUnite() == null ? "TOUTES_UNITES_VISIBLES" : rapport.codeUnite())
                 .contexte("nombreEtats", rapport.synthese().nombreEtats())

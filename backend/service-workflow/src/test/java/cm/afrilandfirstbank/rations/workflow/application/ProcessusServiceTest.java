@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.workflow.application;
 
+import java.time.LocalDate;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -32,6 +33,7 @@ import cm.afrilandfirstbank.rations.workflow.application.ResultatHabilitationUni
 import cm.afrilandfirstbank.rations.workflow.application.ResultatHabilitationUnite.ServiceIdentiteIndisponible;
 import cm.afrilandfirstbank.rations.workflow.domaine.ProcessusMensuel;
 import cm.afrilandfirstbank.rations.workflow.domaine.StatutEnum;
+import cm.afrilandfirstbank.rations.workflow.domaine.TransitionProcessus;
 import cm.afrilandfirstbank.rations.workflow.domaine.TypeProcessusEnum;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.AgentNonHabiliteException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ProcessusExistantException;
@@ -109,7 +111,10 @@ class ProcessusServiceTest {
     }
 
     private static DeclenchementProcessusRequest demande(int mois, String codeUnite) {
-        return new DeclenchementProcessusRequest(mois, ANNEE, codeUnite, null, null, null);
+        return new DeclenchementProcessusRequest(
+                LocalDate.of(ANNEE, mois, 1),
+                LocalDate.of(ANNEE, mois, 1).plusMonths(1).minusDays(1),
+                codeUnite, null, null, null);
     }
 
     private static EtatConsolide etatVide(Long idProcessus, String codeUnite) {
@@ -127,8 +132,8 @@ class ProcessusServiceTest {
         assertThat(processus.getStatut()).isEqualTo(StatutEnum.EN_COURS_SAISIE);
         assertThat(processus.getTypeProcessus()).isEqualTo(TypeProcessusEnum.NORMAL);
         assertThat(processus.getCodeUnite()).isEqualTo(UNITE);
-        assertThat(processus.getMoisPaiement()).isEqualTo(1);
-        assertThat(processus.getAnneePaiement()).isEqualTo(ANNEE);
+        assertThat(processus.getDateDebut()).isEqualTo(LocalDate.of(ANNEE, 1, 1));
+        assertThat(processus.getDateFin()).isEqualTo(LocalDate.of(ANNEE, 1, 31));
         assertThat(processus.getMontantTotal()).isZero();
         assertThat(processus.isTransmisComptabilite()).isFalse();
         assertThat(processus.getIdProcessusOrigine()).isNull();
@@ -160,9 +165,77 @@ class ProcessusServiceTest {
                 .hasMessageContaining("EN_COURS_SAISIE");
 
         assertThat(processusRepository
-                .findByCodeUniteAndMoisPaiementAndAnneePaiementAndTypeProcessus(
-                        UNITE, 3, ANNEE, TypeProcessusEnum.NORMAL))
+                .chevauchant(
+                        UNITE, LocalDate.of(ANNEE, 3, 1), LocalDate.of(ANNEE, 3, 1).plusMonths(1).minusDays(1), TypeProcessusEnum.NORMAL))
                 .contains(premier);
+    }
+
+    /**
+     * <b>Le chevauchement PARTIEL est refuse, pas seulement l'egalite.</b>
+     *
+     * <p>C'est ce qui justifie la contrainte d'exclusion de la Maille 1. Avant elle,
+     * la periode etait un couple (mois, annee) : deux periodes etaient egales ou
+     * disjointes, jamais superposees a moitie. Avec un intervalle, elles peuvent
+     * l'etre — et les journees communes appartiendraient alors a deux etats NORMAL,
+     * donc seraient payables deux fois.
+     *
+     * <p>Un simple index unique sur les bornes laisserait passer ce cas : il faut la
+     * contrainte d'exclusion pour le fermer.
+     */
+    @Test
+    @DisplayName("3b. Chevauchement PARTIEL de deux periodes : refuse aussi")
+    void chevauchementPartielRefuse() {
+        LocalDate debut = LocalDate.of(ANNEE, 6, 7);
+        processusService.declencher(demandeSur(debut, debut.plusDays(6), UNITE), JETON, IP);
+
+        LocalDate chevauchant = debut.plusDays(3);
+        assertThatThrownBy(() -> processusService.declencher(
+                demandeSur(chevauchant, chevauchant.plusDays(6), UNITE), JETON, IP))
+                .isInstanceOf(ProcessusExistantException.class)
+                .hasMessageContaining("tout ou partie");
+    }
+
+    /**
+     * <b>Deux periodes consecutives ne se chevauchent pas.</b> Les bornes sont
+     * INCLUSIVES : du 7 au 13, puis du 14 au 20. Une borne de fin exclusive aurait
+     * fait de la seconde un chevauchement — c'est la convention que la contrainte
+     * d'exclusion et l'entite partagent, et ce test la verrouille.
+     */
+    @Test
+    @DisplayName("3c. Deux periodes consecutives : acceptees, les bornes sont incluses")
+    void periodesConsecutivesAcceptees() {
+        LocalDate debut = LocalDate.of(ANNEE, 7, 6);
+        processusService.declencher(demandeSur(debut, debut.plusDays(6), UNITE), JETON, IP);
+
+        LocalDate suivante = debut.plusDays(7);
+        assertThat(processusService.declencher(
+                demandeSur(suivante, suivante.plusDays(6), UNITE), JETON, IP).getId())
+                .isNotNull();
+    }
+
+    /**
+     * <b>Le conseil donne a l'agent depend du statut de l'etat qui bloque.</b>
+     *
+     * <p>« Rejoignez ce dossier » est juste tant qu'il est ouvert, et faux des qu'il
+     * est cloture : un dossier clos ne se rejoint pas. Ce second cas se produira une
+     * fois par unite au moment de la bascule du mensuel vers l'hebdomadaire, ou l'etat
+     * du mois bloque toute semaine qui deborde dessus. Le message doit alors nommer les
+     * deux issues reelles — l'etat complementaire, ou le decalage de la borne de debut.
+     */
+    @Test
+    @DisplayName("3d. Etat en conflit CLOTURE : le message nomme le complementaire, pas la reprise")
+    void refusSurUnEtatClotureOriente() {
+        ProcessusMensuel premier = processusService.declencher(demande(8, UNITE), JETON, IP);
+        cloturer(premier);
+
+        assertThatThrownBy(() -> processusService.declencher(demande(8, UNITE), JETON, IP))
+                .isInstanceOf(ProcessusExistantException.class)
+                .hasMessageContaining("CLOTURE")
+                .hasMessageContaining("complementaire")
+                .as("l'agent ne doit pas etre invite a rejoindre un dossier clos")
+                .extracting(Throwable::getMessage)
+                .asString()
+                .doesNotContain("rejoignez-le");
     }
 
     @Test
@@ -201,7 +274,7 @@ class ProcessusServiceTest {
     @DisplayName("5. Type COMPLEMENTAIRE ici : invariant rompu, rien n'est cree ni trace")
     void typeComplementaireRefuse() {
         DeclenchementProcessusRequest complementaire = new DeclenchementProcessusRequest(
-                6, ANNEE, UNITE, TypeProcessusEnum.COMPLEMENTAIRE, 512L, "Beneficiaire omis le 10");
+                    LocalDate.of(ANNEE, 6, 1), LocalDate.of(ANNEE, 6, 1).plusMonths(1).minusDays(1), UNITE, TypeProcessusEnum.COMPLEMENTAIRE, 512L, "Beneficiaire omis le 10");
 
         assertThatThrownBy(() -> processusService.declencher(complementaire, JETON, IP))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -214,13 +287,13 @@ class ProcessusServiceTest {
         // ne peut pas aboutir ici.
         verifyNoInteractions(habilitationClient);
         assertThat(processusRepository
-                .findByCodeUniteAndMoisPaiementAndAnneePaiementAndTypeProcessus(
-                        UNITE, 6, ANNEE, TypeProcessusEnum.COMPLEMENTAIRE))
+                .chevauchant(
+                        UNITE, LocalDate.of(ANNEE, 6, 1), LocalDate.of(ANNEE, 6, 1).plusMonths(1).minusDays(1), TypeProcessusEnum.COMPLEMENTAIRE))
                 .isEmpty();
         // Et surtout : aucun etat NORMAL n'a ete cree a la place.
         assertThat(processusRepository
-                .findByCodeUniteAndMoisPaiementAndAnneePaiementAndTypeProcessus(
-                        UNITE, 6, ANNEE, TypeProcessusEnum.NORMAL))
+                .chevauchant(
+                        UNITE, LocalDate.of(ANNEE, 6, 1), LocalDate.of(ANNEE, 6, 1).plusMonths(1).minusDays(1), TypeProcessusEnum.NORMAL))
                 .isEmpty();
         verifyNoInteractions(publicateurAudit);
     }
@@ -233,8 +306,8 @@ class ProcessusServiceTest {
                 .hasMessageContaining(AUTRE_UNITE);
 
         assertThat(processusRepository
-                .findByCodeUniteAndMoisPaiementAndAnneePaiementAndTypeProcessus(
-                        AUTRE_UNITE, 7, ANNEE, TypeProcessusEnum.NORMAL))
+                .chevauchant(
+                        AUTRE_UNITE, LocalDate.of(ANNEE, 7, 1), LocalDate.of(ANNEE, 7, 1).plusMonths(1).minusDays(1), TypeProcessusEnum.NORMAL))
                 .isEmpty();
     }
 
@@ -251,8 +324,8 @@ class ProcessusServiceTest {
                 .hasMessageContaining("indisponible");
 
         assertThat(processusRepository
-                .findByCodeUniteAndMoisPaiementAndAnneePaiementAndTypeProcessus(
-                        UNITE, 8, ANNEE, TypeProcessusEnum.NORMAL))
+                .chevauchant(
+                        UNITE, LocalDate.of(ANNEE, 8, 1), LocalDate.of(ANNEE, 8, 1).plusMonths(1).minusDays(1), TypeProcessusEnum.NORMAL))
                 .isEmpty();
     }
 
@@ -390,6 +463,21 @@ class ProcessusServiceTest {
                 .isInstanceOf(AgentNonHabiliteException.class);
 
         verify(consolidationClient, never()).consolider(anyLong(), anyString(), anyString());
+    }
+
+
+    /** Une demande portant des bornes explicites. */
+    private static DeclenchementProcessusRequest demandeSur(LocalDate debut, LocalDate fin,
+            String codeUnite) {
+        return new DeclenchementProcessusRequest(debut, fin, codeUnite, null, null, null);
+    }
+
+    /** Mene un etat jusqu'a CLOTURE, sans passer par le circuit de validation. */
+    private void cloturer(ProcessusMensuel processus) {
+        TransitionProcessus.soumettre(processus);
+        TransitionProcessus.transfererAuChefUnite(processus);
+        TransitionProcessus.cloturerApresValidationChefUnite(processus);
+        processusRepository.saveAndFlush(processus);
     }
 
 }

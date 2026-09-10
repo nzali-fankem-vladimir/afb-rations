@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -47,7 +48,7 @@ class RapportServiceTest {
 
     private EnTeteDemande enTete(long id, String codeUnite, int montant, String statut,
             boolean transmis, String statutIntegration) {
-        return new EnTeteDemande(id, 8, 2026, codeUnite, "NORMAL", montant, statut, transmis,
+        return new EnTeteDemande(id, LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 1).plusMonths(1).minusDays(1), codeUnite, "NORMAL", montant, statut, transmis,
                 statutIntegration, LocalDateTime.of(2026, 8, 15, 9, 0));
     }
 
@@ -59,7 +60,7 @@ class RapportServiceTest {
                 enTete(2, "00002", 20_000, "SOUMIS", false, null),
                 enTete(3, "00003", 15_000, "CLOTURE", true, "EN_ATTENTE")));
 
-        Rapport rapport = service.produire(8, 2026, null, "claire_nkolo", JETON);
+        Rapport rapport = service.produire(LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 31), null, "claire_nkolo", JETON);
 
         assertThat(rapport.vide()).isFalse();
         assertThat(rapport.lignes()).hasSize(3);
@@ -86,7 +87,7 @@ class RapportServiceTest {
     void periodeSansDonnees_rapportVideSignale() {
         when(agregationService.rechercher(any(), eq(JETON))).thenReturn(List.of());
 
-        Rapport rapport = service.produire(9, 2026, null, "claire_nkolo", JETON);
+        Rapport rapport = service.produire(LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30), null, "claire_nkolo", JETON);
 
         assertThat(rapport.vide()).isTrue();
         assertThat(rapport.lignes()).isEmpty();
@@ -104,11 +105,11 @@ class RapportServiceTest {
                 enTete(1, "00002", 30_000, "CLOTURE", true, "INTEGRE"),
                 enTete(2, "00002", 20_000, "SOUMIS", false, null)));
 
-        Rapport rapport = service.produire(8, 2026, "00002", "claire_nkolo", JETON);
+        Rapport rapport = service.produire(LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 31), "00002", "claire_nkolo", JETON);
 
         assertThat(criteresCaptes.getValue().codeUnite()).isEqualTo("00002");
-        assertThat(criteresCaptes.getValue().mois()).isEqualTo(8);
-        assertThat(criteresCaptes.getValue().annee()).isEqualTo(2026);
+        assertThat(criteresCaptes.getValue().dateDebut()).isEqualTo(LocalDate.of(2026, 8, 1));
+        assertThat(criteresCaptes.getValue().dateFin()).isEqualTo(LocalDate.of(2026, 8, 31));
         // Aucun critere de ligne : ce rapport n'interroge jamais la Saisie (doctrine 6.1).
         assertThat(criteresCaptes.getValue().porteSurLesLignes()).isFalse();
 
@@ -127,7 +128,7 @@ class RapportServiceTest {
                 enTete(12, "00003", 100, "RETOURNE", false, null));
         when(agregationService.rechercher(any(), eq(JETON))).thenReturn(enTetes);
 
-        Rapport rapport = service.produire(8, 2026, null, "claire_nkolo", JETON);
+        Rapport rapport = service.produire(LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 31), null, "claire_nkolo", JETON);
 
         long sommeAttendue = enTetes.stream().mapToLong(EnTeteDemande::montantTotal).sum();
         assertThat(rapport.synthese().montantTotalPeriode()).isEqualTo(sommeAttendue);
@@ -146,7 +147,7 @@ class RapportServiceTest {
                 // Jamais envoye : encore en circuit.
                 enTete(4, "00002", 5_000, "EN_ATTENTE_DA", false, null)));
 
-        Rapport rapport = service.produire(8, 2026, null, "claire_nkolo", JETON);
+        Rapport rapport = service.produire(LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 31), null, "claire_nkolo", JETON);
         Rapport.Synthese synthese = rapport.synthese();
 
         // "Envoye" = parti sur le topic, REJETE inclus : ce n'est pas "paye".

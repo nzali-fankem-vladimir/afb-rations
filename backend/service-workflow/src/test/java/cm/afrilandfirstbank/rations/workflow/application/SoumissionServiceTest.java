@@ -145,9 +145,11 @@ class SoumissionServiceTest {
         assertThat(resultat.pieceJointe().getNombreSignatures()).isEqualTo(1);
         assertThat(resultat.pieceJointe().getTypeMime()).isEqualTo("application/pdf");
         assertThat(resultat.pieceJointe().getCheminFichier())
-                .isEqualTo("%d/%02d/etat-rations-00002-%d%02d-p%d.pdf".formatted(
-                        processus.getAnneePaiement(), processus.getMoisPaiement(),
-                        processus.getAnneePaiement(), processus.getMoisPaiement(),
+                .isEqualTo("%d/%02d/etat-rations-00002-%s-p%d.pdf".formatted(
+                        processus.getDateDebut().getYear(),
+                        processus.getDateDebut().getMonthValue(),
+                        processus.getDateDebut().format(
+                                java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd")),
                         processus.getId()));
 
         // L'etape du circuit.
@@ -262,7 +264,7 @@ class SoumissionServiceTest {
     void etatVideRefuse() {
         ProcessusMensuel processus = processusEnSaisie(8);
         consolidationRend(new EtatConsolide(processus.getId(), UNITE,
-                processus.getMoisPaiement(), processus.getAnneePaiement(),
+                processus.getDateDebut(), processus.getDateFin(),
                 0, 0, 0, 0L, List.of()));
 
         assertThatThrownBy(() -> soumissionService.soumettre(processus.getId(), JETON, IP))
@@ -281,8 +283,9 @@ class SoumissionServiceTest {
     void etatIncompletListeLesManques() {
         ProcessusMensuel processus = processusEnSaisie(9);
 
-        int mois = processus.getMoisPaiement();
-        int annee = processus.getAnneePaiement();
+        LocalDate debut = processus.getDateDebut();
+        int mois = debut.getMonthValue();
+        int annee = debut.getYear();
 
         // Une ligne hors periode, une sans montant, un beneficiaire sans compte.
         var sansCompte = new EtatConsolide.Beneficiaire(56L, "ESSAMA", "Paul", null, "00002");
@@ -295,7 +298,8 @@ class SoumissionServiceTest {
                 2, 1500L, List.of(ligne(102L, correct, null, annee, mois),
                         ligne(103L, sansCompte, 1500, annee, mois)));
 
-        consolidationRend(new EtatConsolide(processus.getId(), UNITE, mois, annee,
+        consolidationRend(new EtatConsolide(processus.getId(), UNITE,
+                processus.getDateDebut(), processus.getDateFin(),
                 2, 3, 2, 4000L, List.of(horsPeriode, dansPeriode)));
 
         assertThatThrownBy(() -> soumissionService.soumettre(processus.getId(), JETON, IP))
@@ -544,7 +548,7 @@ class SoumissionServiceTest {
     void refusNonTraceCommeSucces() {
         ProcessusMensuel processus = processusEnSaisie(22);
         consolidationRend(new EtatConsolide(processus.getId(), UNITE,
-                processus.getMoisPaiement(), processus.getAnneePaiement(),
+                processus.getDateDebut(), processus.getDateFin(),
                 0, 0, 0, 0L, List.of()));
 
         assertThatThrownBy(() -> soumissionService.soumettre(processus.getId(), JETON, IP))
@@ -599,7 +603,7 @@ class SoumissionServiceTest {
         int mois = ((rang - 1) % 12) + 1;
         int annee = ANNEE + (rang - 1) / 12;
         return processusRepository.saveAndFlush(
-                TransitionProcessus.declencher(mois, annee, codeUnite));
+                declencherSur(mois, annee, codeUnite));
     }
 
     private void habiliteSur(String codeUnite) {
@@ -637,8 +641,9 @@ class SoumissionServiceTest {
      * d'essai, et le controle a fait exactement son travail.
      */
     private EtatConsolide etatAvecTotal(ProcessusMensuel processus, Long total) {
-        int mois = processus.getMoisPaiement();
-        int annee = processus.getAnneePaiement();
+        LocalDate debut = processus.getDateDebut();
+        int mois = debut.getMonthValue();
+        int annee = debut.getYear();
 
         var beneficiaire = new EtatConsolide.Beneficiaire(55L, "MBARGA", "Jean",
                 "03702009991111", "00002");
@@ -651,7 +656,8 @@ class SoumissionServiceTest {
         var jour4 = new EtatConsolide.Journee(12L, LocalDate.of(annee, mois, 4), "EN_SAISIE",
                 1, 4000L, List.of(ligne(103L, beneficiaire, 4000, annee, mois)));
 
-        return new EtatConsolide(processus.getId(), UNITE, mois, annee, 2, 3, 2, total,
+        return new EtatConsolide(processus.getId(), UNITE,
+                processus.getDateDebut(), processus.getDateFin(), 2, 3, 2, total,
                 List.of(jour3, jour4));
     }
 
@@ -659,6 +665,25 @@ class SoumissionServiceTest {
             Integer montant, int annee, int mois) {
         return new EtatConsolide.Ligne(id, 11L, beneficiaire.id(), beneficiaire,
                 "RATION", "JOUR", montant, 12L, LocalDateTime.of(annee, mois, 3, 9, 0));
+    }
+
+
+    /**
+     * Un etat declenche sur le mois indique, borne du premier au dernier jour.
+     *
+     * <p><b>Le mois n'est evalue qu'une fois</b>, ce qui compte : les jeux d'essai
+     * l'obtiennent souvent d'un compteur {@code prochainMois()} a effet de bord, et
+     * l'inliner deux fois pour composer les deux bornes produirait une periode a
+     * cheval sur deux mois differents.
+     *
+     * <p>Les periodes mensuelles restent DISJOINTES entre elles, ce qui est
+     * desormais indispensable : la contrainte d'exclusion
+     * {@code ex_processus_normal_sans_chevauchement} refuse deux etats NORMAL dont
+     * les periodes se recouvrent, meme partiellement (Maille 1).
+     */
+    private static ProcessusMensuel declencherSur(int mois, int annee, String codeUnite) {
+        LocalDate debut = LocalDate.of(annee, mois, 1);
+        return TransitionProcessus.declencher(debut, debut.plusMonths(1).minusDays(1), codeUnite);
     }
 
 }

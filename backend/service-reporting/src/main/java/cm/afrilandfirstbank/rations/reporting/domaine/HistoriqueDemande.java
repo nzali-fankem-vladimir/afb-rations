@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.reporting.domaine;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -11,8 +12,8 @@ import java.util.List;
  */
 public record HistoriqueDemande(
         Long idProcessus,
-        Integer moisPaiement,
-        Integer anneePaiement,
+        LocalDate dateDebut,
+        LocalDate dateFin,
         String codeUnite,
         String statut,
         List<EtapeHistorique> etapes) {

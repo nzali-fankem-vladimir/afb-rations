@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.workflow.domaine;
 
+import java.time.LocalDate;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -45,7 +46,7 @@ class TransitionProcessusTest {
      * transitions legales.
      */
     private static ProcessusMensuel processusAu(StatutEnum statutVoulu) {
-        ProcessusMensuel processus = TransitionProcessus.declencher(MOIS, ANNEE, CODE_UNITE);
+        ProcessusMensuel processus = declencherSur(MOIS, ANNEE, CODE_UNITE);
         if (statutVoulu == StatutEnum.EN_COURS_SAISIE) {
             return processus;
         }
@@ -88,12 +89,14 @@ class TransitionProcessusTest {
         @Test
         @DisplayName("1. (creation) -> EN_COURS_SAISIE : declenchement par l'agent")
         void creationVersEnCoursSaisie() {
-            ProcessusMensuel processus = TransitionProcessus.declencher(MOIS, ANNEE, CODE_UNITE);
+            ProcessusMensuel processus = declencherSur(MOIS, ANNEE, CODE_UNITE);
 
             assertThat(processus.getStatut()).isEqualTo(StatutEnum.EN_COURS_SAISIE);
             assertThat(processus.getTypeProcessus()).isEqualTo(TypeProcessusEnum.NORMAL);
-            assertThat(processus.getMoisPaiement()).isEqualTo(MOIS);
-            assertThat(processus.getAnneePaiement()).isEqualTo(ANNEE);
+            assertThat(processus.getDateDebut()).isEqualTo(LocalDate.of(ANNEE, MOIS, 1));
+            assertThat(processus.getDateFin())
+                    .as("borne de fin INCLUSE : le dernier jour du mois, pas le premier du suivant")
+                    .isEqualTo(LocalDate.of(ANNEE, MOIS, 1).plusMonths(1).minusDays(1));
             assertThat(processus.getCodeUnite()).isEqualTo(CODE_UNITE);
             // Un etat normal ne regularise rien, n'a rien consolide, n'a rien transmis.
             assertThat(processus.getIdProcessusOrigine()).isNull();
@@ -406,6 +409,25 @@ class TransitionProcessusTest {
             assertThat(TransitionProcessus.estAutorisee(null, null)).isFalse();
         }
 
+    }
+
+
+    /**
+     * Un etat declenche sur le mois indique, borne du premier au dernier jour.
+     *
+     * <p><b>Le mois n'est evalue qu'une fois</b>, ce qui compte : les jeux d'essai
+     * l'obtiennent souvent d'un compteur {@code prochainMois()} a effet de bord, et
+     * l'inliner deux fois pour composer les deux bornes produirait une periode a
+     * cheval sur deux mois differents.
+     *
+     * <p>Les periodes mensuelles restent DISJOINTES entre elles, ce qui est
+     * desormais indispensable : la contrainte d'exclusion
+     * {@code ex_processus_normal_sans_chevauchement} refuse deux etats NORMAL dont
+     * les periodes se recouvrent, meme partiellement (Maille 1).
+     */
+    private static ProcessusMensuel declencherSur(int mois, int annee, String codeUnite) {
+        LocalDate debut = LocalDate.of(annee, mois, 1);
+        return TransitionProcessus.declencher(debut, debut.plusMonths(1).minusDays(1), codeUnite);
     }
 
 }

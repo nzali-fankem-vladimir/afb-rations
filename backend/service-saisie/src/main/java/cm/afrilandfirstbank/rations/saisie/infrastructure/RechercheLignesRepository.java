@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.saisie.infrastructure;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -52,7 +53,7 @@ public class RechercheLignesRepository {
      * @param beneficiaire numero de compte courant <b>exact</b>, ou fragment de nom
      *        ou de prenom, insensible a la casse
      */
-    public List<Long> identifiantsProcessusAvecLigne(Integer mois, Integer annee,
+    public List<Long> identifiantsProcessusAvecLigne(LocalDate dateDebut, LocalDate dateFin,
             NatureEnum nature, SessionEnum session, String beneficiaire,
             Set<String> codesUniteVisibles) {
 
@@ -62,13 +63,18 @@ public class RechercheLignesRepository {
         conditions.add("l.idFicheJournaliere = f.id");
         conditions.add("b.id = l.idBeneficiaire");
 
-        if (mois != null) {
-            conditions.add("f.moisPaiement = :mois");
-            parametres.put("mois", mois);
+        // Les deux conditions se lisent ensemble : elles retiennent les fiches dont la
+        // periode RECOUPE la plage demandee, pas seulement celles qui y tiennent
+        // entierement. Une semaine du 29 septembre au 5 octobre doit remonter dans une
+        // recherche sur septembre ; l'exclure parce qu'elle deborde donnerait un
+        // resultat incomplet sans le dire.
+        if (dateDebut != null) {
+            conditions.add("f.dateFin >= :dateDebut");
+            parametres.put("dateDebut", dateDebut);
         }
-        if (annee != null) {
-            conditions.add("f.anneePaiement = :annee");
-            parametres.put("annee", annee);
+        if (dateFin != null) {
+            conditions.add("f.dateDebut <= :dateFin");
+            parametres.put("dateFin", dateFin);
         }
         if (nature != null) {
             conditions.add("l.nature = :nature");

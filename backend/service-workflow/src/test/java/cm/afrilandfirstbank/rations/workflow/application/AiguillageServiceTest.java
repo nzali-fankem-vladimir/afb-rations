@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.workflow.application;
 
+import java.time.LocalDate;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -427,7 +428,7 @@ class AiguillageServiceTest {
     }
 
     private ResultatAiguillage aiguiller(long montantTotal) {
-        ProcessusMensuel processus = TransitionProcessus.declencher(9, ANNEE, UNITE);
+        ProcessusMensuel processus = declencherSur(9, ANNEE, UNITE);
         processus.reporterMontantTotal(Math.toIntExact(montantTotal));
         return aiguillageService.aiguiller(processus);
     }
@@ -441,7 +442,7 @@ class AiguillageServiceTest {
      * enregistree, a juste titre : sans identifiant, le rattachement serait introuvable.
      */
     private ResultatAiguillage aiguillerComplementaire(long montantTotal) {
-        ProcessusMensuel origine = TransitionProcessus.declencher(9, ANNEE, UNITE);
+        ProcessusMensuel origine = declencherSur(9, ANNEE, UNITE);
         ReflectionTestUtils.setField(origine, "id", 4242L);
         TransitionProcessus.soumettre(origine);
         TransitionProcessus.transfererAuChefUnite(origine);
@@ -485,6 +486,25 @@ class AiguillageServiceTest {
         requeteJpql.executeUpdate();
         entityManager.flush();
         entityManager.clear();
+    }
+
+
+    /**
+     * Un etat declenche sur le mois indique, borne du premier au dernier jour.
+     *
+     * <p><b>Le mois n'est evalue qu'une fois</b>, ce qui compte : les jeux d'essai
+     * l'obtiennent souvent d'un compteur {@code prochainMois()} a effet de bord, et
+     * l'inliner deux fois pour composer les deux bornes produirait une periode a
+     * cheval sur deux mois differents.
+     *
+     * <p>Les periodes mensuelles restent DISJOINTES entre elles, ce qui est
+     * desormais indispensable : la contrainte d'exclusion
+     * {@code ex_processus_normal_sans_chevauchement} refuse deux etats NORMAL dont
+     * les periodes se recouvrent, meme partiellement (Maille 1).
+     */
+    private static ProcessusMensuel declencherSur(int mois, int annee, String codeUnite) {
+        LocalDate debut = LocalDate.of(annee, mois, 1);
+        return TransitionProcessus.declencher(debut, debut.plusMonths(1).minusDays(1), codeUnite);
     }
 
 }

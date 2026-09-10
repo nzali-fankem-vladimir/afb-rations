@@ -269,7 +269,7 @@ public class ValidationService {
     private NiveauValidation niveauAttenduOuRefus(ProcessusMensuel processus) {
         return NiveauValidation.attenduPour(processus.getStatut())
                 .orElseThrow(() -> new TransitionProcessusInterditeException(
-                        "L'etat " + libellePeriode(processus) + " de l'unite "
+                        "L'etat " + processus.libellePeriode() + " de l'unite "
                                 + processus.getCodeUnite() + " n'attend aucune validation : son "
                                 + "statut est " + processus.getStatut() + ", alors qu'une "
                                 + "validation exige " + StatutEnum.EN_ATTENTE_DA + " ou "
@@ -306,7 +306,7 @@ public class ValidationService {
         }
 
         throw new RoleNonAttenduException(
-                "L'etat " + libellePeriode(processus) + " de l'unite " + processus.getCodeUnite()
+                "L'etat " + processus.libellePeriode() + " de l'unite " + processus.getCodeUnite()
                         + " attend la validation du " + niveau.libelle() + " (role "
                         + niveau.roleRequis() + "), et votre profil porte le role "
                         + acteur.role() + ". Ce dossier ne vous revient pas a ce stade du "
@@ -327,7 +327,7 @@ public class ValidationService {
     private PieceJointe pieceJointeOuRefus(ProcessusMensuel processus) {
         return pieceJointeRepository.findByIdProcessus(processus.getId())
                 .orElseThrow(() -> new DocumentNonProduitException(
-                        "Aucun document n'est enregistre pour l'etat " + libellePeriode(processus)
+                        "Aucun document n'est enregistre pour l'etat " + processus.libellePeriode()
                                 + " de l'unite " + processus.getCodeUnite() + ", alors que son "
                                 + "statut est " + processus.getStatut() + ". La validation appose "
                                 + "une signature sur la piece existante et ne la recree jamais : "
@@ -351,8 +351,5 @@ public class ValidationService {
         };
     }
 
-    private String libellePeriode(ProcessusMensuel processus) {
-        return String.format("%02d/%d", processus.getMoisPaiement(), processus.getAnneePaiement());
-    }
 
 }

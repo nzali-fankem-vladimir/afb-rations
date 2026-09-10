@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -94,7 +95,7 @@ class ReportingControllerIT {
     }
 
     private Rapport unRapport() {
-        return new Rapport(8, 2026, null, LocalDateTime.of(2026, 9, 4, 10, 0), LOGIN,
+        return new Rapport(LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 1).plusMonths(1).minusDays(1), null, LocalDateTime.of(2026, 9, 4, 10, 0), LOGIN,
                 List.of(), List.of(), Synthese.vide(), true);
     }
 
@@ -105,7 +106,8 @@ class ReportingControllerIT {
 
         mockMvc.perform(get("/reporting/rapports")
                         .header(HttpHeaders.AUTHORIZATION, JETON)
-                        .param("periode", "2026-08"))
+                        .param("dateDebut", "2026-08-01")
+                        .param("dateFin", "2026-08-31"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCES_REFUSE"));
 
@@ -119,7 +121,8 @@ class ReportingControllerIT {
 
         mockMvc.perform(get("/reporting/rapports/export")
                         .header(HttpHeaders.AUTHORIZATION, JETON)
-                        .param("periode", "2026-08")
+                        .param("dateDebut", "2026-08-01")
+                        .param("dateFin", "2026-08-31")
                         .param("format", "pdf"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCES_REFUSE"));
@@ -131,12 +134,13 @@ class ReportingControllerIT {
     @DisplayName("10. format inconnu : 422 FORMAT_EXPORT_INVALIDE, ni le PDF ni l'Excel ne sont produits")
     void formatInconnu_refuseAvecMessageExplicite() throws Exception {
         keycloakEmet("ARH");
-        when(rapportService.produire(anyInt(), anyInt(), any(), anyString(), anyString()))
+        when(rapportService.produire(any(), any(), any(), anyString(), anyString()))
                 .thenReturn(unRapport());
 
         mockMvc.perform(get("/reporting/rapports/export")
                         .header(HttpHeaders.AUTHORIZATION, JETON)
-                        .param("periode", "2026-08")
+                        .param("dateDebut", "2026-08-01")
+                        .param("dateFin", "2026-08-31")
                         .param("format", "csv"))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.code").value("FORMAT_EXPORT_INVALIDE"))
@@ -147,15 +151,16 @@ class ReportingControllerIT {
     }
 
     @Test
-    @DisplayName("Cas nominal : ARH, periode valide, rapport rendu en 200")
+    @DisplayName("Cas nominal : ARH, bornes valides, rapport rendu en 200")
     void rapportNominal_rendu200() throws Exception {
         keycloakEmet("ARH");
-        when(rapportService.produire(eq(8), eq(2026), eq((String) null), eq(LOGIN), eq(JETON)))
+        when(rapportService.produire(eq(LocalDate.of(2026, 8, 1)), eq(LocalDate.of(2026, 8, 31)), eq((String) null), eq(LOGIN), eq(JETON)))
                 .thenReturn(unRapport());
 
         mockMvc.perform(get("/reporting/rapports")
                         .header(HttpHeaders.AUTHORIZATION, JETON)
-                        .param("periode", "2026-08"))
+                        .param("dateDebut", "2026-08-01")
+                        .param("dateFin", "2026-08-31"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.vide").value(true))
                 .andExpect(jsonPath("$.loginUtilisateur").value(LOGIN));
@@ -173,13 +178,14 @@ class ReportingControllerIT {
     @DisplayName("6.3-a. GET /reporting/rapports publie GENERATION_RAPPORT")
     void generationDeRapport_publieUnEvenementDAudit() throws Exception {
         keycloakEmet("ARH");
-        when(rapportService.produire(anyInt(), anyInt(), any(), anyString(), anyString()))
+        when(rapportService.produire(any(), any(), any(), anyString(), anyString()))
                 .thenReturn(unRapport());
 
         mockMvc.perform(get("/reporting/rapports")
                         .with(requete -> { requete.setRemoteAddr("10.20.30.40"); return requete; })
                         .header(HttpHeaders.AUTHORIZATION, JETON)
-                        .param("periode", "2026-08"))
+                        .param("dateDebut", "2026-08-01")
+                        .param("dateFin", "2026-08-31"))
                 .andExpect(status().isOk());
 
         ArgumentCaptor<EvenementAudit> capture = ArgumentCaptor.forClass(EvenementAudit.class);
@@ -199,14 +205,15 @@ class ReportingControllerIT {
     @DisplayName("6.3-b. GET /reporting/rapports/export publie EXPORT_RAPPORT, avec le nom et la taille du fichier")
     void exportDeRapport_publieUnEvenementDAudit() throws Exception {
         keycloakEmet("ARH");
-        when(rapportService.produire(anyInt(), anyInt(), any(), anyString(), anyString()))
+        when(rapportService.produire(any(), any(), any(), anyString(), anyString()))
                 .thenReturn(unRapport());
         when(exportPdfService.exporter(any())).thenReturn("%PDF-faux-contenu".getBytes());
 
         mockMvc.perform(get("/reporting/rapports/export")
                         .with(requete -> { requete.setRemoteAddr("10.20.30.40"); return requete; })
                         .header(HttpHeaders.AUTHORIZATION, JETON)
-                        .param("periode", "2026-08")
+                        .param("dateDebut", "2026-08-01")
+                        .param("dateFin", "2026-08-31")
                         .param("format", "pdf"))
                 .andExpect(status().isOk());
 
@@ -219,7 +226,7 @@ class ReportingControllerIT {
         // de rapprocher un document retrouve hors du systeme de l'extraction qui
         // l'a produit.
         assertThat(evenement.detailJson())
-                .contains("rapport-rations-toutes-unites-202608.pdf")
+                .contains("rapport-rations-toutes-unites-20260801.pdf")
                 .contains("PDF")
                 .contains("17"); // "%PDF-faux-contenu".length()
     }
@@ -228,12 +235,13 @@ class ReportingControllerIT {
     @DisplayName("6.3-c. un format refuse ne publie AUCUN export : rien n'est sorti du systeme")
     void formatRefuse_nePublieAucunExport() throws Exception {
         keycloakEmet("ARH");
-        when(rapportService.produire(anyInt(), anyInt(), any(), anyString(), anyString()))
+        when(rapportService.produire(any(), any(), any(), anyString(), anyString()))
                 .thenReturn(unRapport());
 
         mockMvc.perform(get("/reporting/rapports/export")
                         .header(HttpHeaders.AUTHORIZATION, JETON)
-                        .param("periode", "2026-08")
+                        .param("dateDebut", "2026-08-01")
+                        .param("dateFin", "2026-08-31")
                         .param("format", "csv"))
                 .andExpect(status().isUnprocessableEntity());
 
@@ -250,7 +258,8 @@ class ReportingControllerIT {
 
         mockMvc.perform(get("/reporting/demandes")
                         .header(HttpHeaders.AUTHORIZATION, JETON)
-                        .param("periode", "2026-08"))
+                        .param("dateDebut", "2026-08-01")
+                        .param("dateFin", "2026-08-31"))
                 .andExpect(status().isOk());
 
         // Tracer une consultation d'ecran produirait un evenement par affichage,

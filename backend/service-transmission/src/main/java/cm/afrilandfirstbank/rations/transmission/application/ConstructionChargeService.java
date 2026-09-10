@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.transmission.application;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -289,24 +290,29 @@ public class ConstructionChargeService {
         // Le service Saisie rend une unite et une periode nulles sur un etat dont aucune
         // fiche n'a ete ouverte : il n'a alors rien a rapprocher. Ce cas est deja refuse
         // par CHARGE_SANS_LIGNE, inutile de le signaler une seconde fois.
-        boolean detailMuet = etat.codeUnite() == null && etat.moisPaiement() == null
-                && etat.anneePaiement() == null;
+        boolean detailMuet = etat.codeUnite() == null && etat.dateDebut() == null
+                && etat.dateFin() == null;
         if (detailMuet) {
             return;
         }
 
         boolean uniteConcorde = Objects.equals(enTete.codeUnite(), etat.codeUnite());
-        boolean periodeConcorde = Objects.equals(enTete.moisPaiement(), etat.moisPaiement())
-                && Objects.equals(enTete.anneePaiement(), etat.anneePaiement());
+        // Comparaison sur les BORNES depuis la Maille 1, et non plus sur le mois
+        // derive. Les deux sources portent desormais l'intervalle ; comparer le mois
+        // derive laisserait passer pour concordantes deux periodes differentes d'un
+        // meme mois — et ferait echouer la concordance des que l'une des deux vaut
+        // null parce que la periode chevauche deux mois.
+        boolean periodeConcorde = Objects.equals(enTete.dateDebut(), etat.dateDebut())
+                && Objects.equals(enTete.dateFin(), etat.dateFin());
 
         if (!uniteConcorde || !periodeConcorde) {
             anomalies.add(new AnomalieCharge(CodeAnomalieEnum.SOURCES_DISCORDANTES,
                     "L'en-tete et le detail ne portent pas sur le meme dossier : le processus "
                             + "est declare unite " + affiche(enTete.codeUnite()) + " periode "
-                            + libellePeriode(enTete.moisPaiement(), enTete.anneePaiement())
+                            + libellePeriode(enTete.dateDebut(), enTete.dateFin())
                             + ", tandis que le detail rendu par le service Saisie porte unite "
                             + affiche(etat.codeUnite()) + " periode "
-                            + libellePeriode(etat.moisPaiement(), etat.anneePaiement()) + "."));
+                            + libellePeriode(etat.dateDebut(), etat.dateFin()) + "."));
         }
     }
 
@@ -357,6 +363,10 @@ public class ConstructionChargeService {
 
     private static String libellePeriode(Periode periode) {
         return periode == null ? "(absente)" : libellePeriode(periode.mois(), periode.annee());
+    }
+
+    private static String libellePeriode(LocalDate dateDebut, LocalDate dateFin) {
+        return "du " + affiche(dateDebut) + " au " + affiche(dateFin);
     }
 
     private static String libellePeriode(Integer mois, Integer annee) {

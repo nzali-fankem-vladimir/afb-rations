@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.workflow.application;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
 
@@ -42,8 +43,7 @@ public class RechercheProcessusService {
      * des pages qui se recouvrent.
      */
     private static final Sort ORDRE = Sort.by(
-            Sort.Order.desc("anneePaiement"),
-            Sort.Order.desc("moisPaiement"),
+            Sort.Order.desc("dateDebut"),
             Sort.Order.asc("codeUnite"),
             Sort.Order.asc("id"));
 
@@ -81,7 +81,7 @@ public class RechercheProcessusService {
      *        le compte, lui, l'est toujours
      */
     @Transactional(readOnly = true)
-    public ResultatRechercheProcessus rechercher(Integer mois, Integer annee, String codeUnite,
+    public ResultatRechercheProcessus rechercher(LocalDate dateDebut, LocalDate dateFin, String codeUnite,
             StatutEnum statut, int limite, String enteteAutorisation) {
 
         PorteeAccesUtilisateur portee = porteeService.exigerPortee(enteteAutorisation);
@@ -97,7 +97,7 @@ public class RechercheProcessusService {
         Set<String> codesVisibles = portee.nationale() ? null : portee.codesUnite();
 
         Specification<ProcessusMensuel> criteres =
-                ProcessusSpecifications.avecFiltres(mois, annee, codeUnite, statut, codesVisibles);
+                ProcessusSpecifications.avecFiltres(dateDebut, dateFin, codeUnite, statut, codesVisibles);
 
         long nombreTotal = processusRepository.count(criteres);
         if (nombreTotal > limite) {

@@ -227,7 +227,7 @@ public class OuvertureComplementaireService {
             return;
         }
         throw new EtatNonClotureException(
-                "L'etat " + libellePeriode(origine) + " de l'unite " + origine.getCodeUnite()
+                "L'etat " + origine.libellePeriode() + " de l'unite " + origine.getCodeUnite()
                         + " (processus n° " + origine.getId() + ") porte le statut "
                         + origine.getStatut() + " : il n'est pas cloture, il n'y a donc rien a "
                         + "regulariser. Tant qu'un dossier est dans le circuit, une correction "
@@ -273,7 +273,7 @@ public class OuvertureComplementaireService {
 
         if (joursEcoules > delaiJours) {
             throw new DelaiRegularisationDepasseException(
-                    "L'etat " + libellePeriode(origine) + " de l'unite " + origine.getCodeUnite()
+                    "L'etat " + origine.libellePeriode() + " de l'unite " + origine.getCodeUnite()
                             + " (processus n° " + origine.getId() + ") a ete cloture le "
                             + dateCloture.toLocalDate() + ", il y a " + joursEcoules + " jours, "
                             + "alors que le delai de regularisation est de " + delaiJours
@@ -355,16 +355,17 @@ public class OuvertureComplementaireService {
     private void exigerPeriodeConcordante(DeclenchementProcessusRequest requete,
             ProcessusMensuel origine) {
 
-        if (origine.getMoisPaiement().equals(requete.moisPaiement())
-                && origine.getAnneePaiement().equals(requete.anneePaiement())) {
+        if (origine.getDateDebut().equals(requete.dateDebut())
+                && origine.getDateFin().equals(requete.dateFin())) {
             return;
         }
         throw new PeriodeNonConcordanteException(
-                "La demande porte sur la periode " + String.format("%02d/%d",
-                        requete.moisPaiement(), requete.anneePaiement())
-                        + ", alors que l'etat d'origine " + origine.getId() + " couvre la periode "
-                        + libellePeriode(origine) + ". Un etat complementaire regularise la "
-                        + "periode de son origine, jamais une autre.");
+                "La demande porte sur la periode du " + requete.dateDebut() + " au "
+                        + requete.dateFin() + ", alors que l'etat d'origine " + origine.getId()
+                        + " couvre la periode " + origine.libellePeriode() + ". Un etat "
+                        + "complementaire regularise la periode de son origine, jamais une autre "
+                        + "— les bornes doivent coincider exactement, un recouvrement partiel "
+                        + "ne suffit pas.");
     }
 
     // --- Audit -----------------------------------------------------------------
@@ -401,8 +402,8 @@ public class OuvertureComplementaireService {
                         .champ("typeProcessus", null, complementaire.getTypeProcessus())
                         .champ("idProcessusOrigine", null, complementaire.getIdProcessusOrigine())
                         .champ("motifOuverture", null, complementaire.getMotifOuverture())
-                        .champ("moisPaiement", null, complementaire.getMoisPaiement())
-                        .champ("anneePaiement", null, complementaire.getAnneePaiement())
+                        .champ("dateDebut", null, complementaire.getDateDebut())
+                        .champ("dateFin", null, complementaire.getDateFin())
                         .champ("codeUnite", null, complementaire.getCodeUnite())
                         .contexte("auteur", agent.login())
                         .contexte("role", agent.role())
@@ -411,8 +412,5 @@ public class OuvertureComplementaireService {
                         .enJson()));
     }
 
-    private String libellePeriode(ProcessusMensuel processus) {
-        return String.format("%02d/%d", processus.getMoisPaiement(), processus.getAnneePaiement());
-    }
 
 }

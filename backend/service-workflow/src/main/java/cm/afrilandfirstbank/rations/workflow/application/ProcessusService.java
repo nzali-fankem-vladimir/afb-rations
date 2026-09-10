@@ -1,5 +1,7 @@
 package cm.afrilandfirstbank.rations.workflow.application;
 
+import java.time.LocalDate;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -87,11 +89,11 @@ public class ProcessusService {
         AgentHabilite agent =
                 habilitationService.exigerHabilitationSurUnite(requete.codeUnite(), enteteAutorisation);
 
-        exigerAucunProcessusNormalExistant(
-                requete.codeUnite(), requete.moisPaiement(), requete.anneePaiement());
+        exigerAucunChevauchementAvecUnEtatNormal(
+                requete.codeUnite(), requete.dateDebut(), requete.dateFin());
 
         ProcessusMensuel processus = TransitionProcessus.declencher(
-                requete.moisPaiement(), requete.anneePaiement(), requete.codeUnite());
+                requete.dateDebut(), requete.dateFin(), requete.codeUnite());
         ProcessusMensuel enregistre = processusMensuelRepository.save(processus);
 
         publierDeclenchement(enregistre, agent, adresseIp);
@@ -299,16 +301,20 @@ public class ProcessusService {
      * entre deux demandes simultanees — traduit lui aussi en {@code 409} par
      * {@code GestionnaireErreursApi}.
      */
-    private void exigerAucunProcessusNormalExistant(String codeUnite, Integer mois, Integer annee) {
+    private void exigerAucunChevauchementAvecUnEtatNormal(String codeUnite,
+            LocalDate dateDebut, LocalDate dateFin) {
+
         processusMensuelRepository
-                .findByCodeUniteAndMoisPaiementAndAnneePaiementAndTypeProcessus(
-                        codeUnite, mois, annee, TypeProcessusEnum.NORMAL)
+                .chevauchant(codeUnite, dateDebut, dateFin, TypeProcessusEnum.NORMAL)
+                .stream().findFirst()
                 .ifPresent(existant -> {
                     throw new ProcessusExistantException(
-                            "Un etat mensuel est deja ouvert pour l'unite " + codeUnite
-                                    + " en " + mois + "/" + annee + " (processus n° "
-                                    + existant.getId() + ", statut " + existant.getStatut()
-                                    + "). Rejoignez ce dossier plutot que d'en ouvrir un second.");
+                            "Un etat normal couvre deja tout ou partie de la periode demandee pour "
+                                    + "l'unite " + codeUnite + " : processus n° " + existant.getId()
+                                    + ", " + existant.libellePeriode() + ", statut "
+                                    + existant.getStatut() + ". Deux etats normaux ne peuvent pas se "
+                                    + "partager une meme journee, sans quoi elle serait payable deux "
+                                    + "fois." + suiteSelonEtatEnConflit(existant));
                 });
     }
 
@@ -339,12 +345,42 @@ public class ProcessusService {
                 DeltaAudit.nouveau()
                         .champ("statut", null, processus.getStatut())
                         .champ("typeProcessus", null, processus.getTypeProcessus())
-                        .champ("moisPaiement", null, processus.getMoisPaiement())
-                        .champ("anneePaiement", null, processus.getAnneePaiement())
+                        .champ("dateDebut", null, processus.getDateDebut())
+                        .champ("dateFin", null, processus.getDateFin())
                         .champ("codeUnite", null, processus.getCodeUnite())
                         .contexte("auteur", agent.login())
                         .contexte("role", agent.role())
                         .enJson()));
+    }
+
+
+    /**
+     * Ce que l'agent doit faire, selon l'etat qui bloque.
+     *
+     * <h2>Pourquoi le conseil ne peut pas etre unique</h2>
+     *
+     * <p>Le message d'origine disait « rejoignez ce dossier ». C'est le bon conseil
+     * quand l'etat en conflit est encore ouvert — le cas de loin le plus frequent,
+     * une periode saisie deux fois par erreur. C'est un <b>mauvais</b> conseil quand
+     * il est cloture : on ne rejoint pas un dossier clos, et l'agent se retrouve
+     * devant un mur sans issue nommee.
+     *
+     * <p>Le second cas n'est pas theorique. Il se produira une fois par unite <b>au
+     * moment de la bascule du mensuel vers l'hebdomadaire</b> : l'etat du mois de
+     * septembre, borne du 01 au 30, bloque toute semaine qui deborde sur septembre.
+     * La regle d'exploitation est de faire la bascule sur une frontiere de mois — le
+     * dernier etat mensuel s'arrete le 30, la premiere semaine commence le 1er — mais
+     * un agent qui l'ignore doit lire quoi faire, pas deviner.
+     */
+    private String suiteSelonEtatEnConflit(ProcessusMensuel existant) {
+        if (existant.getStatut() != StatutEnum.CLOTURE) {
+            return " Ce dossier est encore ouvert : rejoignez-le plutot que d'en creer un second.";
+        }
+        return " Ce dossier est CLOTURE, donc definitif : il ne se rejoint pas. Si des "
+                + "beneficiaires ont ete oublies sur ces journees, la regularisation passe par un "
+                + "etat complementaire qui le reference. Si vous ouvrez la premiere periode d'un "
+                + "nouveau rythme de paiement, faites-la commencer le lendemain de "
+                + existant.getDateFin() + ", pour qu'aucune journee ne soit couverte deux fois.";
     }
 
 }

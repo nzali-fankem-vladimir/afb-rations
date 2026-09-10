@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.workflow.api.dto;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 import cm.afrilandfirstbank.rations.workflow.application.ResultatSoumission;
@@ -25,8 +26,8 @@ public record SoumissionResponse(
         Long idProcessus,
         String statut,
         String codeUnite,
-        Integer moisPaiement,
-        Integer anneePaiement,
+        LocalDate dateDebut,
+        LocalDate dateFin,
         int montantTotalFcfa,
         PieceJointeResponse pieceJointe,
         EtapeResponse etape) {
@@ -89,8 +90,8 @@ public record SoumissionResponse(
                 processus.getId(),
                 String.valueOf(processus.getStatut()),
                 processus.getCodeUnite(),
-                processus.getMoisPaiement(),
-                processus.getAnneePaiement(),
+                processus.getDateDebut(),
+                processus.getDateFin(),
                 processus.getMontantTotal(),
                 PieceJointeResponse.depuis(resultat.pieceJointe()),
                 EtapeResponse.depuis(resultat.etape()));

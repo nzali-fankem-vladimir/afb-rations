@@ -175,8 +175,8 @@ public class EnregistrementRetour {
                         .contexte("auteur", acteur.login())
                         .contexte("role", acteur.role())
                         .contexte("codeUnite", processus.getCodeUnite())
-                        .contexte("moisPaiement", processus.getMoisPaiement())
-                        .contexte("anneePaiement", processus.getAnneePaiement())
+                        .contexte("dateDebut", processus.getDateDebut())
+                        .contexte("dateFin", processus.getDateFin())
                         .contexte("montantTotal", processus.getMontantTotal())
                         .enJson()));
     }

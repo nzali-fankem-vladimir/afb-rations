@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.reporting.infrastructure.saisie;
 
+import java.time.LocalDate;
 import java.net.URI;
 import java.util.List;
 
@@ -48,7 +49,7 @@ public class SaisieLectureHttpClient implements SaisieLectureClient {
     }
 
     @Override
-    public ResultatIdentifiantsAvecLigne identifiantsAvecLigne(Integer mois, Integer annee,
+    public ResultatIdentifiantsAvecLigne identifiantsAvecLigne(LocalDate dateDebut, LocalDate dateFin,
             NatureEnum nature, SessionEnum session, String beneficiaire,
             String enteteAutorisation) {
 
@@ -60,7 +61,7 @@ public class SaisieLectureHttpClient implements SaisieLectureClient {
 
         try {
             ReponseRecherche reponse = clientRest.get()
-                    .uri(uri -> construireUri(uri, mois, annee, nature, session, beneficiaire))
+                    .uri(uri -> construireUri(uri, dateDebut, dateFin, nature, session, beneficiaire))
                     .header(HttpHeaders.AUTHORIZATION, enteteAutorisation)
                     .retrieve()
                     .body(ReponseRecherche.class);
@@ -85,15 +86,15 @@ public class SaisieLectureHttpClient implements SaisieLectureClient {
         }
     }
 
-    private URI construireUri(UriBuilder uri, Integer mois, Integer annee,
+    private URI construireUri(UriBuilder uri, LocalDate dateDebut, LocalDate dateFin,
             NatureEnum nature, SessionEnum session, String beneficiaire) {
 
         uri.path("/saisie/processus/recherche");
-        if (mois != null) {
-            uri.queryParam("mois", mois);
+        if (dateDebut != null) {
+            uri.queryParam("dateDebut", dateDebut);
         }
-        if (annee != null) {
-            uri.queryParam("annee", annee);
+        if (dateFin != null) {
+            uri.queryParam("dateFin", dateFin);
         }
         if (nature != null) {
             uri.queryParam("nature", nature.name());

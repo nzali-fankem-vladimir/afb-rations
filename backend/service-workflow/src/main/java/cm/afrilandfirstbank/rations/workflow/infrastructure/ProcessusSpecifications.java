@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.workflow.infrastructure;
 
+import java.time.LocalDate;
 import java.util.Set;
 
 import org.springframework.data.jpa.domain.Specification;
@@ -29,23 +30,34 @@ public final class ProcessusSpecifications {
      *        d'unite. Un ensemble <i>vide</i> signifie « aucune unite » et ne rend
      *        rien, ce qui n'est pas la meme chose.
      */
-    public static Specification<ProcessusMensuel> avecFiltres(Integer mois, Integer annee,
+    public static Specification<ProcessusMensuel> avecFiltres(LocalDate dateDebut, LocalDate dateFin,
             String codeUnite, StatutEnum statut, Set<String> codesUniteVisibles) {
 
         return Specification.allOf(
-                mois(mois),
-                annee(annee),
+                finApres(dateDebut),
+                debutAvant(dateFin),
                 codeUnite(codeUnite),
                 statut(statut),
                 portee(codesUniteVisibles));
     }
 
-    private static Specification<ProcessusMensuel> mois(Integer mois) {
-        return (racine, requete, cb) -> mois == null ? null : cb.equal(racine.get("moisPaiement"), mois);
+    /**
+     * Les deux filtres de periode se lisent ensemble : ils selectionnent les etats
+     * dont la periode <b>recoupe</b> la plage demandee, pas seulement ceux qui y
+     * tiennent entierement.
+     *
+     * <p>C'est le comportement voulu : un rapport sur le mois de septembre doit
+     * montrer la semaine du 29 septembre au 5 octobre, qui commence en septembre.
+     * L'exclure parce qu'elle deborde donnerait un total incomplet sans le dire.
+     */
+    private static Specification<ProcessusMensuel> finApres(LocalDate dateDebut) {
+        return (racine, requete, cb) ->
+                dateDebut == null ? null : cb.greaterThanOrEqualTo(racine.get("dateFin"), dateDebut);
     }
 
-    private static Specification<ProcessusMensuel> annee(Integer annee) {
-        return (racine, requete, cb) -> annee == null ? null : cb.equal(racine.get("anneePaiement"), annee);
+    private static Specification<ProcessusMensuel> debutAvant(LocalDate dateFin) {
+        return (racine, requete, cb) ->
+                dateFin == null ? null : cb.lessThanOrEqualTo(racine.get("dateDebut"), dateFin);
     }
 
     private static Specification<ProcessusMensuel> codeUnite(String codeUnite) {

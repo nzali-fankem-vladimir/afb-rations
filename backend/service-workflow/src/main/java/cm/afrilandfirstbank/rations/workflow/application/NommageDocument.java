@@ -1,5 +1,8 @@
 package cm.afrilandfirstbank.rations.workflow.application;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+
 import cm.afrilandfirstbank.rations.workflow.domaine.ProcessusMensuel;
 
 /**
@@ -69,13 +72,22 @@ public final class NommageDocument {
      * 4.3 et 4.4 sans dependre d'autre chose que du processus lui-meme — le chemin
      * enregistre en base restant la reference.
      */
+    /**
+     * Jour de debut en {@code AAAAMMJJ}, sans separateur.
+     *
+     * <p>Le format compact est ce qui fait qu'un tri alphabetique du repertoire est
+     * un tri chronologique — propriete voulue depuis le Sprint 4.2, conservee ici.
+     * Le jour remplace le mois : quatre periodes hebdomadaires d'un meme mois
+     * portaient sinon le meme nom.
+     */
+    private static final DateTimeFormatter JOUR_COMPACT = DateTimeFormatter.ofPattern("yyyyMMdd");
+
     public static String cheminRelatif(ProcessusMensuel processus) {
-        int mois = processus.getMoisPaiement();
-        int annee = processus.getAnneePaiement();
-        return "%d/%02d/%s-%s-%d%02d-p%d%s".formatted(
-                annee, mois,
+        LocalDate debut = processus.getDateDebut();
+        return "%d/%02d/%s-%s-%s-p%d%s".formatted(
+                debut.getYear(), debut.getMonthValue(),
                 PREFIXE, processus.getCodeUnite(),
-                annee, mois,
+                debut.format(JOUR_COMPACT),
                 processus.getId(),
                 EXTENSION);
     }

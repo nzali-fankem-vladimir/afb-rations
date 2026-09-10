@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.reporting.application;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -86,7 +87,7 @@ public class SuiviService {
                 .map(etape -> nommer(etape, libelles))
                 .toList();
 
-        return new HistoriqueDemande(brut.idProcessus(), brut.moisPaiement(), brut.anneePaiement(),
+        return new HistoriqueDemande(brut.idProcessus(), brut.dateDebut(), brut.dateFin(),
                 brut.codeUnite(), brut.statut(), etapesNommees);
     }
 

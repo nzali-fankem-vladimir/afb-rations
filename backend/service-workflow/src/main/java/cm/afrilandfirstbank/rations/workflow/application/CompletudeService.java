@@ -294,17 +294,34 @@ public class CompletudeService {
 
     // --- Mise en forme ----------------------------------------------------------
 
+    /**
+     * La journee tombe-t-elle dans la periode de l'etat ?
+     *
+     * <h2>Un test de bornes, et non plus une egalite de mois</h2>
+     *
+     * <p>Avant la Maille 1, la question s'ecrivait {@code mois == mois && annee ==
+     * annee}. Elle s'ecrit desormais « entre les deux bornes », ce qui est a la fois
+     * plus simple et <b>plus robuste</b> : c'est l'un des quatre motifs qui ont fait
+     * retenir l'intervalle de dates plutot que le numero de semaine ISO (M-04).
+     *
+     * <p><b>Les deux bornes sont incluses.</b> {@code date_fin} est le dernier jour
+     * de la periode, pas le premier de la suivante — meme convention que la
+     * contrainte d'exclusion en base. D'ou {@code !isBefore} et {@code !isAfter}
+     * plutot qu'une comparaison stricte : une journee tombant exactement sur une
+     * borne appartient a la periode, et c'est le cas que deux des quatre tests de
+     * ce controle eprouvent.
+     */
     private boolean dansLaPeriode(LocalDate dateJour, ProcessusMensuel processus) {
-        if (dateJour == null || processus.getMoisPaiement() == null
-                || processus.getAnneePaiement() == null) {
+        if (dateJour == null || processus.getDateDebut() == null
+                || processus.getDateFin() == null) {
             return false;
         }
-        return dateJour.getMonthValue() == processus.getMoisPaiement()
-                && dateJour.getYear() == processus.getAnneePaiement();
+        return !dateJour.isBefore(processus.getDateDebut())
+                && !dateJour.isAfter(processus.getDateFin());
     }
 
     private String periode(ProcessusMensuel processus) {
-        return String.format("%02d/%d", processus.getMoisPaiement(), processus.getAnneePaiement());
+        return processus.libellePeriode();
     }
 
     private String libelleJournee(LigneSituee situee) {

@@ -31,7 +31,7 @@ import cm.afrilandfirstbank.rations.saisie.domaine.StatutFicheEnum;
  * somme d'entiers positifs ne peut pas déborder sur ce type, quel que soit le
  * nombre de lignes.
  *
- * <p><b>{@code codeUnite}, {@code moisPaiement} et {@code anneePaiement}</b> sont
+ * <p><b>{@code codeUnite}, {@code dateDebut} et {@code dateFin}</b> sont
  * les valeurs recopiées du processus mensuel à l'ouverture, figées
  * ({@code docs/rattachement-processus.md} §5). Elles sont rendues telles quelles :
  * elles renseignent l'interface sans qu'elle ait à interroger le service Workflow.
@@ -42,8 +42,8 @@ public record FicheResponse(
         LocalDate dateJour,
         StatutFicheEnum statut,
         String codeUnite,
-        Integer moisPaiement,
-        Integer anneePaiement,
+        LocalDate dateDebut,
+        LocalDate dateFin,
         List<LigneResponse> lignes,
         int nombreLignes,
         long sousTotalFcfa,
@@ -60,8 +60,8 @@ public record FicheResponse(
                 fiche.getDateJour(),
                 fiche.getStatut(),
                 fiche.getCodeUnite(),
-                fiche.getMoisPaiement(),
-                fiche.getAnneePaiement(),
+                fiche.getDateDebut(),
+                fiche.getDateFin(),
                 lignes,
                 lignes.size(),
                 sousTotal,

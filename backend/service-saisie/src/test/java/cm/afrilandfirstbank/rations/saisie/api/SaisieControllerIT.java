@@ -107,7 +107,7 @@ class SaisieControllerIT {
     }
 
     private static FicheJournaliere fiche(Long id, Long idProcessus, LocalDate jour) {
-        FicheJournaliere fiche = new FicheJournaliere(idProcessus, jour, "00002", 8, 2026);
+        FicheJournaliere fiche = new FicheJournaliere(idProcessus, jour, "00002", LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 31));
         ReflectionTestUtils.setField(fiche, "id", id);
         ReflectionTestUtils.setField(fiche, "dateCreation", LocalDateTime.of(2026, 8, 18, 8, 0));
         return fiche;

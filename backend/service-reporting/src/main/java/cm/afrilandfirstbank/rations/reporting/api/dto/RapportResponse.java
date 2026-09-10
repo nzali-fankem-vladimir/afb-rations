@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.reporting.api.dto;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -20,8 +21,8 @@ import cm.afrilandfirstbank.rations.reporting.domaine.SituationIntegration;
  * envoyé sur le topic peut être rejeté ensuite par la comptabilité).
  */
 public record RapportResponse(
-        int periodeMois,
-        int periodeAnnee,
+        LocalDate periodeDebut,
+        LocalDate periodeFin,
         String codeUnite,
         LocalDateTime dateGeneration,
         String loginUtilisateur,
@@ -32,8 +33,8 @@ public record RapportResponse(
 
     public static RapportResponse depuis(Rapport rapport) {
         return new RapportResponse(
-                rapport.periodeMois(),
-                rapport.periodeAnnee(),
+                rapport.periodeDebut(),
+                rapport.periodeFin(),
                 rapport.codeUnite(),
                 rapport.dateGeneration(),
                 rapport.loginUtilisateur(),

@@ -209,7 +209,7 @@ public class SoumissionService {
         };
 
         throw new TransitionProcessusInterditeException(
-                "L'etat " + libellePeriode(processus) + " de l'unite " + processus.getCodeUnite()
+                "L'etat " + processus.libellePeriode() + " de l'unite " + processus.getCodeUnite()
                         + " ne peut pas etre soumis : son statut est " + processus.getStatut()
                         + ", alors que la soumission exige " + StatutEnum.EN_COURS_SAISIE
                         + " ou " + StatutEnum.RETOURNE + "." + suite);
@@ -235,7 +235,7 @@ public class SoumissionService {
 
         if (existante != null && processus.getStatut() == StatutEnum.EN_COURS_SAISIE) {
             throw new PieceJointeExistanteException(
-                    "Un document a deja ete genere pour l'etat " + libellePeriode(processus)
+                    "Un document a deja ete genere pour l'etat " + processus.libellePeriode()
                             + " de l'unite " + processus.getCodeUnite() + ", alors que son statut "
                             + "est " + StatutEnum.EN_COURS_SAISIE + " : cet etat a donc deja ete "
                             + "soumis. Signalez-le a l'administrateur du module.");
@@ -253,7 +253,7 @@ public class SoumissionService {
             case ResultatConsolidation.ServiceSaisieIndisponible panne ->
                     throw new ServiceSaisieIndisponibleException(
                             "Le service Saisie est momentanement indisponible : l'etat "
-                                    + libellePeriode(processus) + " ne peut pas etre soumis ("
+                                    + processus.libellePeriode() + " ne peut pas etre soumis ("
                                     + panne.motifTechnique() + "). Aucun montant n'est suppose ni "
                                     + "repris d'une lecture anterieure. Reessayez dans un instant.");
         };
@@ -265,7 +265,7 @@ public class SoumissionService {
             return;
         }
         throw new EtatIncompletException(
-                "L'etat " + libellePeriode(processus) + " de l'unite " + processus.getCodeUnite()
+                "L'etat " + processus.libellePeriode() + " de l'unite " + processus.getCodeUnite()
                         + " ne peut pas etre soumis : " + completude.manques().size()
                         + " point(s) a corriger.",
                 completude.manques());
@@ -289,13 +289,13 @@ public class SoumissionService {
         if (total == null) {
             throw new ServiceSaisieIndisponibleException(
                     "Le service Saisie n'a rendu aucun montant total pour l'etat "
-                            + libellePeriode(processus) + " : la soumission est refusee. Un total "
+                            + processus.libellePeriode() + " : la soumission est refusee. Un total "
                             + "absent n'est pas un total nul, et ne doit jamais etre traite comme "
                             + "tel. Reessayez dans un instant.");
         }
         if (total > Integer.MAX_VALUE) {
             throw new ServiceSaisieIndisponibleException(
-                    "Le montant total rendu pour l'etat " + libellePeriode(processus) + " ("
+                    "Le montant total rendu pour l'etat " + processus.libellePeriode() + " ("
                             + total + " FCFA) depasse la capacite de la colonne montant_total. "
                             + "La soumission est refusee plutot que d'enregistrer un montant "
                             + "tronque. Signalez-le a l'administrateur du module.");
@@ -319,8 +319,5 @@ public class SoumissionService {
         };
     }
 
-    private String libellePeriode(ProcessusMensuel processus) {
-        return String.format("%02d/%d", processus.getMoisPaiement(), processus.getAnneePaiement());
-    }
 
 }

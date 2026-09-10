@@ -1,6 +1,7 @@
 package cm.afrilandfirstbank.rations.workflow.api;
 
 import java.net.URI;
+import java.time.LocalDate;
 
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -541,8 +542,8 @@ public class ProcessusController {
     @GetMapping("/recherche")
     @PreAuthorize("hasAnyRole('ARH', 'AGENT_UNITE', 'CHEF_UNITE_DA', 'DIRECTEUR_RESEAU_DR')")
     public ResponseEntity<RechercheProcessusResponse> rechercher(
-            @RequestParam(required = false) Integer mois,
-            @RequestParam(required = false) Integer annee,
+            @RequestParam(required = false) LocalDate dateDebut,
+            @RequestParam(required = false) LocalDate dateFin,
             @RequestParam(required = false) String codeUnite,
             @RequestParam(required = false) StatutEnum statut,
             @RequestParam(defaultValue = "5000") int limite,
@@ -550,7 +551,7 @@ public class ProcessusController {
 
         return ResponseEntity.ok(RechercheProcessusResponse.depuis(
                 rechercheProcessusService.rechercher(
-                        mois, annee, codeUnite, statut, limite, enteteAutorisation)));
+                        dateDebut, dateFin, codeUnite, statut, limite, enteteAutorisation)));
     }
 
     /**

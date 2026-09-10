@@ -246,6 +246,62 @@ un jour, il devra commencer par là, pas par le `ALTER TABLE`.
 
 ---
 
+## 6ter. Décision 5 — Le chevauchement est refusé, et la bascule se fait sur une frontière de mois
+
+**Tranché le 10 septembre 2026**, à la mise en œuvre de la Maille 1, sur une
+question soulevée par l'utilisateur : refuser systématiquement deux périodes qui se
+chevauchent ne crée-t-il pas un trou opérationnel pour l'agent ?
+
+La question était fondée, et elle a fait apparaître un défaut de message.
+
+### Quand deux périodes NORMAL peuvent-elles se chevaucher
+
+Trois cas, dont **un seul** est un vrai trou.
+
+| Cas | Situation | Verdict |
+| --- | --- | --- |
+| **A** | Erreur de saisie : la semaine du 7 au 13 est ouverte, l'agent ouvre du 10 au 16 | Refus **juste**. Sans lui, quatre journées appartiendraient à deux états et seraient payables deux fois |
+| **B** | **Bascule mensuel → hebdomadaire** : l'état de septembre (01→30) bloque la première semaine, du 28 septembre au 4 octobre | **Le vrai trou.** Se produira une fois par unité, au moment de la mise en service |
+| **C** | Régularisation d'un oubli | **Sans objet** : la contrainte ne porte que sur `NORMAL`, plusieurs `COMPLEMENTAIRE` restent autorisés sur la même période |
+
+### La contrainte est maintenue
+
+Elle est ce qui empêche le double paiement, et le cas A est de loin le plus
+fréquent. La relâcher pour traiter le cas B, qui survient **une fois par unité dans
+toute la vie du module**, échangerait un inconvénient ponctuel contre un risque
+permanent.
+
+### Le cas B se ferme sans une ligne de code
+
+Par une **règle d'exploitation** : la bascule se fait sur une **frontière de mois**.
+Le dernier état mensuel s'arrête le 30 septembre, la première période hebdomadaire
+commence le 1er octobre. Aucun chevauchement par construction.
+
+Conséquence assumée : la première « semaine » du nouveau régime peut être partielle
+si le mois ne se termine pas un dimanche. C'est un choix d'exploitation, pas un
+défaut technique — et l'intervalle de dates l'exprime sans difficulté, là où un
+numéro de semaine ISO ne l'aurait pas pu.
+
+### Le vrai défaut était dans le message, et il est corrigé
+
+Le refus disait « **Rejoignez ce dossier** plutôt que d'en ouvrir un second ». C'est
+le bon conseil quand l'état en conflit est encore ouvert. C'est un **mauvais conseil**
+quand il est `CLOTURE` : un dossier clos ne se rejoint pas, et l'agent se retrouvait
+devant un mur sans issue nommée — précisément la situation du cas B.
+
+Le message dépend désormais du statut de l'état qui bloque :
+
+| Statut de l'état en conflit | Ce que le message dit |
+| --- | --- |
+| Ouvert (`EN_COURS_SAISIE`, `RETOURNE`, en circuit) | « Ce dossier est encore ouvert : rejoignez-le plutôt que d'en créer un second. » |
+| `CLOTURE` | Nomme les **deux** issues réelles : l'état complémentaire pour un bénéficiaire oublié, ou le décalage de la borne de début au lendemain de la date de fin en conflit — avec cette date écrite dans le message |
+
+Trois tests verrouillent l'ensemble : le chevauchement partiel est refusé, deux
+périodes consécutives sont acceptées (les bornes sont incluses), et le message d'un
+conflit sur un état clos ne propose jamais de le rejoindre.
+
+---
+
 ## 7. Ce que la mise en œuvre suppose
 
 Cette décision **n'écrit aucun code** et n'en a écrit aucun. Elle fixe la cible.

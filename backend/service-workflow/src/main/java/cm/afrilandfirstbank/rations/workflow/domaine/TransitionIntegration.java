@@ -139,7 +139,7 @@ public final class TransitionIntegration {
         if (!processus.isTransmisComptabilite()) {
             return new Decision.NonTransmis(
                     "L'etat " + processus.getId() + " de l'unite " + processus.getCodeUnite()
-                            + " (" + processus.getMoisPaiement() + "/" + processus.getAnneePaiement()
+                            + " (" + processus.libellePeriode()
                             + ") n'a jamais ete transmis a la comptabilite : elle ne peut pas en "
                             + "accuser reception. Incoherence a lever d'un cote ou de l'autre ; le "
                             + "drapeau de transmission n'est pas pose a cette occasion, faute de "

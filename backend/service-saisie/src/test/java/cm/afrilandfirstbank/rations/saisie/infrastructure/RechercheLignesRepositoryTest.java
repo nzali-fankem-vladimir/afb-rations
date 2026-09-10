@@ -39,6 +39,10 @@ class RechercheLignesRepositoryTest {
     // accumulées par d'autres exécutions dans la base de développement partagée.
     private static final Integer MOIS = 3;
     private static final Integer ANNEE = 2099;
+
+    /** Les bornes de la periode d'essai — mars 2099, un mois entier. */
+    private static final LocalDate DEBUT_PERIODE = LocalDate.of(ANNEE, MOIS, 1);
+    private static final LocalDate FIN_PERIODE = LocalDate.of(ANNEE, MOIS, 31);
     private static final String UNITE = "09101";
     private static final String AUTRE_UNITE = "09102";
 
@@ -57,7 +61,7 @@ class RechercheLignesRepositoryTest {
     private Long ficheAvecLigne(Long idProcessus, String codeUnite, NatureEnum nature,
             SessionEnum session, String numeroCompte) {
         FicheJournaliere fiche = ficheRepository.saveAndFlush(
-                new FicheJournaliere(idProcessus, LocalDate.of(ANNEE, MOIS, 10), codeUnite, MOIS, ANNEE));
+                new FicheJournaliere(idProcessus, LocalDate.of(ANNEE, MOIS, 10), codeUnite, DEBUT_PERIODE, FIN_PERIODE));
         Beneficiaire beneficiaire = beneficiaireRepository.saveAndFlush(
                 new Beneficiaire("Mbarga", "Jean", numeroCompte, "00002"));
         ligneRepository.saveAndFlush(
@@ -72,7 +76,7 @@ class RechercheLignesRepositoryTest {
         ficheAvecLigne(910_002L, UNITE, NatureEnum.TRANSPORT, SessionEnum.JOUR, "10002222222");
 
         List<Long> resultat = repository.identifiantsProcessusAvecLigne(
-                MOIS, ANNEE, NatureEnum.RATION, null, null, null);
+                DEBUT_PERIODE, FIN_PERIODE, NatureEnum.RATION, null, null, null);
 
         assertThat(resultat).containsExactly(910_001L);
     }
@@ -84,7 +88,7 @@ class RechercheLignesRepositoryTest {
         ficheAvecLigne(910_004L, UNITE, NatureEnum.RATION, SessionEnum.JOUR, "10004444444");
 
         List<Long> resultat = repository.identifiantsProcessusAvecLigne(
-                MOIS, ANNEE, null, null, "10003333333", null);
+                DEBUT_PERIODE, FIN_PERIODE, null, null, "10003333333", null);
 
         assertThat(resultat).containsExactly(910_003L);
     }
@@ -96,7 +100,7 @@ class RechercheLignesRepositoryTest {
         ficheAvecLigne(910_006L, AUTRE_UNITE, NatureEnum.RATION, SessionEnum.JOUR, "10006666666");
 
         List<Long> resultat = repository.identifiantsProcessusAvecLigne(
-                MOIS, ANNEE, NatureEnum.RATION, null, null, Set.of(UNITE));
+                DEBUT_PERIODE, FIN_PERIODE, NatureEnum.RATION, null, null, Set.of(UNITE));
 
         assertThat(resultat).containsExactly(910_005L);
     }
@@ -107,7 +111,7 @@ class RechercheLignesRepositoryTest {
         ficheAvecLigne(910_007L, UNITE, NatureEnum.RATION, SessionEnum.JOUR, "10007777777");
 
         List<Long> resultat = repository.identifiantsProcessusAvecLigne(
-                MOIS, ANNEE, NatureEnum.RATION, null, null, Set.of());
+                DEBUT_PERIODE, FIN_PERIODE, NatureEnum.RATION, null, null, Set.of());
 
         assertThat(resultat).isEmpty();
     }
@@ -118,7 +122,7 @@ class RechercheLignesRepositoryTest {
         ficheAvecLigne(910_008L, UNITE, NatureEnum.TRANSPORT, SessionEnum.SOIR, "10008888888");
 
         List<Long> resultat = repository.identifiantsProcessusAvecLigne(
-                MOIS, ANNEE, NatureEnum.RATION, null, null, null);
+                DEBUT_PERIODE, FIN_PERIODE, NatureEnum.RATION, null, null, null);
 
         assertThat(resultat).isEmpty();
     }

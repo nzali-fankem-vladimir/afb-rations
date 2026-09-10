@@ -9,6 +9,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -61,7 +62,7 @@ class SuiviServiceTest {
     void historiqueSansRetour_etapesDansLOrdre() {
         preparer();
 
-        HistoriqueDemande brut = new HistoriqueDemande(ID_PROCESSUS, 8, 2026, "00002", "CLOTURE", List.of(
+        HistoriqueDemande brut = new HistoriqueDemande(ID_PROCESSUS, LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 1).plusMonths(1).minusDays(1), "00002", "CLOTURE", List.of(
                 etape(1, "SOUMISSION_AGENT", "VALIDEE", 10L, null),
                 etape(2, "VALIDATION_DA", "VALIDEE", 20L, null)));
 
@@ -88,7 +89,7 @@ class SuiviServiceTest {
         // Premier cycle : soumis, valide au DA, retourne. Second cycle : resoumis,
         // valide au DA de nouveau. Deux SOUMISSION_AGENT, deux VALIDATION_DA :
         // c'est precisement ce que le rang (ordreEtape) distingue.
-        HistoriqueDemande brut = new HistoriqueDemande(ID_PROCESSUS, 8, 2026, "00002", "CLOTURE", List.of(
+        HistoriqueDemande brut = new HistoriqueDemande(ID_PROCESSUS, LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 1).plusMonths(1).minusDays(1), "00002", "CLOTURE", List.of(
                 etape(1, "SOUMISSION_AGENT", "VALIDEE", 10L, null),
                 etape(2, "VALIDATION_DA", "RETOURNEE", 20L, "Montant incoherent sur la journee du 12"),
                 etape(3, "SOUMISSION_AGENT", "VALIDEE", 10L, null),
@@ -158,7 +159,7 @@ class SuiviServiceTest {
     void identiteInjoignablePourLesLibelles_nonBloquant() {
         preparer();
 
-        HistoriqueDemande brut = new HistoriqueDemande(ID_PROCESSUS, 8, 2026, "00002", "CLOTURE", List.of(
+        HistoriqueDemande brut = new HistoriqueDemande(ID_PROCESSUS, LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 1).plusMonths(1).minusDays(1), "00002", "CLOTURE", List.of(
                 etape(1, "SOUMISSION_AGENT", "VALIDEE", 10L, null)));
 
         when(workflowClient.consulterHistorique(ID_PROCESSUS, JETON))

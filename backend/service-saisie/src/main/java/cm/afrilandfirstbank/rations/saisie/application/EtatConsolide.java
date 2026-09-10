@@ -37,9 +37,9 @@ import cm.afrilandfirstbank.rations.saisie.domaine.StatutFicheEnum;
  * @param idProcessus processus consolidé, tel que demandé par l'appelant
  * @param codeUnite unité supportant la charge — recopiée des fiches (migration
  *        V3) quand il y en a, sinon écho du paramètre déclaré par l'appelant
- * @param moisPaiement mois du processus, recopié des fiches ; {@code null} si
+ * @param dateDebut premier jour de la période, recopié des fiches ; {@code null} si
  *        aucune fiche n'a encore été ouverte
- * @param anneePaiement année du processus, recopiée des fiches ; {@code null}
+ * @param dateFin dernier jour de la période, recopié des fiches ; {@code null}
  *        dans le même cas
  * @param nombreJournees nombre de journées saisies (agrégat)
  * @param nombreLignes nombre total de lignes sur le mois (agrégat)
@@ -53,8 +53,8 @@ import cm.afrilandfirstbank.rations.saisie.domaine.StatutFicheEnum;
 public record EtatConsolide(
         Long idProcessus,
         String codeUnite,
-        Integer moisPaiement,
-        Integer anneePaiement,
+        LocalDate dateDebut,
+        LocalDate dateFin,
         int nombreJournees,
         int nombreLignes,
         int nombreBeneficiaires,

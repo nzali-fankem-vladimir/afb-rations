@@ -2,8 +2,9 @@ package cm.afrilandfirstbank.rations.workflow.api.dto;
 
 import cm.afrilandfirstbank.rations.workflow.domaine.TypeProcessusEnum;
 
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
+import java.time.LocalDate;
+
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -23,15 +24,29 @@ import jakarta.validation.constraints.Size;
  */
 public record DeclenchementProcessusRequest(
 
-        @NotNull(message = "le mois de paiement est obligatoire")
-        @Min(value = 1, message = "le mois de paiement va de 1 a 12")
-        @Max(value = 12, message = "le mois de paiement va de 1 a 12")
-        Integer moisPaiement,
+        /**
+         * Premier jour de la periode, <b>inclus</b>. Format ISO 8601
+         * ({@code 2026-09-07}), convention du module (CLAUDE.md section 11).
+         */
+        @NotNull(message = "la date de debut de periode est obligatoire")
+        LocalDate dateDebut,
 
-        @NotNull(message = "l'annee de paiement est obligatoire")
-        @Min(value = 2000, message = "l'annee de paiement est manifestement erronee")
-        @Max(value = 2100, message = "l'annee de paiement est manifestement erronee")
-        Integer anneePaiement,
+        /**
+         * Dernier jour de la periode, <b>inclus</b> — et non le premier jour de la
+         * suivante.
+         *
+         * <h2>Aucune duree maximale n'est imposee, et c'est delibere</h2>
+         *
+         * <p>Le point M-04 a retenu l'intervalle de dates <i>precisement</i> pour ne
+         * pas figer une cadence : le metier a change d'avis une fois, et rien ne dit
+         * qu'une periode ne durera pas quinze jours un jour. Ecrire ici « sept jours
+         * au plus » reintroduirait le postulat que la decision vient de retirer.
+         *
+         * <p>Le seul controle est l'ordre des bornes, qui n'est pas une regle de
+         * cadence mais une condition de sens.
+         */
+        @NotNull(message = "la date de fin de periode est obligatoire")
+        LocalDate dateFin,
 
         /**
          * Unite qui supporte la charge, cinq chiffres du referentiel des codes
@@ -60,6 +75,23 @@ public record DeclenchementProcessusRequest(
      */
     public TypeProcessusEnum typeDemande() {
         return typeProcessus == null ? TypeProcessusEnum.NORMAL : typeProcessus;
+    }
+
+
+    /**
+     * Les bornes sont dans l'ordre.
+     *
+     * <p>Refuse en {@code 400 REQUETE_INVALIDE} avec les autres fautes de forme,
+     * plutot qu'en {@code 422} : une periode qui finit avant de commencer n'est pas
+     * une regle de gestion qui refuse, c'est une demande qui ne veut rien dire.
+     *
+     * <p>La base porte la meme regle ({@code ck_processus_periode_ordonnee}) : sans
+     * elle, la contrainte d'exclusion echouerait sur un {@code daterange} impossible
+     * a construire, avec un message technique que personne ne saurait lire.
+     */
+    @AssertTrue(message = "la date de fin de periode ne peut pas preceder la date de debut")
+    public boolean isPeriodeOrdonnee() {
+        return dateDebut == null || dateFin == null || !dateFin.isBefore(dateDebut);
     }
 
 }

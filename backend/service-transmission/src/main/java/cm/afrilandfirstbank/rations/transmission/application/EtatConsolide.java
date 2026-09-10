@@ -39,6 +39,8 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public record EtatConsolide(
         Long idProcessus,
         String codeUnite,
+        LocalDate dateDebut,
+        LocalDate dateFin,
         Integer moisPaiement,
         Integer anneePaiement,
         Integer nombreJournees,

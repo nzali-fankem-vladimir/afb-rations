@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 import java.io.ByteArrayInputStream;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -58,7 +59,7 @@ class CoherenceExportTest {
 
     private EnTeteDemande enTete(long id, String codeUnite, int montant, boolean transmis,
             String statutIntegration) {
-        return new EnTeteDemande(id, 8, 2026, codeUnite, "NORMAL", montant, "CLOTURE", transmis,
+        return new EnTeteDemande(id, LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 1).plusMonths(1).minusDays(1), codeUnite, "NORMAL", montant, "CLOTURE", transmis,
                 statutIntegration, LocalDateTime.of(2026, 8, 20, 14, 0));
     }
 
@@ -70,7 +71,7 @@ class CoherenceExportTest {
                 enTete(2, "00003", 17_500, true, "REJETE"),
                 enTete(3, "00003", 8_250, false, null)));
 
-        Rapport rapport = rapportService.produire(8, 2026, null, "claire_nkolo", JETON);
+        Rapport rapport = rapportService.produire(LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 31), null, "claire_nkolo", JETON);
         long totalAttendu = rapport.synthese().montantTotalPeriode();
         // Le rapport n'est pas trivial : s'assurer que le total vaut vraiment quelque chose.
         assertThat(totalAttendu).isEqualTo(67_750L);

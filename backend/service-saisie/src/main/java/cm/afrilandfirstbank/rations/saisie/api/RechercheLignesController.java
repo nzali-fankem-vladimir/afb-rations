@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.saisie.api;
 
+import java.time.LocalDate;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -19,7 +20,7 @@ import cm.afrilandfirstbank.rations.saisie.domaine.SessionEnum;
  * <b>Endpoint interne, hors contrat passerelle</b> (Sprint 6.1).
  *
  * <pre>
- *   GET /saisie/processus/recherche?mois=8&amp;annee=2026&amp;nature=RATION&amp;session=JOUR&amp;beneficiaire=10001234567
+ *   GET /saisie/processus/recherche?dateDebut=2026-09-07&amp;dateFin=2026-09-13&amp;nature=RATION&amp;session=JOUR&amp;beneficiaire=10001234567
  * </pre>
  *
  * <h2>Pourquoi il existe</h2>
@@ -82,8 +83,8 @@ public class RechercheLignesController {
      */
     @GetMapping
     public ResponseEntity<RechercheLignesResponse> rechercher(
-            @RequestParam(required = false) Integer mois,
-            @RequestParam(required = false) Integer annee,
+            @RequestParam(required = false) LocalDate dateDebut,
+            @RequestParam(required = false) LocalDate dateFin,
             @RequestParam(required = false) NatureEnum nature,
             @RequestParam(required = false) SessionEnum session,
             @RequestParam(required = false) String beneficiaire,
@@ -91,7 +92,7 @@ public class RechercheLignesController {
 
         return ResponseEntity.ok(RechercheLignesResponse.de(
                 rechercheLignesService.rechercher(
-                        mois, annee, nature, session, beneficiaire, enteteAutorisation)));
+                        dateDebut, dateFin, nature, session, beneficiaire, enteteAutorisation)));
     }
 
 }

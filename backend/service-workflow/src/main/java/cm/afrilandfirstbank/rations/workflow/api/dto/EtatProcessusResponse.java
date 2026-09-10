@@ -2,6 +2,8 @@ package cm.afrilandfirstbank.rations.workflow.api.dto;
 
 import java.util.List;
 
+import java.time.LocalDate;
+
 import cm.afrilandfirstbank.rations.workflow.application.EtatConsolide;
 import cm.afrilandfirstbank.rations.workflow.application.ProcessusService.EtatProcessus;
 import cm.afrilandfirstbank.rations.workflow.domaine.ProcessusMensuel;
@@ -49,8 +51,8 @@ public record EtatProcessusResponse(
         StatutEnum statut,
         TypeProcessusEnum typeProcessus,
         String codeUnite,
-        Integer moisPaiement,
-        Integer anneePaiement,
+        LocalDate dateDebut,
+        LocalDate dateFin,
         int montantTotalPorte,
         boolean transmisComptabilite,
 
@@ -73,8 +75,8 @@ public record EtatProcessusResponse(
                 // celle-ci les rend nulles quand aucune fiche n'existe encore, alors
                 // que le processus, lui, les connait toujours.
                 processus.getCodeUnite(),
-                processus.getMoisPaiement(),
-                processus.getAnneePaiement(),
+                processus.getDateDebut(),
+                processus.getDateFin(),
                 processus.getMontantTotal(),
                 processus.isTransmisComptabilite(),
                 consolidation.nombreJournees(),

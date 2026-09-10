@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.reporting.api.dto;
 
+import java.time.LocalDate;
 import java.util.List;
 
 import cm.afrilandfirstbank.rations.reporting.domaine.HistoriqueDemande;
@@ -13,8 +14,8 @@ import cm.afrilandfirstbank.rations.reporting.domaine.HistoriqueDemande;
  */
 public record HistoriqueResponse(
         Long idProcessus,
-        Integer moisPaiement,
-        Integer anneePaiement,
+        LocalDate dateDebut,
+        LocalDate dateFin,
         String codeUnite,
         String statut,
         List<EtapeHistoriqueResponse> etapes) {
@@ -22,8 +23,8 @@ public record HistoriqueResponse(
     public static HistoriqueResponse depuis(HistoriqueDemande historique) {
         return new HistoriqueResponse(
                 historique.idProcessus(),
-                historique.moisPaiement(),
-                historique.anneePaiement(),
+                historique.dateDebut(),
+                historique.dateFin(),
                 historique.codeUnite(),
                 historique.statut(),
                 historique.etapes().stream().map(EtapeHistoriqueResponse::depuis).toList());

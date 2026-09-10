@@ -29,7 +29,7 @@ import cm.afrilandfirstbank.rations.workflow.domaine.exception.DocumentNonProdui
 @DisplayName("Stockage des pieces jointes")
 class StockageDocumentsFichierTest {
 
-    private static final String CHEMIN = "2026/09/etat-rations-00002-202609-p109.pdf";
+    private static final String CHEMIN = "2026/09/etat-rations-00002-20260901-p109.pdf";
 
     @TempDir
     Path racine;

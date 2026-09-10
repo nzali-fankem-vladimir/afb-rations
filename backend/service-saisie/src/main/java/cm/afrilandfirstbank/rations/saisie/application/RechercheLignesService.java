@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.saisie.application;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
 
@@ -54,7 +55,7 @@ public class RechercheLignesService {
      *         normale, jamais une erreur
      */
     @Transactional(readOnly = true)
-    public List<Long> rechercher(Integer mois, Integer annee, NatureEnum nature,
+    public List<Long> rechercher(LocalDate dateDebut, LocalDate dateFin, NatureEnum nature,
             SessionEnum session, String beneficiaire, String enteteAutorisation) {
 
         PorteeAccesUtilisateur portee = porteeService.exigerPortee(enteteAutorisation);
@@ -64,7 +65,7 @@ public class RechercheLignesService {
         Set<String> codesVisibles = portee.nationale() ? null : portee.codesUnite();
 
         return rechercheRepository.identifiantsProcessusAvecLigne(
-                mois, annee, nature, session, beneficiaire, codesVisibles);
+                dateDebut, dateFin, nature, session, beneficiaire, codesVisibles);
     }
 
 }

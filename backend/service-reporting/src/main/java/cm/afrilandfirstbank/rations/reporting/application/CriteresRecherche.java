@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.reporting.application;
 
+import java.time.LocalDate;
 import cm.afrilandfirstbank.rations.reporting.domaine.NatureEnum;
 import cm.afrilandfirstbank.rations.reporting.domaine.SessionEnum;
 
@@ -27,8 +28,8 @@ import cm.afrilandfirstbank.rations.reporting.domaine.SessionEnum;
  * @param beneficiaire numero de compte courant exact, ou fragment de nom, ou nul
  */
 public record CriteresRecherche(
-        Integer mois,
-        Integer annee,
+        LocalDate dateDebut,
+        LocalDate dateFin,
         String codeUnite,
         NatureEnum nature,
         SessionEnum session,

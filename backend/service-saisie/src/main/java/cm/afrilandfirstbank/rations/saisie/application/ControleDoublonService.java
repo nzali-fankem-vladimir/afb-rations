@@ -46,8 +46,8 @@ import cm.afrilandfirstbank.rations.saisie.infrastructure.LignePrestationReposit
  * <ul>
  *   <li>une seconde methode {@code estDoublonSurLaPeriode(...)} rejoint celle-ci,
  *       ou {@link #estDoublonSurLaJournee} enchaine les deux verifications ;</li>
- *   <li>elle s'appuiera sur les colonnes {@code code_unite}, {@code mois_paiement}
- *       et {@code annee_paiement} <b>recopiees sur {@code fiche_journaliere}</b>
+ *   <li>elle s'appuiera sur les colonnes {@code code_unite}, {@code date_debut}
+ *       et {@code date_fin} <b>recopiees sur {@code fiche_journaliere}</b>
  *       (decision Sprint 3.1, {@code docs/rattachement-processus.md} §5) : sans
  *       cette recopie, RG-15 exigerait un appel au service Workflow pour chaque
  *       ligne saisie ;</li>

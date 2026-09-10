@@ -118,7 +118,7 @@ public class FicheJournaliereService {
     private FicheOuverte creer(ProcessusVerifie processus, LocalDate dateJour, String adresseIp) {
         FicheJournaliere fiche = new FicheJournaliere(
                 processus.idProcessus(), dateJour, processus.codeUnite(),
-                processus.moisPaiement(), processus.anneePaiement());
+                processus.dateDebut(), processus.dateFin());
 
         try {
             // saveAndFlush et non save : sans vidage explicite, la violation de
@@ -178,8 +178,8 @@ public class FicheJournaliereService {
                         .contexte("idProcessus", fiche.getIdProcessus())
                         .contexte("dateJour", fiche.getDateJour())
                         .contexte("codeUnite", fiche.getCodeUnite())
-                        .contexte("moisPaiement", fiche.getMoisPaiement())
-                        .contexte("anneePaiement", fiche.getAnneePaiement())
+                        .contexte("dateDebut", fiche.getDateDebut())
+                        .contexte("dateFin", fiche.getDateFin())
                         .contexte("statut", fiche.getStatut())
                         .enJson()));
     }

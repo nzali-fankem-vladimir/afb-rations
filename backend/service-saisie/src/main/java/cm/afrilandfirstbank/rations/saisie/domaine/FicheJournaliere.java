@@ -79,12 +79,12 @@ public class FicheJournaliere {
     private String codeUnite;
 
     /** Mois du processus mensuel, recopié et figé (migration V3). */
-    @Column(name = "mois_paiement")
-    private Integer moisPaiement;
+    @Column(name = "date_debut")
+    private LocalDate dateDebut;
 
     /** Année du processus mensuel, recopiée et figée (migration V3). */
-    @Column(name = "annee_paiement")
-    private Integer anneePaiement;
+    @Column(name = "date_fin")
+    private LocalDate dateFin;
 
     /** Horodatage technique d'audit (convention transverse, Sprint 0.7). */
     @Column(name = "date_creation", nullable = false)
@@ -99,7 +99,7 @@ public class FicheJournaliere {
      * {@code EN_SAISIE} : les lignes de prestation restent modifiables tant que
      * la fiche n'est pas enregistrée.
      *
-     * <p><b>Le triplet unité / mois / année est exigé à la construction</b>,
+     * <p><b>Le triplet unité / début / fin de période est exigé à la construction</b>,
      * plutôt que renseigné après coup par un second constructeur. Il vient de la
      * réponse de {@code GET /processus/{id}}, obtenue avant toute écriture : une
      * fiche ne peut pas naître sans que le processus ait été vérifié. Un
@@ -113,12 +113,12 @@ public class FicheJournaliere {
      * ({@code docs/rattachement-processus.md} §4 et §5).
      */
     public FicheJournaliere(Long idProcessus, LocalDate dateJour, String codeUnite,
-                            Integer moisPaiement, Integer anneePaiement) {
+                            LocalDate dateDebut, LocalDate dateFin) {
         this.idProcessus = idProcessus;
         this.dateJour = dateJour;
         this.codeUnite = codeUnite;
-        this.moisPaiement = moisPaiement;
-        this.anneePaiement = anneePaiement;
+        this.dateDebut = dateDebut;
+        this.dateFin = dateFin;
         this.statut = StatutFicheEnum.EN_SAISIE;
     }
 
@@ -151,12 +151,12 @@ public class FicheJournaliere {
         return codeUnite;
     }
 
-    public Integer getMoisPaiement() {
-        return moisPaiement;
+    public LocalDate getDateDebut() {
+        return dateDebut;
     }
 
-    public Integer getAnneePaiement() {
-        return anneePaiement;
+    public LocalDate getDateFin() {
+        return dateFin;
     }
 
     public LocalDateTime getDateCreation() {

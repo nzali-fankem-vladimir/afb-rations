@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.reporting.application;
 
+import java.time.LocalDate;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -138,7 +139,7 @@ public class ExportPdfService {
 
         } catch (IOException | RuntimeException echec) {
             throw new ExportImpossibleException(
-                    "Le rapport PDF de " + rapport.periodeMois() + "/" + rapport.periodeAnnee()
+                    "Le rapport PDF de " + rapport.periodeDebut() + "/" + rapport.periodeFin()
                             + " n'a pas pu etre produit (" + echec.getMessage() + ").",
                     echec);
         }
@@ -327,12 +328,23 @@ public class ExportPdfService {
                 .setPadding(4f);
     }
 
+    /**
+     * La periode telle qu'elle s'imprime en tete du rapport : « du 7 septembre 2026
+     * au 13 septembre 2026 ».
+     *
+     * <p>Le tableau {@code MOIS} sert toujours, mais a nommer le mois de chaque
+     * borne — non plus a nommer la periode, qui n'est plus un mois (Maille 1, M-04).
+     */
     private String periodeEnToutesLettres(Rapport rapport) {
-        int mois = rapport.periodeMois();
-        if (mois < 1 || mois > 12) {
-            return mois + "/" + rapport.periodeAnnee();
+        return "du " + jourEnToutesLettres(rapport.periodeDebut())
+                + " au " + jourEnToutesLettres(rapport.periodeFin());
+    }
+
+    private String jourEnToutesLettres(LocalDate jour) {
+        if (jour == null) {
+            return "(date absente)";
         }
-        return MOIS[mois - 1] + " " + rapport.periodeAnnee();
+        return jour.getDayOfMonth() + " " + MOIS[jour.getMonthValue() - 1] + " " + jour.getYear();
     }
 
     /**

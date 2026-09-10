@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.saisie.application;
 
+import java.time.LocalDate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -101,7 +102,7 @@ public class EtatModifiableService {
             throw new EtatNonModifiableException(String.format(
                     "L'etat de la periode %02d/%d pour l'unite %s est %s : il n'est plus modifiable. "
                             + "Demandez son retour au chef d'unite pour reprendre la saisie.",
-                    processus.moisPaiement(), processus.anneePaiement(),
+                    processus.dateDebut(), processus.dateFin(),
                     processus.codeUnite(), processus.statut()));
         }
 

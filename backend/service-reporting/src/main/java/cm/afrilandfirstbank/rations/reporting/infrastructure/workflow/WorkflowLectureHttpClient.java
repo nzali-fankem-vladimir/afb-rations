@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.reporting.infrastructure.workflow;
 
+import java.time.LocalDate;
 import java.util.List;
 
 import org.slf4j.Logger;
@@ -53,14 +54,14 @@ public class WorkflowLectureHttpClient implements WorkflowLectureClient {
     }
 
     @Override
-    public ResultatRechercheDemandes rechercher(Integer mois, Integer annee, String codeUnite,
+    public ResultatRechercheDemandes rechercher(LocalDate dateDebut, LocalDate dateFin, String codeUnite,
             String statut, int limite, String enteteAutorisation) {
 
         exigerJeton(enteteAutorisation);
 
         try {
             ReponseWorkflow.Recherche reponse = clientRest.get()
-                    .uri(uri -> construireUriRecherche(uri, mois, annee, codeUnite, statut, limite))
+                    .uri(uri -> construireUriRecherche(uri, dateDebut, dateFin, codeUnite, statut, limite))
                     .header(HttpHeaders.AUTHORIZATION, enteteAutorisation)
                     .retrieve()
                     .body(ReponseWorkflow.Recherche.class);
@@ -120,15 +121,15 @@ public class WorkflowLectureHttpClient implements WorkflowLectureClient {
         }
     }
 
-    private java.net.URI construireUriRecherche(UriBuilder uri, Integer mois, Integer annee,
+    private java.net.URI construireUriRecherche(UriBuilder uri, LocalDate dateDebut, LocalDate dateFin,
             String codeUnite, String statut, int limite) {
 
         uri.path("/processus/recherche").queryParam("limite", limite);
-        if (mois != null) {
-            uri.queryParam("mois", mois);
+        if (dateDebut != null) {
+            uri.queryParam("dateDebut", dateDebut);
         }
-        if (annee != null) {
-            uri.queryParam("annee", annee);
+        if (dateFin != null) {
+            uri.queryParam("dateFin", dateFin);
         }
         if (codeUnite != null) {
             uri.queryParam("codeUnite", codeUnite);
@@ -181,8 +182,8 @@ public class WorkflowLectureHttpClient implements WorkflowLectureClient {
 
         return new ResultatHistorique.Obtenu(new HistoriqueDemande(
                 reponse.idProcessus(),
-                reponse.moisPaiement(),
-                reponse.anneePaiement(),
+                reponse.dateDebut(),
+                reponse.dateFin(),
                 reponse.codeUnite(),
                 reponse.statut(),
                 etapes.stream().map(WorkflowLectureHttpClient::versEtape).toList()));
@@ -191,8 +192,8 @@ public class WorkflowLectureHttpClient implements WorkflowLectureClient {
     private static EnTeteDemande versEnTete(ReponseWorkflow.EnTete brut) {
         return new EnTeteDemande(
                 brut.id(),
-                brut.moisPaiement(),
-                brut.anneePaiement(),
+                brut.dateDebut(),
+                brut.dateFin(),
                 brut.codeUnite(),
                 brut.typeProcessus(),
                 brut.montantTotal() == null ? 0 : brut.montantTotal(),

@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.reporting.domaine;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -28,8 +29,8 @@ import java.util.Map;
  * paiement ; le détail d'un dossier se consulte par
  * {@code GET /reporting/processus/{id}/historique} (Sprint 6.1).
  *
- * @param periodeMois       mois de paiement, 1 à 12
- * @param periodeAnnee      année de paiement
+ * @param periodeDebut      premier jour de la période demandée, inclus
+ * @param periodeFin        dernier jour de la période demandée, inclus
  * @param codeUnite         l'agence du rapport, ou {@code null} pour « toutes les unités »
  * @param dateGeneration    instant de production du rapport
  * @param loginUtilisateur  login de l'utilisateur qui a produit le rapport
@@ -40,8 +41,8 @@ import java.util.Map;
  *                          jamais une erreur
  */
 public record Rapport(
-        int periodeMois,
-        int periodeAnnee,
+        LocalDate periodeDebut,
+        LocalDate periodeFin,
         String codeUnite,
         LocalDateTime dateGeneration,
         String loginUtilisateur,

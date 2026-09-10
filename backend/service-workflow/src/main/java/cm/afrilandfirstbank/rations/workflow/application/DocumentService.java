@@ -143,8 +143,7 @@ public class DocumentService {
 
         } catch (IOException | RuntimeException echec) {
             throw new DocumentNonProduitException(
-                    "Le document de l'etat " + processus.getMoisPaiement() + "/"
-                            + processus.getAnneePaiement() + " pour l'unite "
+                    "Le document de l'etat " + processus.libellePeriode() + " pour l'unite "
                             + processus.getCodeUnite() + " n'a pas pu etre produit ("
                             + echec.getMessage() + "). Aucune soumission n'est enregistree.",
                     echec);
@@ -406,13 +405,23 @@ public class DocumentService {
         return date == null ? "cette journee" : date.format(JOUR);
     }
 
+    /**
+     * La periode telle qu'elle s'imprime sur le document : « du 7 septembre 2026 au
+     * 13 septembre 2026 ».
+     *
+     * <p>Le tableau {@code MOIS} sert toujours, mais a nommer le mois de chaque
+     * borne — non plus a nommer la periode elle-meme, qui n'est plus un mois.
+     */
     private String periodeEnToutesLettres(ProcessusMensuel processus) {
-        Integer mois = processus.getMoisPaiement();
-        Integer annee = processus.getAnneePaiement();
-        if (mois == null || annee == null || mois < 1 || mois > 12) {
-            return String.valueOf(mois) + "/" + annee;
+        return "du " + jourEnToutesLettres(processus.getDateDebut())
+                + " au " + jourEnToutesLettres(processus.getDateFin());
+    }
+
+    private String jourEnToutesLettres(LocalDate jour) {
+        if (jour == null) {
+            return "(date absente)";
         }
-        return MOIS[mois - 1] + " " + annee;
+        return jour.getDayOfMonth() + " " + MOIS[jour.getMonthValue() - 1] + " " + jour.getYear();
     }
 
     /**

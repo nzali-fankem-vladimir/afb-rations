@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.workflow.domaine;
 
+import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumMap;
@@ -113,7 +114,7 @@ public final class TransitionProcessus {
      * plutot que d'etre interprete comme « depuis rien ». Un statut nul est
      * quasiment toujours un defaut — une entite mal chargee — et le faire
      * ressembler a une creation legitime transformerait ce defaut en autorisation.
-     * La creation passe par {@link #declencher(Integer, Integer, String)}, qui est
+     * La creation passe par {@link #declencher(LocalDate, LocalDate, String)}, qui est
      * la seule facon de la produire.
      */
     public static boolean estAutorisee(StatutEnum source, StatutEnum cible) {
@@ -139,9 +140,9 @@ public final class TransitionProcessus {
      * appliquee par le service de declenchement, avant l'appel
      * ({@code ux_processus_normal_par_periode} en filet).
      */
-    public static ProcessusMensuel declencher(Integer moisPaiement, Integer anneePaiement,
+    public static ProcessusMensuel declencher(LocalDate dateDebut, LocalDate dateFin,
             String codeUnite) {
-        return new ProcessusMensuel(moisPaiement, anneePaiement, codeUnite);
+        return new ProcessusMensuel(dateDebut, dateFin, codeUnite);
     }
 
     /**
