@@ -80,37 +80,38 @@ garde armee se fait de facon HEBDOMADAIRE, et non mensuelle.
 
 Avant toute analyse d'impact, il faut savoir de quoi on parle. Trois
 lectures se cachent derriere le meme mot, et elles n'ont pas du tout
-les memes consequences :
+les memes consequences. Pose la question au metier avec ce niveau de
+detail, ne devine pas, ne choisis pas la lecture qui t'arrange, et
+ATTENDS LA REPONSE avant de poursuivre.
+```
 
-(A) LE DECAISSEMENT est hebdomadaire, mais le cycle documentaire
-    reste mensuel. Les agents recoivent leur argent chaque semaine,
-    mais l'etat consolide, valide par le circuit et transmis a la
-    comptabilite reste l'etat du mois.
-    Impact sur le module : QUASI NUL. Le decaissement est hors
-    perimetre (CLAUDE.md section 8 : le module ne produit aucune
-    ecriture comptable et ne touche pas au CBS). Le module continue
-    de faire ce qu'il fait.
+**(A) Le décaissement est hebdomadaire, mais le dossier reste mensuel**
 
-(B) LE CYCLE ENTIER est hebdomadaire. Saisie, consolidation,
-    soumission, validation, cloture et transmission comptable ont
-    lieu chaque semaine.
-    Impact : MAJEUR. La maille de la periode change dans trois bases,
-    dans le contrat publie a la comptabilite, et dans la valeur du
-    seuil d'approbation de la banque.
+Autrement dit : l'agent de la garde armée touche son argent chaque semaine dans sa poche, mais **le module continue de fonctionner exactement comme aujourd'hui**. Personne ne change rien à ce que l'agent de saisie, le Chef d'Unité ou le Directeur Réseau font dans l'application. Le module produit toujours un seul dossier par mois et par unité ; c'est la banque, en dehors du module, qui découpe ensuite ce paiement en quatre ou cinq versements hebdomadaires — une opération purement comptable et bancaire qui ne regarde jamais le circuit de validation ni le journal d'audit.
 
-(C) HYBRIDE : validation hebdomadaire, mais transmission comptable
-    regroupee mensuellement.
-    Impact : le plus lourd des trois. Il ajoute un niveau
-    d'agregation qui n'existe nulle part aujourd'hui, entre l'etat
-    valide et l'evenement publie.
+*Ce que ça change concrètement une fois l'application livrée :* rien à l'écran, rien dans les délais de validation, rien dans les rapports. Un Chef d'Unité verra toujours un seul état à valider en fin de mois, comme il le fait déjà en test.
 
-Ne devine pas. Ne choisis pas la lecture qui t'arrange. Pose la
-question au metier dans ces termes, avec un exemple concret pour
-chacune, et ATTENDS LA REPONSE.
+**(B) Tout le cycle devient hebdomadaire**
 
-Tant que la reponse n'est pas connue, la valeur provisoire retenue
-est (A) : c'est la seule qui ne demande aucune modification, donc la
-seule qui ne fabrique aucune dette si elle se revele fausse.
+Autrement dit : ce n'est plus seulement l'argent qui change de rythme, c'est **le travail dans l'application lui-même**. L'agent de saisie ouvre un nouvel état chaque semaine (et non plus une fois par mois), le consolide en fin de semaine, le soumet, le Chef d'Unité le valide dans la semaine qui suit, et — si le montant dépasse le seuil — le Directeur Réseau le valide à son tour. Chaque semaine produit son propre dossier, sa propre pièce jointe signée, et sa propre transmission à la comptabilité.
+
+*Ce que ça change concrètement une fois l'application livrée :*
+- **Pour l'agent de saisie** : au lieu d'un mois de saisie continue suivi d'une seule soumission, il devra soumettre environ quatre fois plus souvent — un rythme de travail sensiblement différent.
+- **Pour le Chef d'Unité et le Directeur Réseau** : environ quatre fois plus de dossiers à examiner et à signer sur l'année. Un montant qui semblait modeste rapporté à la semaine (ex. 25 000 XAF) peut représenter un total mensuel bien supérieur (100 000 XAF) sans que le circuit de validation actuel ne le voie jamais monter au Directeur Réseau — **c'est le point le plus sensible : le seuil des 100 000 XAF a été fixé en pensant à un mois, pas à une semaine**, et il faudrait décider s'il doit être divisé, conservé tel quel, ou remplacé par une autre règle.
+- **Pour la comptabilité** : elle reçoit désormais un message électronique par semaine et par unité au lieu d'un par mois — environ 2 600 messages par an au lieu de 600, à traiter de la même façon côté banque.
+- **Pour les rapports et les exports (PDF, Excel)** : ils devront pouvoir être consultés et filtrés par semaine, et non plus seulement par mois — un changement d'écran, pas seulement de moteur.
+
+**(C) Un cas mixte : validation chaque semaine, envoi à la comptabilité chaque mois**
+
+Autrement dit : côté agents et Chef d'Unité / Directeur Réseau, le travail se fait comme en (B) — un dossier par semaine, validé chaque semaine. Mais la banque ne veut pas recevoir un message informatique par semaine : elle veut que les quatre ou cinq dossiers hebdomadaires validés dans le mois soient **regroupés en un seul envoi mensuel** vers la comptabilité.
+
+*Ce que ça change concrètement une fois l'application livrée :* c'est le cas le plus lourd à construire, parce qu'il ajoute une étape qui n'existe nulle part aujourd'hui — une sorte de « boîte d'attente » qui accumule les dossiers validés dans la semaine jusqu'à ce que le mois soit complet, puis qui les additionne et les envoie en une seule fois. Pour un Chef d'Unité ou un Directeur Réseau, le travail de validation ressemble à (B) ; mais il faut en plus décider ce qui se passe si un dossier hebdomadaire est validé en retard et manque l'envoi mensuel, ou si un mois compte cinq semaines au lieu de quatre.
+
+```
+Tant que la reponse du metier n'est pas connue, la valeur provisoire
+retenue est (A) : c'est la seule qui ne demande aucune modification
+au module, donc la seule qui ne fabrique aucune dette si elle se
+revele fausse.
 ```
 
 ### Étape 2. Ouvrir le point en attente M-04

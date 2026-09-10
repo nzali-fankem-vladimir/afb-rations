@@ -1117,10 +1117,50 @@ le contrôle d'entrée change.
 backend refusent exactement la même chose. Posé après, l'écran serait à
 reprendre.
 
-**Deux décisions accompagnent la correction, non tranchées :**
+### Les deux décisions d'accompagnement, tranchées le 9 septembre 2026
 
-1. **Le sort des 44 lignes de test fausses** — correction sur place, ou jeu de
-   données neuf. Elles feraient échouer toute reprise qui contrôlerait le format.
-2. **La correction de l'exemple du contrat d'API section 7.1**, source de
-   l'erreur. À reprendre dans la même passe que la forme de la période, quand la
-   DFT aura statué (M-04).
+**① Le contrôle ne s'applique qu'aux nouvelles saisies. Les 44 lignes fausses ne
+sont pas corrigées.**
+
+La conséquence a été **mesurée avant d'être qualifiée de faible**, et elle l'est
+pour une raison qui ne tient pas au contrôle lui-même :
+
+| Mesure en base (`rations_saisie`) | Résultat |
+| --- | --- |
+| Bénéficiaires à 11 chiffres | 1, créé le 2026-09-01 |
+| Bénéficiaires à 14 chiffres | 44, créés du 2026-08-31 au 2026-09-04 |
+| Dont référencés par des lignes de prestation | 43, sur 49 lignes |
+
+Ces 44 lignes ont toutes été créées **pendant les Sprints 3 à 6**, dans le
+PostgreSQL local. **La base de production démarrera vide** — le module n'est pas
+déployé, c'est l'objet du sous-sprint 8.3. Elles n'atteindront donc jamais la
+production, et le choix n'a aucune conséquence durable.
+
+**Corriger à l'aveugle aurait été le plus mauvais des gestes** : on ne connaît pas
+la valeur vraie des 44 numéros. Les tronquer à 11 chiffres fabriquerait des
+bénéficiaires dont le compte est plausible mais faux — exactement le défaut que
+T-02 cherche à fermer, avec en prime l'apparence de la conformité.
+
+**Limite connue, en développement uniquement.** Tant que ces lignes vivent, saisir
+le numéro correct à 11 chiffres pour l'une de ces personnes créera un **second**
+bénéficiaire : le compte étant le seul critère d'identification (Sprint 3.1),
+deux numéros différents sont deux personnes différentes. Sans effet en production,
+gênant en recette (sous-sprint 9.2) si le jeu d'essai n'est pas régénéré.
+
+**② Le défaut durable n'est pas dans les données, il est dans la documentation.**
+
+Trois sources se contredisent sur ce champ, et **aucune ne porte la règle des
+11 chiffres** :
+
+| Source | Ce qu'elle dit |
+| --- | --- |
+| Base `beneficiaires.num_compte_courant` | `VARCHAR(20)` |
+| `IdentiteBeneficiaireRequest` (code) | `@Size(max = 20)` |
+| Dictionnaire de données | `VARCHAR(30)` — **l'intrus** |
+| Contrat d'API §7.1 (exemple) | Numéro à 14 chiffres — **la source de la propagation** |
+
+La base et le code s'accordent ; le dictionnaire diverge seul. **C'est l'exemple
+du contrat d'API qui doit être corrigé en priorité** : il est lu par l'équipe du
+module de comptabilisation, et c'est lui qui a propagé l'erreur jusque dans les
+jeux d'essai. À reprendre dans la même passe que la forme de la période, quand la
+DFT aura statué (M-04).

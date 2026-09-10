@@ -308,6 +308,67 @@ consommée par le module de comptabilisation, qui n'est pas maintenu par cette
 4. La fenêtre de transition et la valeur de `versionCharge`.
 5. Confirmation que la clé est bien calculée de leur côté.
 
+### Réponses obtenues le 10 septembre 2026
+
+| | Question | Réponse |
+| --- | --- | --- |
+| 1 | Forme de la période | **Oui** — `dateDebut` + `dateFin` + `libelle` acceptés |
+| 2 | Partage du libellé | **Sans réponse explicite** — position du module appliquée à défaut |
+| 3 | Granularité | **Sans réponse explicite** — position du module appliquée à défaut |
+| 4 | Fenêtre et `versionCharge` | **Délégué au module** |
+| 5 | Clé calculée par le CBS | **Oui** — le module ne la publie pas |
+
+**Les points 2 et 3 n'ont pas reçu de réponse.** Ils sont consignés comme
+appliqués *à défaut d'objection*, pas comme accordés. La distinction compte : si
+la comptabilité découvre à l'intégration qu'elle attendait un montant agrégé par
+bénéficiaire, c'est le grain fin qui sera en cause, et il faudra pouvoir dire
+qu'il n'avait jamais été validé. **À reposer avant la première transmission
+réelle**, c'est-à-dire avant le sous-sprint 8.3.
+
+### Décision 7 — `versionCharge` vaut 2, et il n'y a aucune fenêtre de transition
+
+**Le module n'est pas déployé.** La conteneurisation et le déploiement Kubernetes
+sont les sous-sprints 8.2 et 8.3, non réalisés. Les **7 états déjà transmis**
+l'ont été sur le broker de développement local : le module de comptabilisation
+n'a **jamais reçu un seul message réel** de ce module.
+
+Il n'y a donc **rien à faire cohabiter**. La version 1 de la charge n'a pas
+d'existence en production, et la première charge jamais reçue par la comptabilité
+portera directement la forme à intervalle de dates.
+
+**Pourquoi conserver le champ malgré tout.** Il coûte un entier et il achète le
+changement suivant. Le module vient de découvrir en cours de route que sa cadence
+n'était pas celle qu'il croyait ; un champ de version est précisément ce qui
+permet à la prochaine surprise de ne pas être une rupture.
+
+**Pourquoi 2 et non 1.** Le contrat d'API section 7.1 documente la forme
+`{ mois, annee }` : c'est la version 1, produite en production ou non. La
+renuméroter ferait mentir l'historique du contrat pour économiser un chiffre.
+
+### Décision 8 — La clé de partition des accusés est `idProcessus` (D-11)
+
+La DFT laisse le module recommander. Recommandation retenue : **que le producteur
+d'accusés renvoie la clé qu'il a reçue sur `rations.etat.valide`**, c'est-à-dire
+`idProcessus`.
+
+Quatre motifs :
+
+1. **Symétrie des deux sens.** Une seule convention à expliquer, à superviser et
+   à retrouver six mois plus tard.
+2. **L'ordre est garanti là où il compte.** Deux accusés portant sur le *même*
+   état arrivent dans l'ordre où ils ont été émis. C'est le seul ordre dont le
+   module a besoin.
+3. **Aucun ordre n'est promis entre états différents**, et rien dans le code n'en
+   dépend — l'exiger aurait imposé une partition unique, donc un goulot.
+4. **Aucune sérialisation à réaccorder** : renvoyer la clé reçue évite tout
+   désaccord de type ou de format entre les deux équipes.
+
+**Formulé comme une défense en profondeur, pas comme une dépendance**, et c'est
+ce qui rend la demande facile à accepter. `TransitionIntegration` refuse déjà
+toute régression de statut : un rejeu de topic dans le désordre est inoffensif
+aujourd'hui, sans aucune garantie d'ordre. La clé ne répare rien — elle évite que
+le filet soit le seul mécanisme en jeu.
+
 Élément de contexte utile à l'échange : **7 états ont déjà été transmis** sous la
 forme mensuelle actuelle, et ne sont pas rejouables.
 

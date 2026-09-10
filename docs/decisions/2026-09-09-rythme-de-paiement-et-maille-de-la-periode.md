@@ -185,6 +185,67 @@ identiques par mois. Il a aussi mis au jour un défaut sans rapport avec le
 rythme — le numéro de compte courant n'est contrôlé ni en longueur ni en format,
 et 44 des 45 bénéficiaires en base sont faux (point **T-02**).
 
+## 6bis. Décision 4 — La table `processus_mensuel` n'est PAS renommée
+
+**Tranché le 9 septembre 2026**, à l'ouverture des travaux de migration.
+
+Le nom devient faux le jour où la période cesse d'être mensuelle : une table qui
+s'appelle `processus_mensuel` et porte `date_debut` / `date_fin` ment sur son
+contenu. La question du renommage — `processus_periodique`, ou tout autre nom —
+s'est donc posée en même temps que la migration.
+
+**Elle est écartée, et le nom vieilli est conservé.**
+
+### Le motif : le nom de la table est une donnée, pas seulement un identifiant
+
+`processus_mensuel` est écrit **en clair, comme valeur**, dans la colonne
+`entite_cible` du journal d'audit. La chaîne littérale `"processus_mensuel"`
+apparaît dans **14 fichiers, répartis sur 3 services** (compté, pas estimé) :
+
+| Service | Fichiers | Rôle de la constante |
+| --- | --- | --- |
+| `service-workflow` | `EnregistrementValidation`, `EnregistrementSoumission`, `EnregistrementRetour`, `VerrouTransmissionService`, `OuvertureComplementaireService`, `IntegrationComptableService`, `DeclenchementTransmission`, `ProcessusService` | `entiteCible` des événements publiés |
+| `service-transmission` | `TransmissionService`, `TraitementAccuseService`, `UniciteTransmissionService`, `AccuseComptableConsumer` | `entiteCible` des événements publiés |
+| `service-audit` | `AuditLogRechercheRepositoryImpl` | **Filtre de lecture** : `cb.equal(racine.get("entiteCible"), "processus_mensuel")`, qui sert `GET /audit/processus/{id}` |
+
+Le quinzième usage est d'une autre nature : `ProcessusMensuel.java` porte
+`@Table(name = "processus_mensuel")`, c'est-à-dire le nom réel de la table. Lui
+seul changerait par un `ALTER TABLE` ; les quatorze autres sont des **valeurs
+écrites dans un journal**, qu'aucune migration de schéma n'atteint.
+
+**193 événements sont déjà persistés sous cette valeur** (sprint de rattrapage du
+service Audit). Renommer la table sans réécrire ces 193 lignes couperait
+l'historique en deux : les traces d'avant deviendraient invisibles à l'endpoint
+qui sert à les consulter. Et **réécrire le journal d'audit est exactement ce que
+son immuabilité interdit** — `AuditLog` porte un `@PreRemove` qui refuse toute
+suppression, et le repository n'expose aucune écriture de mise à jour.
+
+Autrement dit : le renommage n'est pas une opération de schéma, c'est une
+opération sur un journal déclaré immuable. Le rapport coût/bénéfice n'est pas
+discutable.
+
+### Ce que cela laisse, et comment le rendre lisible
+
+Un nom qui ne dit plus la vérité, ce qui est un vrai coût de lecture. Il est
+compensé, pas nié :
+
+- la javadoc de `ProcessusMensuel` porte la contradiction explicitement — le nom
+  est historique, la période est un intervalle ;
+- le dictionnaire de données et CLAUDE.md la consignent au même titre ;
+- la table `piece_jointe` offre un précédent du même ordre : son nom ne dit pas
+  qu'elle ne porte qu'**un seul** document par processus, et personne ne s'y est
+  jamais trompé grâce au commentaire de colonne.
+
+### Ce que cela ne ferme pas
+
+Le renommage reste possible plus tard, **dans un sprint dédié qui traiterait les
+deux côtés ensemble** : la table, et une stratégie de lecture du journal
+acceptant les deux valeurs d'`entite_cible` (l'ancienne pour l'historique, la
+nouvelle pour la suite). Ce sprint n'existe pas et n'est pas planifié ; s'il l'est
+un jour, il devra commencer par là, pas par le `ALTER TABLE`.
+
+---
+
 ## 7. Ce que la mise en œuvre suppose
 
 Cette décision **n'écrit aucun code** et n'en a écrit aucun. Elle fixe la cible.
