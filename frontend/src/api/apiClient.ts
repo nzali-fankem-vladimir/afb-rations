@@ -1,6 +1,12 @@
 import axios from 'axios'
 
 import { fournisseurAuth } from '../auth'
+import type { CodeManqueEnum } from '../types/enums'
+
+export interface ManqueCompletude {
+  code: CodeManqueEnum
+  message: string
+}
 
 export interface ApiErrorResponse {
   timestamp: string
@@ -8,6 +14,8 @@ export interface ApiErrorResponse {
   code: string
   message: string
   path: string
+  /** Present uniquement sur 422 ETAT_INCOMPLET (service Workflow, Sprint 4.2). */
+  manques?: ManqueCompletude[]
 }
 
 const apiClient = axios.create({
