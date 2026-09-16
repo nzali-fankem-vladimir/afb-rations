@@ -45,9 +45,14 @@ export const LIENS_NAVIGATION: LienNavigation[] = [
   { href: '/admin/utilisateurs', label: 'Utilisateurs', icon: Users, roles: ['ADMIN'] },
 ]
 
-/** Route d'accueil par defaut selon le role : premier lien accessible, dans l'ordre du tableau. */
+/**
+ * Route d'accueil par defaut selon le role : premier lien accessible, dans l'ordre du tableau.
+ *
+ * Repli sur /acces-interdit, jamais sur '/' : la route index redirige vers cette valeur,
+ * et un role prive de tout lien ferait rediriger '/' vers '/' sans fin.
+ */
 export function routeAccueil(role: RoleEnum | null): string {
-  if (role === null) return '/'
+  if (role === null) return '/acces-interdit'
   const premier = LIENS_NAVIGATION.find((lien) => lien.roles.includes(role))
-  return premier?.href ?? '/'
+  return premier?.href ?? '/acces-interdit'
 }

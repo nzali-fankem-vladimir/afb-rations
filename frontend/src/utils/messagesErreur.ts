@@ -18,6 +18,9 @@ export const LIBELLES_ERREUR: Record<string, string> = {
   DOUBLON_INTER_ETATS: 'Déjà enregistrée dans un autre état',
   GRILLE_INDISPONIBLE: 'Aucun tarif applicable',
   MOTIF_OBLIGATOIRE: 'Motif obligatoire',
+  // Trois refus en 403, trois gestes differents (Sprint 4.4) : aucun ne deconnecte.
+  ACCES_REFUSE: 'Action non autorisée pour votre rôle',
+  UTILISATEUR_NON_HABILITE: 'Dossier hors de votre périmètre',
   SEPARATION_TACHES: 'Séparation des tâches',
   ETAT_NON_MODIFIABLE: 'État non modifiable',
 }

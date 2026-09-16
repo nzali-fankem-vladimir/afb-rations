@@ -37,15 +37,35 @@ apiClient.interceptors.request.use(async (config) => {
   return config
 })
 
+/**
+ * Une seule redirection vers le fournisseur, quel que soit le nombre d'appels
+ * concurrents revenus en 401. Garde en memoire : elle disparait avec la page, ce
+ * qui est exactement sa duree de vie utile.
+ */
+let redirectionEnCours = false
+
 apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
-    // 401 : jeton absent, expire ou invalide. Le renouvellement a deja echoue en
-    // amont, il reste a rouvrir une session chez le fournisseur.
+    // 401 : deux situations sans rapport, qui ne se traitent pas pareil.
+    // - Aucun jeton n'a pu etre joint : le renouvellement a echoue, la session est
+    //   perdue. Se reconnecter la retablit.
+    // - Un jeton frais a ete joint et le backend le refuse (emetteur ou audience
+    //   non reconnus) : c'est une configuration. Se reconnecter rendrait le meme
+    //   jeton, Keycloak renverrait aussitot vers le module, et la page bouclerait
+    //   sans fin et sans message. On laisse remonter l'erreur a la place.
     // 403 est laisse a l'appelant : l'utilisateur est authentifie mais pas habilite,
     // le rediriger vers la connexion ne changerait rien.
     if (error.response?.status === 401) {
-      await fournisseurAuth.connecter()
+      const jetonJoint = Boolean(error.config?.headers?.Authorization)
+      if (!jetonJoint) {
+        if (!redirectionEnCours) {
+          redirectionEnCours = true
+          await fournisseurAuth.connecter()
+        }
+      } else {
+        console.error('JETON REFUSE PAR LE BACKEND : verifier emetteur et audience du jeton.')
+      }
     }
 
     const apiError: ApiErrorResponse = error.response?.data ?? {

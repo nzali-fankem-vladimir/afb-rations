@@ -13,10 +13,23 @@ export type EtatSession =
   | 'ERREUR'
   | 'CONNECTE'
 
+/**
+ * Origine d'un etat ERREUR. Les deux pannes n'appellent pas le meme message : un
+ * fournisseur d'identite injoignable empeche toute connexion, un service Identite
+ * muet empeche seulement de lire le profil d'une session deja ouverte, et un jeton
+ * refuse par le backend releve d'une configuration que se reconnecter ne corrige pas.
+ */
+export type CauseErreurSession = 'FOURNISSEUR_INJOIGNABLE' | 'PROFIL_INDISPONIBLE' | 'JETON_REFUSE'
+
 export interface AuthContexte {
   etat: EtatSession
+  /** Renseignee uniquement quand etat vaut ERREUR. */
+  causeErreur: CauseErreurSession | null
   utilisateur: ProfilUtilisateur | null
+  /** Role du profil applicatif, jamais celui du jeton (CLAUDE.md section 10). */
   role: RoleEnum | null
+  /** Unite du profil applicatif, jamais celle de l'annuaire. */
+  codeUnite: string | null
   connecter: () => Promise<void>
   deconnecter: () => Promise<void>
   possedeRole: (...roles: RoleEnum[]) => boolean
