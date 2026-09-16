@@ -44,12 +44,15 @@ class ConstructionChargeServiceTest {
     private static final int ANNEE = 2026;
 
     /** Les bornes de la periode d'essai — juillet 2026, un mois entier (Maille 1). */
+    /** Le compte de charge, tel que la migration V7 le pose (Maille 2). */
+    private static final String COMPTE_CHARGE = "64380090200";
+
     private static final LocalDate DEBUT = LocalDate.of(ANNEE, MOIS, 1);
     private static final LocalDate FIN = LocalDate.of(ANNEE, MOIS, 31);
     private static final long ID_PROCESSUS = 740L;
 
     private static EnTeteProcessus enTete(int montantTotal) {
-        return new EnTeteProcessus(ID_PROCESSUS, "CLOTURE", UNITE, DEBUT, FIN, MOIS, ANNEE, "NORMAL",
+        return new EnTeteProcessus(ID_PROCESSUS, "CLOTURE", UNITE, DEBUT, FIN, COMPTE_CHARGE, "NORMAL",
                 montantTotal, false);
     }
 
@@ -81,7 +84,7 @@ class ConstructionChargeServiceTest {
                 .sum();
         int nombreLignes = journees.stream().mapToInt(j -> j.lignes().size()).sum();
 
-        return new EtatConsolide(ID_PROCESSUS, UNITE, DEBUT, FIN, MOIS, ANNEE, journees.size(), nombreLignes,
+        return new EtatConsolide(ID_PROCESSUS, UNITE, DEBUT, FIN, journees.size(), nombreLignes,
                 nombreLignes, total, journees);
     }
 
@@ -130,8 +133,15 @@ class ConstructionChargeServiceTest {
                     service.construire(enTete(TOTAL_ATTENDU), etat(deuxJourneesQuatreLignes())));
 
             assertThat(charge.idProcessus()).isEqualTo(ID_PROCESSUS);
-            assertThat(charge.periode().mois()).isEqualTo(MOIS);
-            assertThat(charge.periode().annee()).isEqualTo(ANNEE);
+            assertThat(charge.versionCharge())
+                    .as("la charge part en version 2 : forme a bornes, sans fenetre de cohabitation")
+                    .isEqualTo(2);
+            assertThat(charge.periode().dateDebut()).isEqualTo(DEBUT);
+            assertThat(charge.periode().dateFin()).isEqualTo(FIN);
+            assertThat(charge.periode().libelle())
+                    .as("le libelle se lit sur un releve de compte : c'est ce qui a emporte la forme")
+                    .isEqualTo("DU 01/07/2026 AU 31/07/2026");
+            assertThat(charge.compteCharge()).isEqualTo(COMPTE_CHARGE);
             assertThat(charge.codeUnite()).isEqualTo(UNITE);
             assertThat(charge.typeProcessus()).isEqualTo("NORMAL");
             assertThat(charge.montantTotal()).isEqualTo(TOTAL_ATTENDU);
@@ -224,11 +234,49 @@ class ConstructionChargeServiceTest {
                     .isEqualTo("00047");
         }
 
+        /**
+         * <b>Aucune charge ne part sans compte de charge.</b>
+         *
+         * <p>C'est la garantie centrale de la Maille 2, et elle se refuse plutot qu'elle
+         * ne se replie. Publier un message de paiement avec un compte de charge absent
+         * ou devine, c'est <b>imputer de l'argent sur le mauvais compte</b> — sans
+         * qu'aucune erreur ne le signale, ni ici ni en comptabilite.
+         *
+         * <p>Meme doctrine que le seuil d'aiguillage au Sprint 4.3, et elle s'impose plus
+         * fort encore : un seuil manquant bloque une validation, un compte manquant
+         * deplace de l'argent.
+         */
         @Test
+        @DisplayName("aucune charge ne part sans compte de charge")
+        void refusSansCompteDeCharge() {
+            EnTeteProcessus sansCompte = new EnTeteProcessus(ID_PROCESSUS, "CLOTURE", UNITE,
+                    DEBUT, FIN, "   ", "NORMAL", TOTAL_ATTENDU, false);
+
+            assertThat(codes(service.construire(sansCompte, etat(deuxJourneesQuatreLignes()))))
+                    .as("code propre : un compte absent est un geste d'administration, "
+                            + "pas un dossier mal forme")
+                    .contains(CodeAnomalieEnum.COMPTE_CHARGE_ABSENT);
+        }
+
+        /**
+         * Une periode dont les bornes sont a l'envers n'a aucun sens : la comptabilite
+         * ne saurait pas sur quelle periode imputer. Remplace le controle « mois hors de
+         * 1 a 12 » de la version 1, qui n'a plus d'objet.
+         */
+        @Test
+        @DisplayName("bornes de periode a l'envers")
+        void refusPeriodeALEnvers() {
+            EnTeteProcessus alEnvers = new EnTeteProcessus(ID_PROCESSUS, "CLOTURE", UNITE,
+                    FIN, DEBUT, COMPTE_CHARGE, "NORMAL", TOTAL_ATTENDU, false);
+
+            assertThat(codes(service.construire(alEnvers, etat(deuxJourneesQuatreLignes()))))
+                    .contains(CodeAnomalieEnum.PERIODE_INVALIDE);
+        }
+
         @DisplayName("aucune charge ne part sans code unite")
         void refusSansCodeUnite() {
-            EnTeteProcessus sansUnite = new EnTeteProcessus(ID_PROCESSUS, "CLOTURE", "   ", DEBUT, FIN, MOIS,
-                    ANNEE, "NORMAL", TOTAL_ATTENDU, false);
+            EnTeteProcessus sansUnite = new EnTeteProcessus(ID_PROCESSUS, "CLOTURE", "   ", DEBUT, FIN, COMPTE_CHARGE,
+                    "NORMAL", TOTAL_ATTENDU, false);
 
             ResultatConstruction resultat =
                     service.construire(sansUnite, etat(deuxJourneesQuatreLignes()));
@@ -342,7 +390,7 @@ class ConstructionChargeServiceTest {
         @Test
         @DisplayName("etat sans aucune ligne")
         void etatVide() {
-            EtatConsolide vide = new EtatConsolide(ID_PROCESSUS, UNITE, DEBUT, FIN, MOIS, ANNEE, 0, 0, 0, 0L,
+            EtatConsolide vide = new EtatConsolide(ID_PROCESSUS, UNITE, DEBUT, FIN, 0, 0, 0, 0L,
                     List.of());
 
             ResultatConstruction resultat = service.construire(enTete(0), vide);
@@ -393,13 +441,18 @@ class ConstructionChargeServiceTest {
                             CodeAnomalieEnum.LIGNE_SESSION_INCONNUE);
         }
 
+        /**
+         * <b>Remplace le test « periode hors de 1 a 12 » de la version 1 de la charge.</b>
+         * Le controle portait sur un numero de mois ; il porte desormais sur les bornes,
+         * et « hors de 1 a 12 » n'a plus d'objet. Le cas equivalent est une borne absente.
+         */
         @Test
-        @DisplayName("periode hors de 1 a 12")
+        @DisplayName("borne de periode absente")
         void periodeInvalide() {
-            EnTeteProcessus moisImpossible = new EnTeteProcessus(ID_PROCESSUS, "CLOTURE", UNITE,
-                    DEBUT, FIN, 13, ANNEE, "NORMAL", TOTAL_ATTENDU, false);
+            EnTeteProcessus sansBorneDeFin = new EnTeteProcessus(ID_PROCESSUS, "CLOTURE", UNITE,
+                    DEBUT, null, COMPTE_CHARGE, "NORMAL", TOTAL_ATTENDU, false);
 
-            assertThat(codes(service.construire(moisImpossible, etat(deuxJourneesQuatreLignes()))))
+            assertThat(codes(service.construire(sansBorneDeFin, etat(deuxJourneesQuatreLignes()))))
                     .contains(CodeAnomalieEnum.PERIODE_INVALIDE);
         }
 
@@ -407,7 +460,7 @@ class ConstructionChargeServiceTest {
         @DisplayName("en-tete et detail portant sur des dossiers differents")
         void sourcesDiscordantes() {
             EnTeteProcessus autreUnite = new EnTeteProcessus(ID_PROCESSUS, "CLOTURE", "00050",
-                    DEBUT, FIN, MOIS, ANNEE, "NORMAL", TOTAL_ATTENDU, false);
+                    DEBUT, FIN, COMPTE_CHARGE, "NORMAL", TOTAL_ATTENDU, false);
 
             assertThat(codes(service.construire(autreUnite, etat(deuxJourneesQuatreLignes()))))
                     .contains(CodeAnomalieEnum.SOURCES_DISCORDANTES);
@@ -445,7 +498,7 @@ class ConstructionChargeServiceTest {
                     List.of(ligne(incomplet, null, null, null)))));
 
             EnTeteProcessus enTeteCasse =
-                    new EnTeteProcessus(null, "CLOTURE", null, null, null, null, null, null, null, false);
+                    new EnTeteProcessus(null, "CLOTURE", null, null, null, null, null, null, false);
 
             assertThat(codes(service.construire(enTeteCasse, consolide)))
                     .contains(CodeAnomalieEnum.IDENTIFIANT_ABSENT,

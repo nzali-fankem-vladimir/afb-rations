@@ -22,6 +22,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import cm.afrilandfirstbank.rations.commun.audit.PublicateurAudit;
+import cm.afrilandfirstbank.rations.workflow.application.FonctionnaliteService;
 import cm.afrilandfirstbank.rations.workflow.application.IntegrationComptableService;
 import cm.afrilandfirstbank.rations.workflow.application.OuvertureComplementaireService;
 import cm.afrilandfirstbank.rations.workflow.application.ProcessusService;
@@ -67,6 +68,10 @@ class IntegrationComptableIT {
 
     @MockitoBean
     private PublicateurAudit publicateurAudit;
+
+    /** Requis depuis la Maille 2 : le controleur lit le compte de charge. */
+    @MockitoBean
+    private FonctionnaliteService fonctionnaliteService;
 
     @MockitoBean
     private JwtDecoder jwtDecoder;

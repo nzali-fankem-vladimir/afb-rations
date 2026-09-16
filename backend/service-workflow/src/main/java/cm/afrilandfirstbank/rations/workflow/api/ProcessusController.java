@@ -30,6 +30,7 @@ import cm.afrilandfirstbank.rations.workflow.api.dto.SoumissionResponse;
 import cm.afrilandfirstbank.rations.workflow.api.dto.ValidationResponse;
 import cm.afrilandfirstbank.rations.workflow.api.dto.VerrouTransmissionRequest;
 import cm.afrilandfirstbank.rations.workflow.api.dto.VerrouTransmissionResponse;
+import cm.afrilandfirstbank.rations.workflow.application.FonctionnaliteService;
 import cm.afrilandfirstbank.rations.workflow.application.IntegrationComptableService;
 import cm.afrilandfirstbank.rations.workflow.application.OuvertureComplementaireService;
 import cm.afrilandfirstbank.rations.workflow.application.ProcessusService;
@@ -111,6 +112,7 @@ import jakarta.validation.Valid;
 public class ProcessusController {
 
     private final ProcessusService processusService;
+    private final FonctionnaliteService fonctionnaliteService;
     private final OuvertureComplementaireService ouvertureComplementaireService;
     private final SoumissionService soumissionService;
     private final ValidationService validationService;
@@ -120,6 +122,7 @@ public class ProcessusController {
     private final RechercheProcessusService rechercheProcessusService;
 
     public ProcessusController(ProcessusService processusService,
+            FonctionnaliteService fonctionnaliteService,
             OuvertureComplementaireService ouvertureComplementaireService,
             SoumissionService soumissionService,
             ValidationService validationService,
@@ -128,6 +131,7 @@ public class ProcessusController {
             VerrouTransmissionService verrouTransmissionService,
             RechercheProcessusService rechercheProcessusService) {
         this.processusService = processusService;
+        this.fonctionnaliteService = fonctionnaliteService;
         this.ouvertureComplementaireService = ouvertureComplementaireService;
         this.soumissionService = soumissionService;
         this.validationService = validationService;
@@ -219,12 +223,16 @@ public class ProcessusController {
             @PathVariable Long id,
             @RequestHeader(HttpHeaders.AUTHORIZATION) String enteteAutorisation) {
 
-        return ResponseEntity.ok(
-                ProcessusResponse.depuis(processusService.consulter(id, enteteAutorisation)));
+        // Le compte de charge accompagne le dossier parce que le service Transmission
+        // lit cette meme reponse pour construire la charge comptable, et n'a pas de base
+        // ou lire parametre_systeme (Maille 2). Relu a chaque appel, jamais mis en cache.
+        return ResponseEntity.ok(ProcessusResponse.depuis(
+                processusService.consulter(id, enteteAutorisation),
+                fonctionnaliteService.compteChargeRations()));
     }
 
     /**
-     * Etat mensuel consolide : le detail journee par journee, obtenu du service
+     * Etat consolide de la periode : le detail journee par journee, obtenu du service
      * Saisie par appel d'API, joint a ce que Workflow detient seul.
      *
      * <p>Aucun acces a la base {@code rations_saisie} : l'echange passe par

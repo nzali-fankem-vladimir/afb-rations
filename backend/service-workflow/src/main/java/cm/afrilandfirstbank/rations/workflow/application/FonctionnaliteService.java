@@ -58,6 +58,9 @@ public class FonctionnaliteService {
     /** Code du drapeau, tel que la migration V2 l'inscrit. */
     public static final String CODE_RATTRAPAGE_ACTIF = "RATTRAPAGE_ACTIF";
 
+    /** Code du compte de charge, tel que la migration V7 l'inscrit (Maille 2). */
+    public static final String CODE_COMPTE_CHARGE = "COMPTE_CHARGE_RATIONS";
+
     /** Code du delai de regularisation, tel que la migration V2 l'inscrit. */
     public static final String CODE_DELAI_REGULARISATION_JOURS = "DELAI_REGULARISATION_JOURS";
 
@@ -215,6 +218,45 @@ public class FonctionnaliteService {
         }
 
         return delai;
+    }
+
+
+    /**
+     * Le compte de charge sur lequel s'impute la depense, ou {@code null}.
+     *
+     * <h2>Tolerante en lecture, stricte a la publication</h2>
+     *
+     * <p><b>Ne leve jamais</b>, contrairement au delai de regularisation. Cette valeur
+     * est portee par la reponse de {@code GET /processus/{id}}, que consulte aussi
+     * l'agent d'unite : faire echouer la consultation d'un dossier parce qu'un
+     * parametre <i>comptable</i> manque punirait quelqu'un qui n'y peut rien et n'a
+     * rien a y voir.
+     *
+     * <p>Le refus vit a l'endroit ou il a un sens : {@code ConstructionChargeService}
+     * (service Transmission) controle la charge avant de publier, et un compte absent
+     * ou vide y produit une anomalie rendue en {@code 500 CHARGE_INCOMPLETE}. Publier
+     * un message de paiement avec un compte de charge devine, c'est imputer de l'argent
+     * sur le mauvais compte sans erreur visible — c'est la que le refus doit tomber,
+     * pas a la lecture d'un dossier.
+     *
+     * <p>Relu a chaque appel, jamais mis en cache : un plan comptable evolue, et la
+     * valeur doit pouvoir suivre par un simple {@code UPDATE}, sans redeploiement
+     * (decision 6 du contenu de la charge comptable).
+     */
+    public String compteChargeRations() {
+        String valeur = parametreSystemeRepository.findByCodeAndActifTrue(CODE_COMPTE_CHARGE)
+                .map(this::valeurNormalisee)
+                .orElse("");
+
+        if (valeur.isEmpty()) {
+            journal.warn("COMPTE DE CHARGE INDISPONIBLE : aucun parametre actif de code {} dans "
+                    + "parametre_systeme, ou valeur vide. La consultation d'un dossier reste "
+                    + "servie, mais AUCUN etat ne pourra etre transmis a la comptabilite tant "
+                    + "que la ligne manque — le refus tombera a la publication, en "
+                    + "CHARGE_INCOMPLETE.", CODE_COMPTE_CHARGE);
+            return null;
+        }
+        return valeur;
     }
 
 }

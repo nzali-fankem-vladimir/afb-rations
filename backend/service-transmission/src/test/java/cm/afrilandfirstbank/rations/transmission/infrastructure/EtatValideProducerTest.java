@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.transmission.infrastructure;
 
+import java.time.LocalDate;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -22,6 +23,7 @@ import org.springframework.kafka.support.SendResult;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import cm.afrilandfirstbank.rations.transmission.infrastructure.config.ConfigurationProducteurEtatValide;
 import cm.afrilandfirstbank.rations.transmission.application.ResultatPublication;
 import cm.afrilandfirstbank.rations.transmission.application.ResultatPublication.EchecAvantEnvoi;
 import cm.afrilandfirstbank.rations.transmission.application.ResultatPublication.EchecIssueIncertaine;
@@ -53,11 +55,14 @@ class EtatValideProducerTest {
      */
     private static final EtatValideEvent CHARGE_DU_CONTRAT = new EtatValideEvent(
             740L,
-            new Periode(7, 2026),
+            EtatValideEvent.VERSION_COURANTE,
+            new Periode(LocalDate.of(2026, 7, 6), LocalDate.of(2026, 7, 12),
+                    "DU 06/07/2026 AU 12/07/2026"),
             "00002",
+            "64380090200",
             "NORMAL",
             84_000L,
-            List.of(new LigneEtat("Mbarga", "Jean", "00002000123456", "00002",
+            List.of(new LigneEtat("Mbarga", "Jean", "03702099911", "00002",
                     "RATION", "JOUR", 2_500)));
 
     private KafkaTemplate<String, String> kafkaTemplate;
@@ -67,7 +72,14 @@ class EtatValideProducerTest {
     @BeforeEach
     void preparer() {
         kafkaTemplate = mock(KafkaTemplate.class);
-        producteur = new EtatValideProducer(kafkaTemplate, new ObjectMapper(), TOPIC);
+        // LE convertisseur de production, pas une copie. Construire ici un
+        // `new ObjectMapper()` nu reintroduirait exactement la divergence que le
+        // Sprint 5.1 avait deja payee : le test passerait sur une forme de message
+        // que la production ne produit pas. Depuis la Maille 2, la charge porte des
+        // LocalDate, et un mapper sans JavaTimeModule echoue a les serialiser.
+        producteur = new EtatValideProducer(
+                kafkaTemplate, new ConfigurationProducteurEtatValide().convertisseurChargeComptable(),
+                TOPIC);
     }
 
     private void brokerAccepte(int partition, long offset) {
@@ -89,7 +101,8 @@ class EtatValideProducerTest {
         ArgumentCaptor<String> corps = ArgumentCaptor.forClass(String.class);
         org.mockito.Mockito.verify(kafkaTemplate)
                 .send(anyString(), anyString(), corps.capture());
-        return new ObjectMapper().readTree(corps.getValue());
+        return new ConfigurationProducteurEtatValide().convertisseurChargeComptable()
+                .readTree(corps.getValue());
     }
 
     // --- La forme du message ------------------------------------------------------
@@ -99,7 +112,7 @@ class EtatValideProducerTest {
     class FormeDuMessage {
 
         @Test
-        @DisplayName("la racine porte les six cles du contrat, et rien d'autre")
+        @DisplayName("la racine porte les huit cles du contrat v2, et rien d'autre")
         void racineConformeAuContrat() throws Exception {
             brokerAccepte(0, 42L);
 
@@ -107,16 +120,23 @@ class EtatValideProducerTest {
             JsonNode racine = corpsPublie();
 
             assertThat(racine.get("idProcessus").asLong()).isEqualTo(740L);
-            assertThat(racine.get("periode").get("mois").asInt()).isEqualTo(7);
-            assertThat(racine.get("periode").get("annee").asInt()).isEqualTo(2026);
+            assertThat(racine.get("versionCharge").asInt()).isEqualTo(2);
+            assertThat(racine.get("periode").get("dateDebut").asText())
+                    .as("ISO 8601, convention du module — et non un tableau de composants")
+                    .isEqualTo("2026-07-06");
+            assertThat(racine.get("periode").get("dateFin").asText()).isEqualTo("2026-07-12");
+            assertThat(racine.get("periode").get("libelle").asText())
+                    .as("le fragment que la comptabilite prefixe ; il se lit sur un releve")
+                    .isEqualTo("DU 06/07/2026 AU 12/07/2026");
             assertThat(racine.get("codeUnite").asText()).isEqualTo("00002");
+            assertThat(racine.get("compteCharge").asText()).isEqualTo("64380090200");
             assertThat(racine.get("typeProcessus").asText()).isEqualTo("NORMAL");
             assertThat(racine.get("montantTotal").asLong()).isEqualTo(84_000L);
             assertThat(racine.get("lignes").isArray()).isTrue();
 
             assertThat(racine.fieldNames()).toIterable().containsExactlyInAnyOrder(
-                    "idProcessus", "periode", "codeUnite", "typeProcessus", "montantTotal",
-                    "lignes");
+                    "idProcessus", "versionCharge", "periode", "codeUnite", "compteCharge",
+                    "typeProcessus", "montantTotal", "lignes");
         }
 
         @Test
@@ -129,7 +149,7 @@ class EtatValideProducerTest {
 
             assertThat(ligne.get("nom").asText()).isEqualTo("Mbarga");
             assertThat(ligne.get("prenom").asText()).isEqualTo("Jean");
-            assertThat(ligne.get("numCompteCourant").asText()).isEqualTo("00002000123456");
+            assertThat(ligne.get("numCompteCourant").asText()).isEqualTo("03702099911");
             assertThat(ligne.get("codeAgence").asText()).isEqualTo("00002");
             assertThat(ligne.get("nature").asText()).isEqualTo("RATION");
             assertThat(ligne.get("session").asText()).isEqualTo("JOUR");

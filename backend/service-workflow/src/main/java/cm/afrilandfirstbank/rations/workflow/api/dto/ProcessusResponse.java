@@ -45,7 +45,8 @@ public record ProcessusResponse(
         int montantTotal,
         boolean transmisComptabilite,
         LocalDateTime dateCreation,
-        String motifRetour) {
+        String motifRetour,
+        String compteCharge) {
 
     /**
      * Le detail complet : le processus, et le motif du retour en cours s'il y en a un
@@ -62,7 +63,32 @@ public record ProcessusResponse(
      * {@code RETOURNE} : voir {@code ProcessusService.motifDuRetourEnCours}.
      */
     public static ProcessusResponse depuis(DetailProcessus detail) {
-        return depuis(detail.processus(), detail.motifRetour());
+        return depuis(detail.processus(), detail.motifRetour(), null);
+    }
+
+    /**
+     * Le detail, avec le compte de charge (Maille 2).
+     *
+     * <h2>Pourquoi cette valeur comptable voyage sur la reponse d'un processus</h2>
+     *
+     * <p>Le service Transmission n'a pas de base et ne peut donc pas lire
+     * {@code parametre_systeme}, qui vit dans celle du Workflow (AR04). Il lit deja
+     * cette reponse pour construire la charge : y ajouter un champ ne coute <b>aucun
+     * appel reseau</b>, la ou un endpoint dedie aurait ajoute cinq secondes au budget
+     * du seul chemin du module ou il est calcule au cordeau (Sprint 5.3).
+     *
+     * <p><b>Ecart assume, et borne.</b> Un compte de charge n'est pas une propriete
+     * d'un processus, et le loger ici melange deux choses. Le compromis a ete arbitre
+     * avec l'utilisateur, sous condition que la valeur reste configurable ; le module
+     * transporte un parametre, il ne code toujours ni le sens debit/credit ni la
+     * structure de l'ecriture (CLAUDE.md sections 8 et 15).
+     *
+     * <p><b>Nul est une reponse acceptable ici</b> : la consultation d'un dossier ne
+     * doit pas echouer parce qu'un parametre comptable manque. Le refus tombe a la
+     * publication, dans {@code ConstructionChargeService}.
+     */
+    public static ProcessusResponse depuis(DetailProcessus detail, String compteCharge) {
+        return depuis(detail.processus(), detail.motifRetour(), compteCharge);
     }
 
     /**
@@ -70,10 +96,11 @@ public record ProcessusResponse(
      * naitre et n'a par construction jamais ete retourne.
      */
     public static ProcessusResponse depuis(ProcessusMensuel processus) {
-        return depuis(processus, null);
+        return depuis(processus, null, null);
     }
 
-    private static ProcessusResponse depuis(ProcessusMensuel processus, String motifRetour) {
+    private static ProcessusResponse depuis(ProcessusMensuel processus, String motifRetour,
+            String compteCharge) {
         return new ProcessusResponse(
                 processus.getId(),
                 processus.getStatut(),
@@ -86,7 +113,8 @@ public record ProcessusResponse(
                 processus.getMontantTotal(),
                 processus.isTransmisComptabilite(),
                 processus.getDateCreation(),
-                motifRetour);
+                motifRetour,
+                compteCharge);
     }
 
 }

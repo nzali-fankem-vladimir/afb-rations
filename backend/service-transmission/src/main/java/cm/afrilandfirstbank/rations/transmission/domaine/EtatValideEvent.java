@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.transmission.domaine;
 
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -55,14 +56,69 @@ import java.util.List;
  */
 public record EtatValideEvent(
         Long idProcessus,
+        int versionCharge,
         Periode periode,
         String codeUnite,
+        String compteCharge,
         String typeProcessus,
         long montantTotal,
         List<LigneEtat> lignes) {
 
-    /** Periode de paiement de l'etat : mois de 1 a 12, et son annee. */
-    public record Periode(Integer mois, Integer annee) {
+    /**
+     * Version de la forme de cette charge (Maille 2).
+     *
+     * <h2>Version 1 : {@code periode: { mois, annee }}, jamais recue en production</h2>
+     *
+     * <p>La version 1 est celle du contrat d'API section 7.1 d'origine. Elle n'a
+     * <b>jamais</b> ete recue par le module de comptabilisation : le module n'est pas
+     * deploye — la conteneurisation et le deploiement sont les sous-sprints 8.2 et 8.3 —
+     * et les etats deja transmis l'ont ete sur le broker de developpement local.
+     *
+     * <p><b>Il n'y a donc aucune fenetre de cohabitation a tenir</b>, et la premiere
+     * charge jamais recue par la comptabilite portera directement cette version 2.
+     *
+     * <h2>Pourquoi conserver le champ malgre tout</h2>
+     *
+     * <p>Il coute un entier et il achete le changement suivant. Le module vient de
+     * decouvrir en cours de route que sa cadence n'etait pas celle qu'il croyait ; un
+     * champ de version est precisement ce qui permet a la prochaine surprise de ne pas
+     * etre une rupture.
+     *
+     * <p><b>Pourquoi 2 et non 1.</b> Le contrat d'API documente la forme
+     * {@code { mois, annee }} : c'est la version 1, produite en production ou non. La
+     * renumeroter ferait mentir l'historique du contrat pour economiser un chiffre.
+     */
+    public static final int VERSION_COURANTE = 2;
+
+    /**
+     * Periode de paiement de l'etat, sous forme de <b>bornes incluses</b>.
+     *
+     * <h2>Pourquoi les deux bornes et non un numero de semaine</h2>
+     *
+     * <p>Le cycle est hebdomadaire depuis le point M-04, et une semaine du 29 septembre
+     * au 5 octobre n'a <b>aucun</b> mois : la forme {@code { mois, annee }} ne pouvait
+     * plus dire la verite. Un numero de semaine ISO l'aurait pu, mais il aurait fige une
+     * cadence — et le metier venait d'en changer une fois.
+     *
+     * <h2>Le libelle, et le partage avec la comptabilite</h2>
+     *
+     * <p>{@code libelle} porte le <b>fragment de periode</b> de l'ecriture, sous la forme
+     * {@code DU 07/09/2026 AU 13/09/2026}. La comptabilite compose le prefixe
+     * ({@code RATION}, {@code TAXI GARDE ARMEE}) : seul le module connait sa cadence,
+     * seule la comptabilite connait sa nomenclature d'ecriture.
+     *
+     * <p><b>Ce libelle se lit sur un releve de compte.</b> C'est ce qui a emporte la
+     * decision : en hebdomadaire, la forme mensuelle aurait produit quatre lignes
+     * rigoureusement identiques par mois, rendant toute reclamation d'un beneficiaire
+     * inarbitrable. {@code DU 07/09/2026 AU 13/09/2026} se lit ;
+     * {@code SEMAINE 37 DE 2026} ne se lit pas.
+     *
+     * @param dateDebut premier jour de la periode, <b>inclus</b>, en ISO 8601
+     * @param dateFin dernier jour de la periode, <b>inclus</b> — et non le premier jour
+     *        de la periode suivante
+     * @param libelle le fragment de periode, pret a etre concatene par la comptabilite
+     */
+    public record Periode(LocalDate dateDebut, LocalDate dateFin, String libelle) {
     }
 
     /**

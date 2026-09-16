@@ -1,6 +1,7 @@
 package cm.afrilandfirstbank.rations.transmission.application;
 
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -66,6 +67,9 @@ import cm.afrilandfirstbank.rations.transmission.domaine.EtatValideEvent.Periode
 @Service
 public class ConstructionChargeService {
 
+    /** Forme du cahier des charges : « 07/09/2026 ». */
+    private static final DateTimeFormatter JOUR = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+
     /**
      * Domaine de {@code nature} (RG-01). Chaine et non enumeration : voir
      * {@link EtatValideEvent}. Le nul est teste separement — {@code Set.of(...)} leve sur
@@ -126,9 +130,14 @@ public class ConstructionChargeService {
 
         return new EtatValideEvent(
                 enTete.idProcessus(),
-                new Periode(enTete.moisPaiement(), enTete.anneePaiement()),
+                EtatValideEvent.VERSION_COURANTE,
+                new Periode(enTete.dateDebut(), enTete.dateFin(),
+                        libellePeriode(enTete.dateDebut(), enTete.dateFin())),
                 // Racine : l'unite qui supporte la charge (ligne de DEBIT).
                 enTete.codeUnite(),
+                // Racine et non par ligne : le compte est constant pour tout l'etat, et
+                // le repeter a chaque beneficiaire suggererait qu'il peut varier.
+                enTete.compteCharge(),
                 enTete.typeProcessus(),
                 enTete.montantTotal() == null ? 0L : enTete.montantTotal().longValue(),
                 lignes);
@@ -171,11 +180,22 @@ public class ConstructionChargeService {
         }
 
         Periode periode = charge.periode();
-        if (periode == null || periode.mois() == null || periode.annee() == null
-                || periode.mois() < 1 || periode.mois() > 12) {
+        if (periode == null || periode.dateDebut() == null || periode.dateFin() == null
+                || periode.dateFin().isBefore(periode.dateDebut())) {
             anomalies.add(new AnomalieCharge(CodeAnomalieEnum.PERIODE_INVALIDE,
                     "Periode d'imputation inexploitable (" + libellePeriode(periode)
                             + ") : la comptabilite ne saurait pas sur quelle periode imputer."));
+        }
+
+        // Le compte de charge : absent ou vide, on REFUSE DE PUBLIER, jamais un repli.
+        // Meme doctrine que le seuil d'aiguillage (RG-08), et elle s'impose plus fort
+        // encore : publier un message de paiement avec un compte devine, c'est imputer
+        // de l'argent sur le mauvais compte sans qu'aucune erreur ne le signale.
+        if (estVide(charge.compteCharge())) {
+            anomalies.add(new AnomalieCharge(CodeAnomalieEnum.COMPTE_CHARGE_ABSENT,
+                    "Aucun compte de charge : la comptabilite ne saurait pas sur quel compte "
+                            + "imputer la depense. Le parametre COMPTE_CHARGE_RATIONS est absent, "
+                            + "desactive ou vide dans parametre_systeme."));
         }
 
         if (estVide(charge.codeUnite())) {
@@ -362,16 +382,30 @@ public class ConstructionChargeService {
     }
 
     private static String libellePeriode(Periode periode) {
-        return periode == null ? "(absente)" : libellePeriode(periode.mois(), periode.annee());
+        return periode == null ? "(absente)"
+                : libellePeriode(periode.dateDebut(), periode.dateFin());
     }
 
+    /**
+     * Le fragment de periode de l'ecriture : {@code DU 07/09/2026 AU 13/09/2026}.
+     *
+     * <p><b>Ce libelle se lit sur un releve de compte</b>, celui du beneficiaire. C'est
+     * ce qui a emporte la decision de la forme : en hebdomadaire, une periode mensuelle
+     * aurait produit quatre lignes rigoureusement identiques par mois, rendant toute
+     * reclamation inarbitrable. La comptabilite y prefixe sa propre nomenclature
+     * ({@code RATION}, {@code TAXI GARDE ARMEE}) : seul le module connait sa cadence,
+     * seule elle connait ses ecritures.
+     *
+     * <p>Majuscules et format jour/mois/annee : c'est la forme du cahier des charges,
+     * pas une preference.
+     */
     private static String libellePeriode(LocalDate dateDebut, LocalDate dateFin) {
-        return "du " + affiche(dateDebut) + " au " + affiche(dateFin);
+        if (dateDebut == null || dateFin == null) {
+            return "(periode absente)";
+        }
+        return "DU " + dateDebut.format(JOUR) + " AU " + dateFin.format(JOUR);
     }
 
-    private static String libellePeriode(Integer mois, Integer annee) {
-        return affiche(mois) + "/" + affiche(annee);
-    }
 
     private List<EtatConsolide.Journee> journees(EtatConsolide etat) {
         return etat.journees() == null ? List.of() : etat.journees();

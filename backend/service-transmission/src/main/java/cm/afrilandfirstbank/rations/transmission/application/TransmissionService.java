@@ -359,8 +359,10 @@ public class TransmissionService {
                         .contexte("partition", accuse.partition())
                         .contexte("offset", accuse.offset())
                         .contexte("codeUnite", charge.codeUnite())
-                        .contexte("moisPaiement", charge.periode().mois())
-                        .contexte("anneePaiement", charge.periode().annee())
+                        .contexte("dateDebut", charge.periode().dateDebut())
+                        .contexte("dateFin", charge.periode().dateFin())
+                        .contexte("versionCharge", charge.versionCharge())
+                        .contexte("compteCharge", charge.compteCharge())
                         .contexte("typeProcessus", charge.typeProcessus())
                         .contexte("montantTotal", charge.montantTotal())
                         .contexte("nombreLignes", charge.lignes().size())
@@ -383,8 +385,8 @@ public class TransmissionService {
 
         if (enTete != null) {
             delta.contexte("codeUnite", enTete.codeUnite())
-                    .contexte("moisPaiement", enTete.moisPaiement())
-                    .contexte("anneePaiement", enTete.anneePaiement());
+                    .contexte("dateDebut", enTete.dateDebut())
+                    .contexte("dateFin", enTete.dateFin());
         }
 
         publicateurAudit.publier(EvenementAudit.de(

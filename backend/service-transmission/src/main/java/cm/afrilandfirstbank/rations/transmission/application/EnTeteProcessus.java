@@ -44,8 +44,7 @@ public record EnTeteProcessus(
         String codeUnite,
         LocalDate dateDebut,
         LocalDate dateFin,
-        Integer moisPaiement,
-        Integer anneePaiement,
+        String compteCharge,
         String typeProcessus,
         Integer montantTotal,
         Boolean transmisComptabilite) {

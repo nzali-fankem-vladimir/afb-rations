@@ -22,6 +22,19 @@ public enum CodeAnomalieEnum {
     PERIODE_INVALIDE,
 
     /** Pas de code unite a la racine : la ligne de <b>debit</b> serait impossible a produire. */
+    /**
+     * Aucun compte de charge : la comptabilite ne saurait pas sur quel compte imputer
+     * la depense (Maille 2).
+     *
+     * <p><b>Code distinct de {@link #PERIODE_INVALIDE}</b>, et ce n'est pas cosmetique :
+     * les deux appellent des gestes differents. Une periode inexploitable signale un
+     * dossier mal forme ; un compte absent signale que la ligne
+     * {@code COMPTE_CHARGE_RATIONS} manque, est desactivee ou vide dans
+     * {@code parametre_systeme} — c'est un geste d'administration, pas une correction de
+     * dossier. Les confondre enverrait chercher une faute la ou il n'y en a pas.
+     */
+    COMPTE_CHARGE_ABSENT,
+
     CODE_UNITE_ABSENT,
 
     /** Type de processus absent : normal ou complementaire change le traitement en aval. */

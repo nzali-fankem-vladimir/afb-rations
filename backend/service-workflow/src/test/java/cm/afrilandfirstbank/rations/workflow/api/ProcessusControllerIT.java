@@ -41,6 +41,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import cm.afrilandfirstbank.rations.commun.audit.EvenementAudit;
 import cm.afrilandfirstbank.rations.commun.audit.PublicateurAudit;
+import cm.afrilandfirstbank.rations.workflow.application.FonctionnaliteService;
 import cm.afrilandfirstbank.rations.workflow.application.EtatConsolide;
 import cm.afrilandfirstbank.rations.workflow.application.ManqueCompletude;
 import cm.afrilandfirstbank.rations.workflow.application.IntegrationComptableService;
@@ -109,6 +110,14 @@ class ProcessusControllerIT {
     /** Requis : autoconfiguration de rations-audit-commun non chargee sous @WebMvcTest. */
     @MockitoBean
     private PublicateurAudit publicateurAudit;
+
+    /**
+     * Requis depuis la Maille 2 : le controleur lit le compte de charge pour
+     * l'accompagner sur {@code GET /processus/{id}}, que le service Transmission
+     * consulte pour construire la charge comptable.
+     */
+    @MockitoBean
+    private FonctionnaliteService fonctionnaliteService;
 
     @MockitoBean
     private JwtDecoder jwtDecoder;

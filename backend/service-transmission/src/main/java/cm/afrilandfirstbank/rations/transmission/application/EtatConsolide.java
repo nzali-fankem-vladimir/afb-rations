@@ -41,8 +41,6 @@ public record EtatConsolide(
         String codeUnite,
         LocalDate dateDebut,
         LocalDate dateFin,
-        Integer moisPaiement,
-        Integer anneePaiement,
         Integer nombreJournees,
         Integer nombreLignes,
         Integer nombreBeneficiaires,

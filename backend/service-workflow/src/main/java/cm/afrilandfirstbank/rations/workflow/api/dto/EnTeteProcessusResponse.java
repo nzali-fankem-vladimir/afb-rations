@@ -34,8 +34,6 @@ public record EnTeteProcessusResponse(
         Long id,
         LocalDate dateDebut,
         LocalDate dateFin,
-        Integer moisPaiement,
-        Integer anneePaiement,
         String codeUnite,
         TypeProcessusEnum typeProcessus,
         int montantTotal,
@@ -49,8 +47,6 @@ public record EnTeteProcessusResponse(
                 processus.getId(),
                 processus.getDateDebut(),
                 processus.getDateFin(),
-                moisDerive(processus),
-                anneeDerivee(processus),
                 processus.getCodeUnite(),
                 processus.getTypeProcessus(),
                 processus.getMontantTotal(),
@@ -61,46 +57,5 @@ public record EnTeteProcessusResponse(
     }
 
 
-    /**
-     * Le mois de la periode — <b>nul des qu'elle chevauche deux mois</b>.
-     *
-     * <h2>Pourquoi ces deux champs survivent a la Maille 1</h2>
-     *
-     * <p>Le service Transmission construit encore la charge comptable en version 1,
-     * qui porte {@code "periode": { mois, annee }} (contrat d'API section 7.1). Sa
-     * refonte est le sprint Maille 2, qui attend la mise en oeuvre du contrat
-     * accepte par la DFT. En attendant, l'en-tete continue de fournir ce qu'il lit.
-     *
-     * <h2>Pourquoi nuls plutot que devines</h2>
-     *
-     * <p>Une periode du 29 septembre au 5 octobre n'a <b>aucun</b> mois. Rendre
-     * celui de la date de debut serait plausible, faux, et invisible — la pire des
-     * trois proprietes pour une imputation comptable.
-     *
-     * <p>Le refus n'a demande aucune ligne cote Transmission :
-     * {@code ConstructionChargeService} controle deja {@code periode.mois() == null}
-     * et leve l'anomalie {@code PERIODE_INVALIDE}, rendue en
-     * {@code 500 CHARGE_INCOMPLETE}. L'etat n'est pas publie, et le message dit
-     * pourquoi.
-     *
-     * <p><b>C'est ce qui rend la dependance a la Maille 2 concrete plutot que
-     * theorique</b> : tant qu'elle n'est pas faite, une periode a cheval ne part
-     * pas en comptabilite, et cela se voit.
-     */
-    private static Integer moisDerive(ProcessusMensuel processus) {
-        return tientDansUnSeulMois(processus) ? processus.getDateDebut().getMonthValue() : null;
-    }
-
-    private static Integer anneeDerivee(ProcessusMensuel processus) {
-        return tientDansUnSeulMois(processus) ? processus.getDateDebut().getYear() : null;
-    }
-
-    private static boolean tientDansUnSeulMois(ProcessusMensuel processus) {
-        LocalDate debut = processus.getDateDebut();
-        LocalDate fin = processus.getDateFin();
-        return debut != null && fin != null
-                && debut.getYear() == fin.getYear()
-                && debut.getMonthValue() == fin.getMonthValue();
-    }
 
 }

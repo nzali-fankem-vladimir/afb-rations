@@ -52,6 +52,9 @@ class UniciteTransmissionTest {
     private static final int ANNEE = 2026;
 
     /** Les bornes de la periode d'essai — juillet 2026, un mois entier (Maille 1). */
+    /** Le compte de charge, tel que la migration V7 le pose (Maille 2). */
+    private static final String COMPTE_CHARGE = "64380090200";
+
     private static final LocalDate DEBUT = LocalDate.of(ANNEE, MOIS, 1);
     private static final LocalDate FIN = LocalDate.of(ANNEE, MOIS, 31);
     private static final String JETON = "Bearer jeton-de-test";
@@ -385,7 +388,7 @@ class UniciteTransmissionTest {
         @Override
         public ResultatProcessus obtenir(Long idProcessus, String enteteAutorisation) {
             return new ResultatProcessus.ProcessusObtenu(new EnTeteProcessus(
-                    ID_PROCESSUS, "CLOTURE", UNITE, DEBUT, FIN, MOIS, ANNEE, "NORMAL", 2_500, dejaTransmis));
+                    ID_PROCESSUS, "CLOTURE", UNITE, DEBUT, FIN, COMPTE_CHARGE, "NORMAL", 2_500, dejaTransmis));
         }
     }
 
@@ -405,7 +408,7 @@ class UniciteTransmissionTest {
                     jour.toEpochDay(), jour, "ENREGISTREE", 1, 2_500L, List.of(ligne));
 
             return new ResultatConsolidation.EtatObtenu(new EtatConsolide(
-                    ID_PROCESSUS, UNITE, DEBUT, FIN, MOIS, ANNEE, 1, 1, 1, 2_500L, List.of(journee)));
+                    ID_PROCESSUS, UNITE, DEBUT, FIN, 1, 1, 1, 2_500L, List.of(journee)));
         }
     }
 
