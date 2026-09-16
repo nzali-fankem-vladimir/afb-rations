@@ -32,6 +32,9 @@
 @theme {
   --font-sans: "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
 
+  --text-xxs: 0.625rem;
+  --text-xxs--line-height: 0.875rem;
+
   --color-rouge-principal: #e30613;
   --color-rouge-secondaire: #c0000a;
   --color-noir-charte: #1a1a1a;

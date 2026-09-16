@@ -1,4 +1,5 @@
 import { useAuth } from './hooks/useAuth'
+import { AppRouter } from './router/AppRouter'
 
 /**
  * Ecran d'accueil du module.
@@ -8,7 +9,11 @@ import { useAuth } from './hooks/useAuth'
  * L'application ne voit jamais de mot de passe (CLAUDE.md section 10).
  */
 function App() {
-  const { etat, utilisateur, connecter, deconnecter } = useAuth()
+  const { etat, connecter, deconnecter } = useAuth()
+
+  if (etat === 'CONNECTE') {
+    return <AppRouter />
+  }
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-white px-6 text-noir-charte">
@@ -55,24 +60,6 @@ function App() {
             className="mt-4 text-sm underline underline-offset-4"
           >
             Réessayer
-          </button>
-        </div>
-      )}
-
-      {etat === 'CONNECTE' && utilisateur && (
-        <div className="text-center">
-          <p className="text-lg">
-            {utilisateur.prenom} {utilisateur.nom}
-          </p>
-          <p className="mt-1 text-sm text-noir-charte/70">
-            {utilisateur.role} — unité {utilisateur.codeUnite}
-          </p>
-          <button
-            type="button"
-            onClick={() => void deconnecter()}
-            className="mt-4 text-sm underline underline-offset-4"
-          >
-            Se déconnecter
           </button>
         </div>
       )}
