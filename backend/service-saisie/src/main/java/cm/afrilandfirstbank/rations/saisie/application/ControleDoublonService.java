@@ -1,8 +1,11 @@
 package cm.afrilandfirstbank.rations.saisie.application;
 
+import java.util.Optional;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import cm.afrilandfirstbank.rations.saisie.domaine.FicheJournaliere;
 import cm.afrilandfirstbank.rations.saisie.domaine.NatureEnum;
 import cm.afrilandfirstbank.rations.saisie.domaine.SessionEnum;
 import cm.afrilandfirstbank.rations.saisie.infrastructure.LignePrestationRepository;
@@ -30,36 +33,28 @@ import cm.afrilandfirstbank.rations.saisie.infrastructure.LignePrestationReposit
  * revient a raisonner par journee, sans avoir a faire circuler une date qu'il
  * faudrait garder coherente avec elle.
  *
- * <h2>Portee : RG-04 aujourd'hui, RG-15 au Sprint 6bis</h2>
+ * <h2>Portee : RG-04 sur la journee, RG-15 sur la periode</h2>
  *
- * <p><b>RG-04 s'arrete a la fiche du jour.</b> RG-15 etendra le controle a tous
- * les etats de la meme unite et de la meme periode — pour empecher qu'un etat
- * COMPLEMENTAIRE ne reproduise une ligne deja payee dans l'etat NORMAL. Ce
- * sous-sprint <b>n'implemente pas</b> RG-15.
+ * <p><b>RG-04 s'arrete a la fiche du jour</b> ({@link #estDoublonSurLaJournee}).
+ * <b>RG-15 couvre tous les etats de l'unite qui portent cette journee</b>
+ * ({@link #etatDeLaPeriodePortantDeja}, Sprint 6bis.2) — c'est ce qui empeche un
+ * etat COMPLEMENTAIRE de repayer une prestation deja servie par l'etat NORMAL.
+ * Les deux sont exactement complementaires : la premiere regarde a l'interieur
+ * de l'etat courant, la seconde regarde partout ailleurs.
  *
- * <p>Il est en revanche ecrit pour l'accueillir sans reecriture, par une seule
- * disposition : <b>ce service expose un verdict, pas une requete</b>. Les
- * appelants ({@code CreationLigneService} aujourd'hui, la modification de ligne
- * au Sprint 3.3) demandent « cette ligne est-elle un doublon ? » et n'ont aucune
- * idee de la facon dont la reponse est obtenue. Le jour ou RG-15 arrive :
+ * <p>L'extension annoncee au Sprint 3.2 s'est faite <b>sans reecrire un seul
+ * appelant</b>, et la disposition qui l'a permis merite d'etre nommee : <b>ce
+ * service expose un verdict, pas une requete</b>. {@code CreationLigneService} et
+ * {@code LigneService} demandent « cette ligne est-elle un doublon ? » et n'ont
+ * aucune idee de la facon dont la reponse est obtenue. Si l'un d'eux avait
+ * interroge le repository lui-meme, RG-15 aurait du etre ajoutee dans chacun, et
+ * l'oubli d'un seul aurait suffi a laisser passer un double paiement.
  *
- * <ul>
- *   <li>une seconde methode {@code estDoublonSurLaPeriode(...)} rejoint celle-ci,
- *       ou {@link #estDoublonSurLaJournee} enchaine les deux verifications ;</li>
- *   <li>elle s'appuiera sur les colonnes {@code code_unite}, {@code date_debut}
- *       et {@code date_fin} <b>recopiees sur {@code fiche_journaliere}</b>
- *       (decision Sprint 3.1, {@code docs/rattachement-processus.md} §5) : sans
- *       cette recopie, RG-15 exigerait un appel au service Workflow pour chaque
- *       ligne saisie ;</li>
- *   <li>aucun appelant ne change, parce qu'aucun appelant ne sait ce qu'il y a
- *       derriere le verdict.</li>
- * </ul>
- *
- * <p>Ce qui rend l'extension possible, ce n'est donc pas du code ecrit d'avance
- * — il n'y en a aucun ici pour RG-15 — mais le refus de laisser fuir la requete
- * chez l'appelant. Si {@code CreationLigneService} interrogeait lui-meme le
- * repository, RG-15 devrait etre ajoutee dans chaque appelant, et l'oubli d'un
- * seul suffirait a laisser passer un double paiement.
+ * <p>La prevision du Sprint 3.2 s'est verifiee sur le fond comme sur le moyen :
+ * RG-15 s'appuie bien sur les colonnes recopiees sur {@code fiche_journaliere}
+ * (decision Sprint 3.1), et n'a donc besoin d'<b>aucun appel au service
+ * Workflow</b> — contrairement a ce que le guide 6bis.2 prevoyait. Le detail du
+ * raisonnement est porte par {@link #etatDeLaPeriodePortantDeja}.
  */
 @Service
 public class ControleDoublonService {
@@ -123,6 +118,70 @@ public class ControleDoublonService {
         return lignePrestationRepository
                 .existsByIdFicheJournaliereAndIdBeneficiaireAndNatureAndSessionAndIdNot(
                         idFicheJournaliere, idBeneficiaire, nature, session, idLigneRevisee);
+    }
+    /**
+     * <b>RG-15</b> — l'etat de la periode qui porte deja cette prestation, s'il
+     * en existe un. {@link Optional#empty()} quand la ligne est libre.
+     *
+     * <p>Extension de {@link #estDoublonSurLaJournee} a <b>tous les etats</b> de
+     * l'unite qui couvrent la journee, et non plus a la seule fiche courante.
+     * C'est le rempart contre le double paiement en regularisation : sans lui, un
+     * etat COMPLEMENTAIRE pourrait ressaisir une prestation deja payee dans son
+     * etat d'origine.
+     *
+     * <h2>Aucun appel au service Workflow</h2>
+     *
+     * <p>Le guide 6bis.2 prevoyait ici un appel inter-services par ligne saisie,
+     * pour demander au Workflow « quels sont les etats de cette unite sur cette
+     * periode ? ». <b>Il est devenu inutile</b>, et la piste etait deja tracee
+     * par le Sprint 3.1 : {@code code_unite} est <b>recopie et fige</b> sur la
+     * fiche a son ouverture ({@code docs/rattachement-processus.md} §5).
+     *
+     * <p>Ce qui manquait pour s'en passer, c'est la garantie que « meme journee »
+     * implique « meme periode ». La <b>contrainte d'exclusion</b> de la Maille 1
+     * l'apporte : deux etats NORMAL d'une unite ne peuvent plus se chevaucher, et
+     * un COMPLEMENTAIRE recopie les bornes de son origine. Le detour par la
+     * periode n'apprend donc plus rien que la journee ne dise deja.
+     *
+     * <p>Gain concret : un appel reseau de moins <b>par ligne saisie</b>, sur un
+     * chemin qui en comptait deja trois (Grilles, Workflow, Identite) pour une
+     * cible de 3 secondes (Sprint 3.2). Le controle redevient une requete locale
+     * indexee.
+     *
+     * <h2>Ce controle n'a pas de filet en base, et c'est assume</h2>
+     *
+     * <p>RG-04 a son index unique depuis la migration V4 : sa combinaison vit
+     * dans une seule table. RG-15 porte sur une jointure fiche x ligne, qu'aucun
+     * index ne peut garder. Il reste donc une fenetre entre la lecture et
+     * l'ecriture — deux agents de la meme unite saisissant la meme prestation au
+     * meme instant, dans deux etats differents. Cas nettement plus rare que le
+     * double-clic que RG-04 rencontrait, et sans remede a cout raisonnable : le
+     * fermer exigerait de verrouiller toutes les fiches de l'unite pour la
+     * journee. Limite consignee au sous-sprint 6bis.2.
+     *
+     * <h2>Applique a tous les etats, pas aux seuls complementaires</h2>
+     *
+     * <p>Le service Saisie ne connait pas le type de l'etat — la fiche ne porte
+     * pas {@code type_processus} — et le demander couterait exactement l'appel
+     * reseau qu'on vient d'economiser. Ce n'est pas une concession : sur un etat
+     * NORMAL en cours de saisie, le controle est un <b>no-op</b> demontrable. Un
+     * complementaire exige une origine CLOTUREE (Sprint 6bis.1), et un second
+     * NORMAL couvrant la meme journee est refuse par la base. Il n'existe donc
+     * aucun autre etat a trouver, et la requete rend une liste vide.
+     *
+     * @param fiche la fiche de la ligne — elle porte a elle seule les trois
+     *        reperes du controle : l'unite, la journee et l'etat courant. Les
+     *        passer separement aurait permis de les fournir incoherents
+     * @return l'identifiant du premier etat en conflit, ou vide
+     */
+    @Transactional(readOnly = true)
+    public Optional<Long> etatDeLaPeriodePortantDeja(FicheJournaliere fiche, Long idBeneficiaire,
+                                                     NatureEnum nature, SessionEnum session) {
+        return lignePrestationRepository.etatsPortantDejaLaPrestation(
+                        fiche.getCodeUnite(), fiche.getDateJour(), fiche.getIdProcessus(),
+                        idBeneficiaire, nature, session)
+                .stream()
+                .findFirst();
     }
 
 }

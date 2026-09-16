@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -36,6 +37,7 @@ import cm.afrilandfirstbank.rations.saisie.domaine.FicheJournaliere;
 import cm.afrilandfirstbank.rations.saisie.domaine.LignePrestation;
 import cm.afrilandfirstbank.rations.saisie.domaine.NatureEnum;
 import cm.afrilandfirstbank.rations.saisie.domaine.SessionEnum;
+import cm.afrilandfirstbank.rations.saisie.domaine.exception.DoublonInterEtatsException;
 import cm.afrilandfirstbank.rations.saisie.domaine.exception.DoublonLigneException;
 import cm.afrilandfirstbank.rations.saisie.domaine.exception.GrilleIndisponibleException;
 import cm.afrilandfirstbank.rations.saisie.domaine.exception.ServiceGrillesIndisponibleException;
@@ -252,6 +254,49 @@ class CreationLigneServiceTest {
         verify(lignePrestationRepository, never()).save(any());
     }
 
+    @Test
+    @DisplayName("RG-15 : prestation deja servie ailleurs sur la periode, refus SANS appel au service Grilles")
+    void doublonInterEtats_refuseAvantToutAppelReseau() {
+        ficheExistante();
+        beneficiaireResolu();
+        aucunDoublon();
+        when(controleDoublonService.etatDeLaPeriodePortantDeja(
+                any(), eq(ID_BENEFICIAIRE), eq(NatureEnum.RATION), eq(SessionEnum.JOUR)))
+                .thenReturn(Optional.of(4_242L));
+
+        assertThatThrownBy(() -> creationLigneService.creer(commande, JETON_AGENT))
+                .isInstanceOf(DoublonInterEtatsException.class)
+                .hasMessageContaining("MBALLA")      // le beneficiaire
+                .hasMessageContaining("2026-07-10")  // la journee
+                .hasMessageContaining("RATION")      // la nature
+                .hasMessageContaining("JOUR")        // la session
+                .hasMessageContaining("4242");       // l'etat en conflit, sans quoi
+                                                     // l'agent ne peut rien verifier
+
+        // Meme motif qu'a la ligne precedente : RG-15 est locale et indexee, elle
+        // s'evalue AVANT de solliciter le service Grilles.
+        verifyNoInteractions(resolutionMontantClient);
+        verify(lignePrestationRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("RG-15 : aucun conflit sur la periode, la ligne suit son chemin normal")
+    void aucunConflitInterEtats_laisseCreerLaLigne() {
+        // Non-regression du chemin le plus frequent : un etat NORMAL en cours de
+        // saisie n'a, par construction, aucun autre etat couvrant ses journees.
+        // RG-15 y est un no-op, et le comportement du Sprint 3.2 est inchange.
+        ficheExistante();
+        beneficiaireResolu();
+        aucunDoublon();
+        when(resolutionMontantClient.resoudre(any(), any(), any(), any()))
+                .thenReturn(new MontantResolu(2500, 11L, JOURNEE_PASSEE, null));
+        when(lignePrestationRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        creationLigneService.creer(commande, JETON_AGENT);
+
+        verify(lignePrestationRepository).save(any());
+    }
+
     // --- Utilitaires ------------------------------------------------------
 
     private void ficheExistante() {
@@ -268,9 +313,12 @@ class CreationLigneServiceTest {
                 .thenReturn(beneficiaire);
     }
 
+    /** Ni RG-04 sur la journee, ni RG-15 sur la periode. */
     private void aucunDoublon() {
         when(controleDoublonService.estDoublonSurLaJournee(any(), any(), any(), any()))
                 .thenReturn(false);
+        lenient().when(controleDoublonService.etatDeLaPeriodePortantDeja(any(), any(), any(), any()))
+                .thenReturn(Optional.empty());
     }
 
 }

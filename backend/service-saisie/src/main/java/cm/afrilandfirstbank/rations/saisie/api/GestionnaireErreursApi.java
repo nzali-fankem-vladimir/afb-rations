@@ -20,6 +20,7 @@ import cm.afrilandfirstbank.rations.commun.audit.DeltaAudit;
 import cm.afrilandfirstbank.rations.commun.audit.EvenementAudit;
 import cm.afrilandfirstbank.rations.commun.audit.PublicateurAudit;
 import cm.afrilandfirstbank.rations.saisie.domaine.exception.AgentNonHabiliteException;
+import cm.afrilandfirstbank.rations.saisie.domaine.exception.DoublonInterEtatsException;
 import cm.afrilandfirstbank.rations.saisie.domaine.exception.DoublonLigneException;
 import cm.afrilandfirstbank.rations.saisie.domaine.exception.EtatNonModifiableException;
 import cm.afrilandfirstbank.rations.saisie.domaine.exception.FicheIntrouvableException;
@@ -146,6 +147,19 @@ public class GestionnaireErreursApi {
     public ResponseEntity<ErreurApiDto> doublonLigne(DoublonLigneException exception,
             HttpServletRequest requete) {
         return reponse(requete, HttpStatus.CONFLICT, "DOUBLON_LIGNE", exception.getMessage());
+    }
+
+    /**
+     * <b>RG-15</b> : la prestation figure déjà dans un autre état de la période.
+     *
+     * <p>Code distinct de {@code DOUBLON_LIGNE} : la ligne fautive est dans un
+     * dossier que l'agent ne consulte pas, le plus souvent l'état d'origine
+     * déjà clôturé. Voir {@link DoublonInterEtatsException}.
+     */
+    @ExceptionHandler(DoublonInterEtatsException.class)
+    public ResponseEntity<ErreurApiDto> doublonInterEtats(DoublonInterEtatsException exception,
+            HttpServletRequest requete) {
+        return reponse(requete, HttpStatus.CONFLICT, "DOUBLON_INTER_ETATS", exception.getMessage());
     }
 
     /**

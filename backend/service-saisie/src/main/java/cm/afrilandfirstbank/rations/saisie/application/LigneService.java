@@ -21,6 +21,7 @@ import cm.afrilandfirstbank.rations.saisie.domaine.FicheJournaliere;
 import cm.afrilandfirstbank.rations.saisie.domaine.LignePrestation;
 import cm.afrilandfirstbank.rations.saisie.domaine.NatureEnum;
 import cm.afrilandfirstbank.rations.saisie.domaine.SessionEnum;
+import cm.afrilandfirstbank.rations.saisie.domaine.exception.DoublonInterEtatsException;
 import cm.afrilandfirstbank.rations.saisie.domaine.exception.DoublonLigneException;
 import cm.afrilandfirstbank.rations.saisie.domaine.exception.FicheIntrouvableException;
 import cm.afrilandfirstbank.rations.saisie.domaine.exception.GrilleIndisponibleException;
@@ -166,6 +167,17 @@ public class LigneService {
                     beneficiaire.getNom(), beneficiaire.getPrenom(), beneficiaire.getNumCompteCourant(),
                     fiche.getDateJour(), nature, session));
         }
+
+        // RG-15. Pas d'exclusion de ligne a prevoir ici : la ligne revisee vit
+        // dans l'etat courant, que le controle ecarte deja par construction.
+        // Une modification de nature ou de session est une nouvelle combinaison,
+        // qui peut tres bien avoir deja ete servie ailleurs sur la periode.
+        controleDoublonService
+                .etatDeLaPeriodePortantDeja(fiche, beneficiaire.getId(), nature, session)
+                .ifPresent(idEtatEnConflit -> {
+                    throw new DoublonInterEtatsException(CreationLigneService.messageRg15(
+                            beneficiaire, fiche.getDateJour(), nature, session, idEtatEnConflit));
+                });
 
         // RG-03, integralement rejouee pour la nouvelle combinaison.
         MontantResolu montant = resoudreMontant(nature, session, fiche.getDateJour(), enteteAutorisation);

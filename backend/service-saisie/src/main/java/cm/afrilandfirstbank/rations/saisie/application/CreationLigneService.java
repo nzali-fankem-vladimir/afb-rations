@@ -14,8 +14,11 @@ import cm.afrilandfirstbank.rations.saisie.application.ResultatResolutionMontant
 import cm.afrilandfirstbank.rations.saisie.application.ResultatResolutionMontant.MontantResolu;
 import cm.afrilandfirstbank.rations.saisie.application.ResultatResolutionMontant.ServiceGrillesIndisponible;
 import cm.afrilandfirstbank.rations.saisie.domaine.Beneficiaire;
+import cm.afrilandfirstbank.rations.saisie.domaine.NatureEnum;
+import cm.afrilandfirstbank.rations.saisie.domaine.SessionEnum;
 import cm.afrilandfirstbank.rations.saisie.domaine.FicheJournaliere;
 import cm.afrilandfirstbank.rations.saisie.domaine.LignePrestation;
+import cm.afrilandfirstbank.rations.saisie.domaine.exception.DoublonInterEtatsException;
 import cm.afrilandfirstbank.rations.saisie.domaine.exception.DoublonLigneException;
 import cm.afrilandfirstbank.rations.saisie.domaine.exception.FicheIntrouvableException;
 import cm.afrilandfirstbank.rations.saisie.domaine.exception.GrilleIndisponibleException;
@@ -159,6 +162,18 @@ public class CreationLigneService {
                     journee, commande.nature(), commande.session()));
         }
 
+        // 3bis. RG-15, avant tout appel reseau elle aussi. Requete locale
+        //       indexee : aucun appel au service Workflow (voir
+        //       ControleDoublonService.etatDeLaPeriodePortantDeja).
+        controleDoublonService
+                .etatDeLaPeriodePortantDeja(fiche, beneficiaire.getId(),
+                        commande.nature(), commande.session())
+                .ifPresent(idEtatEnConflit -> {
+                    throw new DoublonInterEtatsException(messageRg15(
+                            beneficiaire, journee, commande.nature(), commande.session(),
+                            idEtatEnConflit));
+                });
+
         // 4. RG-03. A la date de la PRESTATION, jamais LocalDate.now().
         MontantResolu montant = resoudreMontant(commande, journee, enteteAutorisation);
 
@@ -170,6 +185,27 @@ public class CreationLigneService {
 
         tracer(ligne, beneficiaire, journee, montant, adresseIp);
         return ligne;
+    }
+
+    /**
+     * Message de refus de RG-15, partage avec {@code LigneService} (modification).
+     *
+     * <p><b>Il nomme l'etat en conflit</b>, et pas seulement la combinaison. La
+     * ligne fautive est dans un dossier que l'agent ne consulte pas : sans cet
+     * identifiant, il n'a aucun moyen de verifier l'affirmation du module, et le
+     * refus se lit comme une panne. L'action attendue est dite explicitement --
+     * si la prestation est reellement due, la correction se fait dans l'etat qui
+     * la porte, pas par une seconde saisie ici.
+     */
+    static String messageRg15(Beneficiaire beneficiaire, LocalDate journee,
+                              NatureEnum nature, SessionEnum session, Long idEtatEnConflit) {
+        return String.format(
+                "%s %s (compte %s) figure deja sur la journee du %s en %s / %s dans l'etat "
+                        + "n°%d de cette unite. Une meme prestation ne peut pas etre servie deux "
+                        + "fois sur la meme periode (RG-15). Si elle est reellement due, "
+                        + "la correction doit se faire dans l'etat qui la porte deja.",
+                beneficiaire.getNom(), beneficiaire.getPrenom(), beneficiaire.getNumCompteCourant(),
+                journee, nature, session, idEtatEnConflit);
     }
 
     /**

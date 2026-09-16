@@ -243,6 +243,58 @@ class VerrouTransmissionServiceIT {
     // --- Jeu d'essai ------------------------------------------------------------------
 
     /** Un etat mene jusqu'a CLOTURE par la machine a etats, comme en production. */
+    // --- RG-13 face a la regularisation (Sprint 6bis.2, etape 6) -------------------
+
+    @Test
+    @DisplayName("etat complementaire : seconde transmission sur la MEME periode, autorisee")
+    void secondeTransmissionSurLaMemePeriodeParUnAutreProcessus() {
+        // Un etat complementaire cloture declenche une transmission sur une periode
+        // DEJA transmise. La question que le guide 6bis.2 pose ici est celle du
+        // controle interne : RG-13 va-t-elle la refuser comme un doublon ?
+        //
+        // Non, et c'est structurel : le verrou vit sur la LIGNE du processus, pas
+        // sur le couple (unite, periode). Deux processus distincts, c'est deux
+        // lignes, donc deux verrous independants. Un verrou porte par la periode
+        // aurait rendu toute regularisation intransmissible — c'est-a-dire impayee.
+        Long idComplementaire = transaction.execute(s -> {
+            ProcessusMensuel origine = processusRepository.findById(idProcessus).orElseThrow();
+            ProcessusMensuel complementaire = TransitionProcessus.ouvrirComplementaire(
+                    origine, "Oubli signale par le beneficiaire apres cloture.");
+            complementaire.reporterMontantTotal(1_200);
+            TransitionProcessus.soumettre(complementaire);
+            TransitionProcessus.transfererAuChefUnite(complementaire);
+            TransitionProcessus.cloturerApresValidationChefUnite(complementaire);
+            return processusRepository.save(complementaire).getId();
+        });
+
+        try {
+            // La periode est bien la meme : c'est ce qui donne son sens au test.
+            transaction.executeWithoutResult(s -> {
+                ProcessusMensuel origine = processusRepository.findById(idProcessus).orElseThrow();
+                ProcessusMensuel complementaire =
+                        processusRepository.findById(idComplementaire).orElseThrow();
+                assertThat(complementaire.getDateDebut()).isEqualTo(origine.getDateDebut());
+                assertThat(complementaire.getDateFin()).isEqualTo(origine.getDateFin());
+                assertThat(complementaire.getCodeUnite()).isEqualTo(origine.getCodeUnite());
+            });
+
+            assertThat(transaction.execute(s -> verrou.reserver(idProcessus, IP)).resultat())
+                    .isEqualTo(Resultat.RESERVEE);
+
+            assertThat(transaction.execute(s -> verrou.reserver(idComplementaire, IP)).resultat())
+                    .as("la regularisation doit pouvoir partir en paiement a son tour")
+                    .isEqualTo(Resultat.RESERVEE);
+
+            // Et chacun reste unique POUR LUI-MEME : la seconde demande sur le
+            // complementaire est refusee comme elle l'est sur l'etat d'origine.
+            assertThat(transaction.execute(s -> verrou.reserver(idComplementaire, IP)).resultat())
+                    .isEqualTo(Resultat.DEJA_TRANSMISE);
+
+        } finally {
+            transaction.executeWithoutResult(s -> processusRepository.deleteById(idComplementaire));
+        }
+    }
+
     private static ProcessusMensuel unEtatCloture(int mois) {
         ProcessusMensuel processus = declencherSur(mois, ANNEE, UNITE);
         processus.reporterMontantTotal(2_500);
