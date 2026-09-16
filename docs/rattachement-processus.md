@@ -1,4 +1,12 @@
-# Rattachement de la fiche journalière au processus mensuel
+# Rattachement de la fiche journalière au processus
+
+> **Document révisé par la Maille 1.** Le couple `(mois_paiement, annee_paiement)`
+> recopié sur la fiche est devenu `(date_debut, date_fin)` (migration **V5** côté
+> Saisie). Le raisonnement du document est inchangé — la recopie sert toujours à
+> rendre RG-15 calculable localement —, et la garantie d'immuabilité qui la justifie
+> est même **plus forte** qu'avant : l'index d'unicité a été remplacé par une
+> contrainte d'exclusion qui interdit aussi le chevauchement partiel. Les extraits
+> SQL ci-dessous sont ceux de la migration V3 d'origine, conservés tels quels.
 
 Module Paiement des Rations et du Transport de la Garde Armée — décision Sprint 3.1, étape 5
 
@@ -13,7 +21,7 @@ base `rations_workflow`, celle du service Workflow. **Aucune clé étrangère n'
 possible entre deux bases** : c'est une référence logique inter-services.
 
 La saisie ne peut pas commencer sans processus : une fiche doit être rattachée à
-un processus mensuel existant, pour une unité et une période données. Trois
+un processus existant, pour une unité et une période données. Trois
 questions en découlent, qu'aucun document du projet ne tranchait :
 
 1. qui crée le processus, et à quel moment ?

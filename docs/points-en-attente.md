@@ -439,21 +439,31 @@ trouve, la borne et l'action attendue.
 
 ### Pourquoi ce point est ouvert
 
-La borne est calibree sur les volumes de 2026 : environ 50 unites, un etat par unite et
-par mois, soit ~600 etats par an, donc ~8 ans de donnees nationales avant qu'elle ne
-morde. **Cette marge se consomme toute seule**, sans qu'aucun evenement ne la signale
-avant le premier refus en production.
+La borne avait ete calibree sur les volumes de 2026 : environ 50 unites, **un etat par
+unite et par mois**, soit ~600 etats par an, donc ~8 ans de donnees nationales avant
+qu'elle ne morde.
 
-Trois choses peuvent la consommer plus vite que prevu : l'ouverture du module a de
-nouvelles unites, l'ouverture des etats COMPLEMENTAIRE (aujourd'hui fermes par le drapeau
-`RATTRAPAGE_ACTIF`), et une reprise d'historique anterieur au module.
+> **⚠️ Ce calcul est perime depuis le point M-04.** Le cycle de paiement est
+> **hebdomadaire** : ~50 unites x 52 semaines font **~2 600 etats par an**, et la marge
+> tombe de ~8 ans a **moins de deux ans**. C'est la seule borne chiffree du module que
+> le changement de cadence fait reellement basculer — les quatre justifications
+> « geste mensuel » des Sprints 4.2, 4.3 et 5.1, elles, tiennent toujours (~10
+> soumissions par jour ouvre reste trivial).
+
+**Cette marge se consomme toute seule**, sans qu'aucun evenement ne la signale avant le
+premier refus en production.
+
+Quatre choses peuvent la consommer plus vite encore : **le passage a l'hebdomadaire**
+(facteur ~4,3, deja acquis), l'ouverture du module a de nouvelles unites, l'ouverture des
+etats COMPLEMENTAIRE (aujourd'hui fermes par le drapeau `RATTRAPAGE_ACTIF`), et une
+reprise d'historique anterieur au module.
 
 ### Ce qu'il faut faire a la revue
 
 | Geste | Pourquoi |
 | --- | --- |
 | Compter les lignes de `processus_mensuel` en production | C'est exactement le volume que la borne mesure. |
-| Comparer a 5000 | Au-dela de la moitie, la borne mordra dans les cinq ans. |
+| Comparer a 5000 | Au-dela de la moitie, la borne mordra **dans l'annee** au rythme hebdomadaire. |
 | Relever la borne par variable d'environnement si besoin | Correctif immediat, sans redeploiement de code. |
 | **Programmer la vraie correction** si la borne est relevee deux fois | Descendre la pagination dans les bases (strategie C de la decision) : le Reporting transmet au second service la liste des identifiants retenus par le premier, et la base pagine. |
 

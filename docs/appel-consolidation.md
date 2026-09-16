@@ -1,4 +1,10 @@
-# Convention d'appel — consolidation mensuelle
+# Convention d'appel — consolidation de la période
+
+> **RG-06 disait « consolidation mensuelle ».** La période est un intervalle de
+> dates depuis la Maille 1 et le cycle est hebdomadaire (point M-04). La règle et le
+> partage entre les deux services sont **inchangés** ; seule l'assiette de la période
+> l'est. Le nom de la table `processus_mensuel` est historique et n'a pas été
+> renommé — voir `docs/decisions/2026-09-09-rythme-de-paiement-et-maille-de-la-periode.md`.
 
 **Appelant :** service Workflow (port 8084)
 **Appelé :** service Saisie (port 8082)
@@ -13,11 +19,11 @@ et `appel-resolution-montant.md` pour `GET /grilles/active`.
 ## 1. Ce que RG-06 partage entre les deux services
 
 RG-06 dit que les fiches journalières sont consolidées automatiquement en un état
-mensuel par unité. La règle ne peut pas vivre dans un seul service :
+de la période par unité. La règle ne peut pas vivre dans un seul service :
 
 | | Détient | Fait |
 |---|---|---|
-| **Saisie** | `fiche_journaliere`, `ligne_prestation` | Produit l'état consolidé : journées, lignes détaillées, sous-totaux, **total du mois** |
+| **Saisie** | `fiche_journaliere`, `ligne_prestation` | Produit l'état consolidé : journées, lignes détaillées, sous-totaux, **total de la période** |
 | **Workflow** | `processus_mensuel`, `etape_workflow` | Consomme cet état, **porte le total** sur `processus_mensuel.montant_total`, applique l'aiguillage au seuil (RG-08) |
 
 Aucun des deux ne fait le travail de l'autre. En particulier, **Saisie ne calcule

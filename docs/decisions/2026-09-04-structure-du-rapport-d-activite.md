@@ -1,5 +1,15 @@
 # Structure du rapport d'activité (Sprint 6.2) — vocabulaire « envoyé » vs « payé »
 
+> ⚠️ **Lire à la lumière du sprint Maille 1 (10 septembre 2026).** Ce document décrit
+> l'état du module **à sa date**, quand la période de paiement était un mois porté par
+> le couple `(mois_paiement, annee_paiement)`. Le métier a depuis établi que le cycle
+> est **hebdomadaire** (point M-04), et la période est devenue un intervalle de dates
+> `(date_debut, date_fin)`. Ce qui est écrit ici reste vrai de son époque et n'est
+> **pas** réécrit : un enregistrement daté qu'on corrige après coup cesse d'être un
+> enregistrement. Voir
+> `docs/decisions/2026-09-09-rythme-de-paiement-et-maille-de-la-periode.md` et
+> `docs/resumes-sprints/sprint-maille-1-periode-en-intervalle-de-dates.md`.
+
 **Date :** 4 septembre 2026
 **Sprint :** 6.2, rapports d'activité et exports
 **Statut :** structure arbitrée avec l'utilisateur avant tout codage (guide 6.2, étape 1)

@@ -1,5 +1,15 @@
 # Endpoint interne de consolidation, et code unité transmis en paramètre
 
+> ⚠️ **Lire à la lumière du sprint Maille 1 (10 septembre 2026).** Ce document décrit
+> l'état du module **à sa date**, quand la période de paiement était un mois porté par
+> le couple `(mois_paiement, annee_paiement)`. Le métier a depuis établi que le cycle
+> est **hebdomadaire** (point M-04), et la période est devenue un intervalle de dates
+> `(date_debut, date_fin)`. Ce qui est écrit ici reste vrai de son époque et n'est
+> **pas** réécrit : un enregistrement daté qu'on corrige après coup cesse d'être un
+> enregistrement. Voir
+> `docs/decisions/2026-09-09-rythme-de-paiement-et-maille-de-la-periode.md` et
+> `docs/resumes-sprints/sprint-maille-1-periode-en-intervalle-de-dates.md`.
+
 **Date :** 2026-08-31 — Sprint 3.4
 **Statut :** adoptée
 **Portée :** service Saisie, et service Workflow au Sprint 4
