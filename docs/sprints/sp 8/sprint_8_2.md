@@ -61,7 +61,11 @@ mode de conteneurisation retenu.
 CONTEXTE DE CETTE SESSION : Sprint 8.2, conteneurisation. La
 passerelle et le registre sont en service depuis le Sprint 8.1. On
 produit maintenant les images.
-SERVICE CONCERNE : les huit modules backend, plus le frontend.
+SERVICE CONCERNE : les NEUF modules backend (sept services, la
+passerelle, le registre), plus le frontend. Ce guide disait "huit" :
+il a ete ecrit avant la construction du service Audit (8087). Ne
+l'oublie pas. rations-audit-commun est une BIBLIOTHEQUE, pas un
+service : il ne produit AUCUNE image (CLAUDE.md §3).
 
 METHODE DE TRAVAIL :
 - Un fichier a la fois. Tu montres, j'approuve, tu continues.
@@ -128,7 +132,7 @@ Montre le fichier.
 ```
 Etends la composition Docker du Sprint 0.5 :
 
-Aux trois briques d'infrastructure existantes, ajoute les huit
+Aux trois briques d'infrastructure existantes, ajoute les neuf
 modules backend et le frontend.
 
 Prevois :
@@ -212,7 +216,9 @@ Attendu : aucun résultat.
 
 | Vérification | Attendu |
 |---|---|
-| `docker compose build` | Les neuf images construites |
+| `docker compose build` | Les **dix** images construites (sept services, passerelle, registre, frontend) |
+| Image du service Audit | Construite — absente de la version initiale de ce guide |
+| `rations-audit-commun` | **Aucune** image : c'est une bibliothèque |
 | `docker compose up` | Tous les conteneurs démarrés et sains |
 | Ordre de démarrage | Fondé sur les sondes, pas sur des temporisations |
 | Utilisateur dans les conteneurs | Non privilégié |

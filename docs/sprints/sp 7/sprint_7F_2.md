@@ -14,11 +14,18 @@
 
 ## Réutilisation du projet DOTTEL
 
-Source : `[CHEMIN_PROJET_DOTTEL]`
+Source, en lecture seule : `D:\stage afriland\formation spécialisée DSI\projet de gestion des absences\implementation\afb-dottel-mm\frontend`
+
+Fichiers utiles : `src/components/layout/AppLayout.jsx`, `Sidebar.jsx`, `PageHeader.jsx`,
+`src/router/AppRouter.jsx`, `src/pages/auth/AccesInterdit.jsx`, `PageIntrouvable.jsx`.
+L'état des lieux complet des deux dépôts est dans le guide **7F.1**, section « Réutilisation
+du projet DOTTEL » : le lire avant de commencer.
 
 La sidebar verticale sombre de DOTTEL, sa structure de liens filtrés par rôle et son bloc utilisateur en bas se transposent directement, à trois conditions : typage TypeScript, rôles de ce module, routes de ce module.
 
 Les rôles diffèrent entièrement. DOTTEL utilise EMPLOYE, ARH, CRH, DRH et ADMIN ; ce module utilise AGENT_UNITE, CHEF_UNITE_DA, DIRECTEUR_RESEAU_DR, ARH, DRH et ADMIN. Ne pas transposer les rôles, seulement le mécanisme de filtrage.
+
+Ne pas transposer non plus les entrées de menu **Enrôlement** et **Fonctions éligibles** de la sidebar DOTTEL : ces fonctions sont interdites dans ce module (CLAUDE.md §15).
 
 ## 1. Configuration recommandée
 
@@ -37,18 +44,52 @@ py -3.14 -m graphify update .
 
 Les composants de base existent. Ce sous-sprint construit la coquille dans laquelle les écrans viendront s'insérer.
 
-Le filtrage des liens par rôle est posé ici mais ne devient effectif qu'au sous-sprint 7F.3, quand l'utilisateur courant sera connu. À ce stade, les pages sont des espaces réservés.
+> *Correction d'une version antérieure de ce guide*, qui annonçait un filtrage « effectif
+> seulement au 7F.3, quand l'utilisateur courant sera connu ». **L'utilisateur courant est
+> déjà connu** : le contexte d'authentification existe depuis le Sprint 0.4
+> (`hooks/useAuth.ts`, vérifié le 16 septembre 2026).
+
+`useAuth()` expose `etat`, `utilisateur`, `role` et **`possedeRole(...roles)`**. Le rôle vient
+de `GET /identite/moi`, **jamais du jeton** : c'est une donnée du module, décidée par
+l'administrateur (CLAUDE.md §10). Le filtrage par rôle est donc posé **et testable** dès ce
+sous-sprint. À ce stade, les pages sont des espaces réservés.
 
 ## 4. Rôles et routes prévues
 
+*Tableau révisé le 16 septembre 2026 contre les `@PreAuthorize` réels des contrôleurs du
+backend.* La version initiale aurait fait construire des liens répondant `403` : un lien
+affiché vers une route refusée est pire qu'un lien absent, car l'utilisateur conclut à une
+panne.
+
 | Rôle | Routes accessibles |
 |---|---|
-| AGENT_UNITE | `/processus`, `/saisie` |
+| AGENT_UNITE | `/processus`, `/saisie`, `/suivi` |
 | CHEF_UNITE_DA | `/validation`, `/suivi` |
 | DIRECTEUR_RESEAU_DR | `/validation`, `/suivi` |
-| ARH | `/grilles`, `/suivi`, `/rapports` |
-| DRH | `/grilles`, `/suivi` |
-| ADMIN | `/admin/utilisateurs`, `/admin/parametres`, `/admin/audit` |
+| ARH | `/grilles`, `/suivi`, `/rapports`, `/audit` |
+| DRH | `/grilles`, `/audit` |
+| ADMIN | `/admin/utilisateurs`, `/audit` |
+
+**Ce qui a changé, et pourquoi :**
+
+| Écart corrigé | Source dans le backend |
+| --- | --- |
+| **AGENT_UNITE gagne `/suivi`** | `ReportingController` est ouvert à `AGENT_UNITE` : l'agent suit ses propres dossiers (motif de retour, statut d'intégration) |
+| **DRH perd `/suivi`** | `ReportingController` ne l'autorise **pas** (`ARH`, `AGENT_UNITE`, `CHEF_UNITE_DA`, `DIRECTEUR_RESEAU_DR`) |
+| **L'audit devient `/audit`, partagé** | `AuditController` : `ARH`, `DRH`, `ADMIN` — et non l'administrateur seul, d'où la sortie de `/admin` |
+| **`/admin/parametres` retiré** | **Aucun endpoint d'écriture** des paramètres n'existe ; seul `GET /parametres/fonctionnalites` est exposé, en lecture |
+
+**Deux points à faire confirmer en début de session, sans les trancher seul :**
+
+1. **Le DRH sans suivi des dossiers** est-il voulu ? Le backend l'exclut du Reporting, ce
+   qui peut être une décision (le DRH valide des grilles, pas des états) ou un oubli.
+   L'interface suit le backend ; un désaccord se corrige côté backend, pas en affichant un
+   lien qui échouera.
+2. **Une page de paramètres pour l'administrateur** : le seuil RG-08, le délai de
+   régularisation et le compte de charge se modifient aujourd'hui par `UPDATE` en base. Une
+   page exigerait un endpoint d'écriture — **et un audit**, s'agissant de valeurs qui
+   commandent le niveau d'approbation et l'imputation comptable. Hors périmètre de ce
+   sous-sprint dans tous les cas.
 
 ## 5. Étapes d'implémentation
 
@@ -65,13 +106,23 @@ Confirme en 3 lignes les six roles de ce module.
 CONTEXTE DE CETTE SESSION : Sprint 7F.2, layout et navigation. Les
 composants de base existent depuis le Sprint 7F.1.
 
-Tu as acces en lecture au projet DOTTEL :
-[CHEMIN_PROJET_DOTTEL]
+Tu as acces en LECTURE SEULE au frontend de reference DOTTEL :
+D:\stage afriland\formation spécialisée DSI\projet de gestion des absences\implementation\afb-dottel-mm\frontend
+N'ECRIS JAMAIS dans ce depot. Lis d'abord la section "Reutilisation
+du projet DOTTEL" du guide 7F.1.
 
 Reprends de sa sidebar la LOGIQUE : structure de liens avec tableau
 de roles, filtrage, menu utilisateur, fermeture au clic exterieur.
 N'en reprends NI les roles, NI les routes, qui sont ceux d'un autre
-module.
+module, NI les entrees Enrolement et Fonctions eligibles.
+
+L'utilisateur courant est DEJA connu : utilise useAuth() de
+src/hooks/useAuth.ts (etat, role, possedeRole). Ne cree pas un second
+contexte d'authentification.
+
+AVANT DE CODER, pose-moi les deux questions de la section 4 de ce
+guide : le DRH sans suivi, et la page de parametres. Donne ta
+recommandation pour chacune et attends ma reponse.
 
 SERVICE CONCERNE : frontend.
 
@@ -83,8 +134,8 @@ METHODE DE TRAVAIL :
 PREMIERE ACTION : cree la sidebar. Navigation verticale sombre, logo
 Afriland en haut, liens filtres selon le role de l'utilisateur
 courant, bloc utilisateur en bas avec nom, role et bouton de
-deconnexion. Le role sera fourni par le contexte du Sprint 7F.3 :
-prevois la dependance sans l'implementer. Montre le fichier.
+deconnexion. Le role et la deconnexion viennent de useAuth(), qui
+existe deja. Montre le fichier.
 ```
 
 ### Étape 2. Layout applicatif
@@ -136,6 +187,9 @@ Vérifier l'affichage de la sidebar, la navigation entre les routes provisoires,
 |---|---|
 | Sidebar affichée, structure de liens par rôle en place | Fait |
 | Rôles et routes de ce module, non ceux de DOTTEL | Vérifié |
+| Aucun lien affiché ne mène à un `403` (un compte par rôle) | Vérifié |
+| `useAuth()` réutilisé, aucun second contexte d'authentification | Vérifié |
+| Questions DRH/suivi et page de paramètres tranchées | Fait |
 | Layout avec défilement indépendant | Vérifié |
 | En-tête de page réutilisable | Fait |
 | Toutes les routes du tableau configurées | Vérifié |
@@ -147,7 +201,8 @@ Vérifier l'affichage de la sidebar, la navigation entre les routes provisoires,
 ## 7. Points de vigilance
 
 - Les rôles de DOTTEL n'existent pas ici. Un `CRH` laissé dans le filtrage produirait un lien jamais affiché, et masquerait l'absence du rôle réellement attendu.
-- Le filtrage par rôle n'est pas testable avant le 7F.3. Le poser correctement maintenant évite d'y revenir.
+- **Le filtrage par rôle est testable dès maintenant** : `useAuth()` existe. Le tester avec au moins un compte par rôle, en vérifiant qu'**aucun lien affiché ne mène à un `403`** — c'est tout l'objet de la révision du tableau de la section 4.
+- Le filtrage des liens est un **confort**, pas une protection : c'est le backend qui refuse. Ne jamais en déduire qu'une route masquée est une route protégée.
 - Ne pas créer les écrans réels dans ce sous-sprint : les pages provisoires suffisent.
 
 ## 8. Commit

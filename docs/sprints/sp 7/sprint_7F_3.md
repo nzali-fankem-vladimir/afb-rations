@@ -14,13 +14,28 @@
 
 ## Réutilisation du projet DOTTEL
 
-Source : `[CHEMIN_PROJET_DOTTEL]`
+Source, en lecture seule : `D:\stage afriland\formation spécialisée DSI\projet de gestion des absences\implementation\afb-dottel-mm\frontend`
 
-**C'est le sous-sprint où DOTTEL se transpose le moins.** DOTTEL simulait Keycloak par un appel à une route de login du backend, avec un formulaire matricule et mot de passe. Ce module utilise le SSO réel : la connexion est une redirection, il n'y a ni formulaire, ni mot de passe, ni route de login côté backend.
+Fichiers utiles : `src/pages/auth/AccesInterdit.jsx`, `PageIntrouvable.jsx`, `CallbackKeycloak.jsx`
+(pour ses états d'erreur à l'écran uniquement). L'état des lieux complet est dans le guide
+**7F.1**, section « Réutilisation du projet DOTTEL ».
 
-Ce qui reste utile de DOTTEL : l'idée d'un contexte global exposant l'utilisateur courant et ses rôles, la protection de routes par un composant enveloppant, et l'intercepteur ajoutant le jeton aux appels.
+> *Correction d'une version antérieure de ce guide*, qui affirmait que « DOTTEL simulait
+> Keycloak par un appel à une route de login du backend, avec un formulaire matricule et mot
+> de passe ». **C'est faux depuis son Sprint MM.7** : `POST /auth/login` a disparu, et DOTTEL
+> utilise un vrai Keycloak en Authorization Code avec PKCE S256. Vérifié le 16 septembre 2026.
 
-Ce qui ne se transpose pas : la page de connexion, l'appel à une route de login, et toute logique de stockage d'un jeton obtenu par mot de passe.
+**DOTTEL et ce projet authentifient désormais par deux chemins différents**, tous deux
+corrects :
+
+| | Ce projet | DOTTEL |
+| --- | --- | --- |
+| Mécanisme | bibliothèque **`keycloak-js`** | PKCE **écrit à la main** (`crypto.subtle`, `sessionStorage`, page `/auth/callback`) |
+
+**On garde `keycloak-js`, et on ne transpose pas le mécanisme de DOTTEL.** Il ferait la même
+chose avec davantage de code à maintenir et à auditer, sur la partie la plus sensible de
+l'interface. Ce qui se reprend de DOTTEL, ce sont ses **écrans** d'accès refusé et de page
+introuvable, et la protection de routes par un composant enveloppant.
 
 ## 1. Configuration recommandée
 
@@ -38,7 +53,22 @@ py -3.14 -m graphify update .
 
 ## 3. Contexte
 
-Le Sprint 0.4 a mis en place le flux Authorization Code avec PKCE côté frontend, dans sa forme minimale, pour vérifier que la chaîne fonctionnait. Ce sous-sprint le consolide et le branche sur l'interface : contexte global, protection des routes, filtrage effectif des liens de la sidebar.
+Le Sprint 0.4 a mis en place le flux Authorization Code avec PKCE côté frontend. **Il est allé plus loin que « la forme minimale »** que cette section annonçait à l'origine — vérifié dans le code le 16 septembre 2026 :
+
+| Objectif de ce sous-sprint | État réel |
+| --- | --- |
+| Contexte exposant utilisateur, rôle, code unité | **Fait** — `contexts/AuthContext.tsx`, `hooks/useAuth.ts` : `etat`, `utilisateur`, `role`, `possedeRole(...)` |
+| Profil issu de `GET /identite/moi`, rôle du module et non du jeton | **Fait** — `api/identiteApi.ts` |
+| Connexion par redirection, déconnexion | **Fait** — `auth/fournisseurKeycloak.ts` (`check-sso`, `pkceMethod: 'S256'`) |
+| Jeton ajouté aux appels | **Fait** — intercepteur de requête de `api/apiClient.ts` |
+| 401 → reconnexion, 403 laissé à l'appelant | **Fait** — intercepteur de réponse |
+| Jeton sans habilitation locale → état distinct | **Fait** — état `NON_HABILITE` sur un `403` de `/identite/moi` |
+| **Protection des routes par rôle** | **À faire** |
+| **Écrans `NON_HABILITE`, `ERREUR`, accès refusé** | **À vérifier / compléter** |
+| Filtrage de la sidebar | Traité au 7F.2 |
+
+**Ce sous-sprint se recentre donc sur la protection des routes et les écrans d'état.** Il ne
+réécrit pas l'authentification.
 
 Le principe posé dans CLAUDE.md ne souffre pas d'exception : **le module ne gère aucun mot de passe.** Toute réintroduction d'un formulaire de connexion est un écart interdit.
 
@@ -64,18 +94,21 @@ section 15 sur les erreurs interdites. Confirme en 3 lignes ce qui
 est interdit en matiere d'authentification.
 
 CONTEXTE DE CETTE SESSION : Sprint 7F.3, authentification. Le flux
-Authorization Code avec PKCE existe depuis le Sprint 0.4 dans sa
-forme minimale. On le consolide et on le branche sur l'interface.
+Authorization Code avec PKCE existe depuis le Sprint 0.4, et il est
+PLUS COMPLET que ce que ce guide annoncait a l'origine : contexte,
+profil, intercepteurs et etat NON_HABILITE sont deja en place (voir
+la section 3). On complete la protection des routes et les ecrans
+d'etat. On NE REECRIT PAS l'authentification.
 
-Tu as acces en lecture au projet DOTTEL :
-[CHEMIN_PROJET_DOTTEL]
+Tu as acces en LECTURE SEULE au frontend de reference DOTTEL :
+D:\stage afriland\formation spécialisée DSI\projet de gestion des absences\implementation\afb-dottel-mm\frontend
+N'ECRIS JAMAIS dans ce depot.
 
-ATTENTION : DOTTEL SIMULAIT Keycloak avec un formulaire matricule et
-mot de passe appelant une route de login du backend. Ce module
-utilise le SSO REEL. Ne transpose ni sa page de connexion, ni son
-appel de login, ni son stockage de jeton obtenu par mot de passe.
-Ne reprends que l'idee d'un contexte global et la protection de
-routes.
+ATTENTION : DOTTEL utilise AUSSI un vrai Keycloak, mais avec un PKCE
+ecrit a la main. Ce projet utilise la bibliotheque keycloak-js. Ne
+transpose PAS le mecanisme d'authentification de DOTTEL. Reprends
+seulement ses ecrans d'acces refuse et de page introuvable, et l'idee
+de proteger les routes par un composant enveloppant.
 
 SERVICE CONCERNE : frontend.
 
@@ -103,9 +136,15 @@ apres validation du jeton. Le role affiche est celui du profil
 applicatif, pas celui du jeton : c'est le module qui fait autorite
 sur l'habilitation metier.
 
-Question a trancher : ou conserver le jeton cote navigateur ? Presente
-les options avec leurs consequences de securite, notamment vis-a-vis
-d'une injection de script. Attends ma decision.
+Question : ou conserver le jeton cote navigateur ?
+
+ELLE EST DEJA TRANCHEE DANS LE CODE : le jeton reste EN MEMOIRE, detenu
+par keycloak-js, et apiClient.ts n'en conserve aucun ("Aucun jeton
+n'est conserve ici : le fournisseur en reste le seul detenteur").
+DOTTEL a pris la meme decision, par un autre chemin.
+Ne rouvre pas l'arbitrage : VERIFIE que c'est toujours vrai (aucun
+localStorage, aucun sessionStorage pour le jeton, recherche dans tout
+src/), et presente-moi le resultat.
 
 Montre le fichier.
 ```
@@ -127,7 +166,14 @@ La distinction entre 401 et 403 est importante : deconnecter sur un
 tente une action hors de ses droits.
 
 Question : faut-il rafraichir le jeton avant expiration, ou laisser
-l'utilisateur se reconnecter ? Presente les deux, j'arbitre.
+l'utilisateur se reconnecter ?
+
+ELLE EST DEJA TRANCHEE DANS LE CODE : fournisseurKeycloak.ts appelle
+updateToken(MARGE_RENOUVELLEMENT_SECONDES) avant chaque appel, et le
+401 ne survient qu'apres l'echec de ce renouvellement. Les
+intercepteurs 401 et 403 sont egalement en place.
+VERIFIE-le, et ne modifie ces fichiers que si tu constates un defaut
+-- en me le montrant d'abord.
 
 Montre le fichier.
 ```
@@ -171,6 +217,8 @@ npm run dev
 
 Tester la connexion avec chacun des six utilisateurs de test créés au Sprint 0.4, et vérifier pour chacun les liens visibles et les routes accessibles.
 
+**Tester l'écran `NON_HABILITE` avec `thomas_ndzana`**, le compte de contrôle du refus 403 : un jeton Keycloak parfaitement valide, sans profil ouvert dans le module. **S'y connecter est sans danger et constitue le test lui-même.** Ne jamais lui ouvrir de profil local, par aucun chemin — la vérification d'environnement rendrait alors `200` là où elle attend `403`, sans un mot d'explication (CLAUDE.md §15).
+
 Tester ensuite un accès direct par l'URL à une route non autorisée, puis le comportement après expiration du jeton.
 
 ## 6. Critères de validation
@@ -179,8 +227,9 @@ Tester ensuite un accès direct par l'URL à une route non autorisée, puis le c
 |---|---|
 | Contexte exposant utilisateur, rôle et code unité | Fait |
 | Profil issu de `GET /identite/moi` | Vérifié |
-| Décision sur le stockage du jeton tranchée | Fait |
-| Décision sur le rafraîchissement tranchée | Fait |
+| Jeton en mémoire confirmé par recherche dans `src/` (aucun `localStorage`/`sessionStorage`) | Vérifié |
+| Renouvellement par `updateToken` confirmé, authentification non réécrite | Vérifié |
+| Écran `NON_HABILITE` testé avec `thomas_ndzana`, aucun profil ouvert | Vérifié |
 | Connexion par redirection, sans formulaire | Vérifié |
 | 401 renvoyant à la connexion, 403 n'y renvoyant pas | Vérifié |
 | Routes protégées, accès direct par URL bloqué | Vérifié |
@@ -190,7 +239,9 @@ Tester ensuite un accès direct par l'URL à une route non autorisée, puis le c
 
 ## 7. Points de vigilance
 
-- **Aucun formulaire de connexion.** C'est l'écart le plus probable, DOTTEL en contenant un. Sa présence contredirait CLAUDE.md section 10.
+- **Aucun formulaire de connexion.** Sa présence contredirait CLAUDE.md section 10. DOTTEL n'en contient plus depuis son Sprint MM.7 — mais il contient toujours un **champ mot de passe** dans `CreerUtilisateurPage.jsx`, risque traité au sous-sprint 7F.6.
+- **Ne pas réécrire l'authentification.** Elle existe et fonctionne. Le risque de ce sous-sprint n'est plus l'absence, c'est le remplacement : transposer le PKCE manuel de DOTTEL à la place de `keycloak-js`.
+- **Ne jamais ouvrir de profil local à `thomas_ndzana`.** Se connecter avec lui teste l'écran `NON_HABILITE` ; lui créer un profil détruit ce test en silence.
 - Masquer un lien ne protège pas une route. Le filtrage de la sidebar est un confort d'usage ; la protection de route est la sécurité. Les deux sont nécessaires.
 - Ne pas déconnecter sur un 403. L'utilisateur est bien authentifié, il a seulement dépassé ses droits.
 - Le rôle affiché vient du profil applicatif, pas du jeton. C'est le module qui décide de l'habilitation métier, pas l'annuaire.

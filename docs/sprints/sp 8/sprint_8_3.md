@@ -14,9 +14,9 @@
 
 ## Point mis à jour : centralisation des valeurs en attente
 
-La version précédente de ce guide demandait de semer des valeurs de substitution explicites directement dans chaque manifest. Cette approche est remplacée par le dispositif décrit dans `docs/dispositifs-provisoires.md`, section 2 : un fichier unique `infra/k8s/valeurs-environnement.yml`, référencé par les neuf manifests, et un script `scripts/verifier-valeurs.sh` qui bloque tout déploiement en production tant qu'une valeur y reste marquée `A_CONFIRMER_DSI_`.
+La version précédente de ce guide demandait de semer des valeurs de substitution explicites directement dans chaque manifest. Cette approche est remplacée par le dispositif décrit dans `docs/dispositifs_provisoires.md`, section 2 : un fichier unique `infra/k8s/valeurs-environnement.yml`, référencé par les neuf manifests, et un script `scripts/verifier-valeurs.sh` qui bloque tout déploiement en production tant qu'une valeur y reste marquée `A_CONFIRMER_DSI_`.
 
-L'objectif ne change pas : ne jamais écrire une valeur qui aurait l'air définitive. Le moyen change : au lieu de répéter neuf fois la même mention, un seul fichier centralise tout, ce qui rend le remplacement à la réponse DSI immédiat et vérifiable.
+L'objectif ne change pas : ne jamais écrire une valeur qui aurait l'air définitive. Le moyen change : au lieu de répéter dix fois la même mention, un seul fichier centralise tout, ce qui rend le remplacement à la réponse DSI immédiat et vérifiable.
 
 ## 1. Configuration recommandée
 
@@ -39,14 +39,33 @@ py -3.14 -m graphify update .
 
 Dernier sous-sprint de la mise en plateforme. Les images existent ; il reste à décrire leur déploiement.
 
+> **Ajustement du 16 septembre 2026 — le module compte SEPT services, pas six.** Ce guide a
+> été écrit avant la construction du **service Audit** (port **8087**, base `rations_audit`),
+> bâti hors séquence lors du sprint de rattrapage du 4 septembre 2026. **Aucun des trois guides
+> du Sprint 8 ne le mentionnait.** Il doit être routé, enregistré, conteneurisé et déployé comme
+> les autres — un module livré sans lui n'aurait plus de journal immuable, exigence du cahier
+> des charges (CLAUDE.md §3).
+
 Une précaution s'impose d'emblée. Plusieurs éléments nécessaires à un déploiement réel restent en attente de la DSI, et le registre `docs/points-en-attente.md` les liste sous les références D-01 à D-09 : le namespace dédié, l'adresse du registre Harbor, les conventions de nommage, la méthode de gestion des secrets, l'URL du realm de production, les adresses Kafka, le nommage des topics en environnement partagé, les URL publiques, et le pipeline de livraison.
 
-Ce sous-sprint produit donc des manifests **complets et versionnés**, qui référencent un fichier central où vivent, seules, les valeurs en attente. L'objectif est que le déploiement soit prêt le jour où les réponses arrivent, sans avoir à reprendre neuf fichiers.
+**Deux points se sont ajoutés depuis la rédaction de ce guide**, et le registre porte désormais les références jusqu'à **D-12** (`docs/dispositifs_provisoires.md`, tableau des points DSI) :
+
+| Réf. | Objet | Pourquoi il compte au déploiement |
+| --- | --- | --- |
+| **D-10** | Compte de service Keycloak pour les appels sans utilisateur | Sans lui, le secret partagé `X-Cle-Interne` reste le dispositif en place, et **doit être fourni comme secret** à Workflow et Transmission |
+| **D-12** | **Extension PostgreSQL `btree_gist`** sur la base `rations_workflow` | **BLOQUANT.** La migration V6 (Maille 1) exécute `CREATE EXTENSION IF NOT EXISTS btree_gist`. Sans les droits pour le faire, **la migration échoue et le service Workflow ne démarre pas**. Si l'on contournait la migration, la contrainte d'exclusion n'existerait pas : deux états NORMAL pourraient se chevaucher, une journée appartiendrait à deux états, **RG-15 n'aurait plus de réponse définie et la journée deviendrait payable deux fois** |
+
+**D-12 se vérifie avant le premier déploiement, pas pendant.** C'est un geste de DBA en production : l'extension doit être créée par un compte qui en a le droit, ou le compte applicatif doit le recevoir. `D-11` (clé de partition des accusés) est **résolu** et ne bloque rien.
+
+**Deux questions DFT à reposer avant la première transmission réelle** (résumé de la Maille 2, §10) : le partage du libellé de période entre le module et la comptabilité, et le grain fin de la charge (une entrée par bénéficiaire, nature et session). Les positions du module sont appliquées **à défaut d'objection**, pas comme accordées. Elles ne bloquent pas le déploiement en recette, **elles bloquent la première transmission en production**.
+
+Ce sous-sprint produit donc des manifests **complets et versionnés**, qui référencent un fichier central où vivent, seules, les valeurs en attente. L'objectif est que le déploiement soit prêt le jour où les réponses arrivent, sans avoir à reprendre dix fichiers.
 
 ## 4. Objectifs
 
 - Fichier `infra/k8s/valeurs-environnement.yml` centralisant toutes les valeurs variables
-- Manifests de déploiement pour les neuf composants, référençant ce fichier
+- Manifests de déploiement pour les **dix** composants (sept services, passerelle, registre, frontend), référençant ce fichier
+- Vérification préalable de l'extension `btree_gist` (point D-12), bloquante
 - Configuration et secrets séparés du code
 - Sondes de disponibilité et de vivacité correctement distinguées
 - Exposition externe de la passerelle et du frontend
@@ -68,7 +87,7 @@ du paiement des rations et du transport de la garde armee d'Afriland
 First Bank.
 
 AVANT TOUT : lis CLAUDE.md, le document maitre section 10, et
-docs/dispositifs-provisoires.md section 2 sur le dispositif de
+docs/dispositifs_provisoires.md section 2 sur le dispositif de
 centralisation des valeurs DSI. Confirme en 3 lignes le principe du
 fichier central et du prefixe A_CONFIRMER_DSI_.
 
@@ -88,7 +107,7 @@ METHODE DE TRAVAIL :
 - Si un choix n'est pas couvert par CLAUDE.md, tu poses la question.
 
 PREMIERE ACTION : cree infra/k8s/valeurs-environnement.yml, conforme
-au modele de docs/dispositifs-provisoires.md section 2.3 : namespace,
+au modele de docs/dispositifs_provisoires.md section 2.3 : namespace,
 registre, prefixe de nommage, url du realm, brokers et topics kafka,
 urls d'exposition, methode de gestion des secrets. Montre le fichier
 avant de creer le moindre manifest de deploiement.
@@ -117,7 +136,7 @@ Montre les fichiers.
 ### Étape 3. Déploiements
 
 ```
-Cree un manifest de deploiement par composant : les six services, la
+Cree un manifest de deploiement par composant : les sept services, la
 passerelle, le registre, le frontend.
 
 Pour chacun :
@@ -166,7 +185,7 @@ Cree les manifests d'exposition :
 - Une exposition externe pour la passerelle et le frontend
   uniquement, aux urls issues du fichier central.
 
-Les six services applicatifs et le registre ne sont PAS exposes a
+Les sept services applicatifs et le registre ne sont PAS exposes a
 l'exterieur : ils ne sont joignables que depuis l'interieur du
 cluster. Une exposition accidentelle permettrait de contourner la
 passerelle et donc les controles centralises.
@@ -180,7 +199,7 @@ Montre les fichiers.
 
 ```
 Cree scripts/verifier-valeurs.sh, conforme au modele de
-docs/dispositifs-provisoires.md section 2.4 :
+docs/dispositifs_provisoires.md section 2.4 :
 
 - Compte les occurrences du prefixe A_CONFIRMER_DSI_ dans
   infra/k8s/valeurs-environnement.yml.
@@ -211,7 +230,18 @@ Redige dans docs/ la procedure de deploiement :
 - Procedure de retour arriere.
 
 Renvoie vers docs/points-en-attente.md pour le detail des points D-01
-a D-09 encore ouverts au moment de la redaction.
+a D-12 encore ouverts au moment de la redaction.
+
+AJOUTE UNE VERIFICATION PREALABLE BLOQUANTE, avant toute application
+de manifest : l'extension btree_gist est-elle disponible sur la base
+rations_workflow cible (point D-12) ?
+  SELECT extname FROM pg_extension WHERE extname = 'btree_gist';
+  SELECT name FROM pg_available_extensions WHERE name = 'btree_gist';
+Si elle n'est ni installee ni installable par le compte applicatif, LE
+DEPLOIEMENT S'ARRETE : la migration V6 echouerait et le service
+Workflow ne demarrerait pas. Ne jamais contourner en desactivant la
+migration : sans la contrainte d'exclusion, une journee pourrait etre
+payee deux fois.
 ```
 
 ### Étape 8. Clôture du Sprint 8
@@ -347,7 +377,7 @@ git commit -m "sprint-8.3: manifests kubernetes avec valeurs dsi centralisees
 - Exposition externe limitee a la passerelle et au frontend
 - Procedure de deploiement renvoyant au registre des points en attente
 
-Refs: document maitre sections 7.6 et 10, docs/dispositifs-provisoires.md"
+Refs: document maitre sections 7.6 et 10, docs/dispositifs_provisoires.md"
 ```
 
 ---

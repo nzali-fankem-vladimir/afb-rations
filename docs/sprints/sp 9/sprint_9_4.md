@@ -82,8 +82,9 @@ Redige le README a la racine :
   non-specialiste.
 - Perimetre, et surtout ce qui est hors perimetre : la production des
   ecritures comptables et l'impact CBS.
-- Architecture : les six services, la passerelle, le registre, leurs
-  responsabilites.
+- Architecture : les SEPT services -- service Audit compris --, la
+  passerelle, le registre, et la bibliotheque rations-audit-commun
+  (qui n'est pas un service), leurs responsabilites.
 - Stack technique et versions.
 - Demarrage en developpement : prerequis, commandes, ordre.
 - Structure du depot.
@@ -115,13 +116,20 @@ Precise dans le README ou consulter cette documentation.
 ```
 Redige un guide utilisateur, organise par role :
 
-- Agent d'unite : declencher, saisir, soumettre, corriger apres
-  retour, ouvrir un etat complementaire si applicable.
+- Agent d'unite : declencher une periode (deux dates, cycle
+  hebdomadaire), saisir, soumettre, corriger apres retour, ouvrir un
+  etat complementaire -- la regularisation est ouverte.
 - Chef d'Unite : examiner, valider, retourner.
-- Directeur Reseau : idem, avec le seuil.
-- Analyste RH : grilles, suivi, rapports.
-- Directrice RH : validation des grilles.
-- Administrateur : habilitations, parametres, audit.
+- Directeur Reseau : idem, avec le seuil -- et TOUS les etats
+  complementaires, qui lui parviennent quel que soit leur montant.
+- Analyste RH : grilles, suivi, rapports, journal d'audit.
+- Directrice RH : validation des grilles, journal d'audit.
+- Administrateur : habilitations, journal d'audit.
+
+(Verifier au moment de rediger : les parametres systeme n'avaient
+aucun ecran au 16 septembre 2026, faute d'endpoint d'ecriture -- ils
+se modifiaient par UPDATE en base. Le journal d'audit est ouvert a
+ARH, DRH et ADMIN, pas a l'administrateur seul.)
 
 Explique aussi les refus les plus frequents et ce qu'ils signifient :
 doublon, grille indisponible, separation des taches, unicite

@@ -37,7 +37,7 @@ Trois exigences chiffrées y figurent : un temps de réponse de trois secondes e
 
 S'y ajoutent les exigences de contrôle interne, dont plusieurs ont été implémentées au fil des sprints mais jamais vérifiées globalement : séparation des tâches, traçabilité, protection contre les accès non autorisés.
 
-Enfin, un module réparti en six services expose une surface de défaillance qu'un monolithe n'a pas. Un service injoignable ne doit pas produire un comportement incompréhensible.
+Enfin, un module réparti en sept services expose une surface de défaillance qu'un monolithe n'a pas. Un service injoignable ne doit pas produire un comportement incompréhensible.
 
 ## 4. Objectifs
 
@@ -92,9 +92,29 @@ identifies autre chose, et propose une methode de mesure.
 ```
 Mets en place la mesure sur les operations listees.
 
-Mesure dans des conditions realistes : environnement conteneurise,
-jeu de donnees representatif d'un mois complet pour une unite, soit
-plusieurs dizaines de lignes reparties sur une vingtaine de journees.
+Mesure dans des conditions realistes : environnement conteneurise.
+
+ATTENTION, LE VOLUME REALISTE A CHANGE avec le passage a l'hebdomadaire
+(Maille 1). Ce guide parlait d'"un mois complet, une vingtaine de
+journees". Un etat couvre desormais UNE SEMAINE, soit sept journees au
+plus. Deux volumes distincts sont donc a mesurer :
+- LE VOLUME D'UN ETAT (une semaine) : il pese sur la consolidation, la
+  soumission et la production du PDF -- il a BAISSE ;
+- LE VOLUME ACCUMULE (tous les etats sur la duree) : il pese sur la
+  recherche du Reporting et sur la requete RG-15 -- il a MONTE, environ
+  4,3 fois plus d'etats pour la meme activite.
+
+Deux points a mesurer explicitement sur le volume accumule :
+1. La borne app.reporting.limite-resultats = 5000 en-tetes (Sprint
+   6.1) : a quatre etats et plus par unite et par mois, sa marge fond
+   d'autant. Au-dela, 422 RECHERCHE_TROP_LARGE. Estime a quelle
+   anciennete de donnees la borne sera atteinte.
+2. La requete RG-15, executee a CHAQUE ligne saisie, servie par
+   l'index idx_fiche_journaliere_unite_journee (migration V6 de la
+   Saisie). Sur les volumes de developpement, PostgreSQL choisit un
+   Seq Scan, et c'est normal : une table d'une page ne s'indexe pas.
+   Verifie avec EXPLAIN, sur un volume realiste, que l'index est bien
+   choisi.
 
 Un jeu de trois lignes ne revele rien : les problemes de performance
 apparaissent avec le volume.
@@ -243,7 +263,8 @@ Puis tenter une saisie de ligne à l'écran et observer.
 ## 10. Points de vigilance
 
 - **Mesurer avant d'optimiser.** Une optimisation décidée sur une intuition complexifie le code sans gain démontré, et peut dégrader ce qui fonctionnait.
-- Mesurer sur un volume réaliste. Un mois complet représente plusieurs dizaines de lignes ; un jeu de trois lignes ne révèle aucun problème de performance.
+- Mesurer sur un volume réaliste — **et distinguer le volume d'un état, qui a baissé avec le passage à l'hebdomadaire, du volume accumulé, qui a monté**. Un jeu de trois lignes ne révèle aucun problème de performance ; un jeu d'une semaine ne révèle pas davantage le coût de la recherche sur deux ans d'états.
+- **Un *Seq Scan* sur une base de développement ne prouve pas qu'un index est inutile.** PostgreSQL ne se sert pas d'un index sur une table d'une page. Mesurer sur un volume réaliste avant de conclure.
 - La clôture sans Kafka disponible est le scénario le plus dangereux du module : un état figé, jamais transmis, donc jamais payé, et rien ne le signale. La décision prise au Sprint 5.1 doit être vérifiée en conditions réelles, pas seulement en test unitaire.
 - Un message incompréhensible en situation dégradée est une anomalie. L'utilisateur doit savoir qu'il s'agit d'un incident temporaire, pas d'un refus métier.
 - Aucune donnée incohérente ne doit subsister après une panne. Une fiche rattachée à un processus inexistant, ou un état à moitié validé, se paierait bien plus tard.

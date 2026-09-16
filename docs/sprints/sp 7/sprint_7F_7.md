@@ -14,17 +14,76 @@
 
 ## Réutilisation du projet DOTTEL
 
-Source : `[CHEMIN_PROJET_DOTTEL]`
+Source, en lecture seule : `D:\stage afriland\formation spécialisée DSI\projet de gestion des absences\implementation\afb-dottel-mm\frontend`
 
-Les écrans de suivi et de tableau de bord de DOTTEL fournissent les patrons de présentation. Le parcours de régularisation n'a en revanche aucun équivalent : il est propre à ce module.
+Fichiers utiles : `src/pages/reporting/DashboardPage.jsx`, `HistoriquePage.jsx`, `AuditPage.jsx`,
+`src/components/ui/DataTable.jsx`, `MessageListeVide.jsx`. L'état des lieux complet est dans le
+guide **7F.1**, section « Réutilisation du projet DOTTEL ».
 
-## Point mis à jour : les écrans de régularisation se construisent toujours
+Les écrans de suivi et de tableau de bord de DOTTEL fournissent les patrons de présentation.
 
-La version précédente de ce guide subordonnait la construction des écrans de régularisation à la réalisation préalable du Sprint 6bis. Ce n'est plus le cas : le Sprint 6bis produit désormais son code derrière un drapeau de fonctionnalité, décrit dans `docs/dispositifs-provisoires.md`, et non plus derrière une condition de démarrage.
+> *Correction d'une version antérieure de ce guide*, qui affirmait que « le parcours de
+> régularisation n'a aucun équivalent » chez DOTTEL. **DOTTEL a un mode rattrapage** (son Sprint
+> MM.11, `pages/workflow/DeclencherProcessusPage.jsx`). Vérifié le 16 septembre 2026.
 
-**Les étapes 5 et 6 de ce sous-sprint se réalisent donc systématiquement**, que le Sprint 6bis ait ou non été mené à ce stade, à une seule condition : que les endpoints du service Workflow qu'elles consomment existent. Si le Sprint 6bis n'a pas encore été réalisé au moment d'exécuter ce sous-sprint, ces deux étapes sont à reporter jusqu'à ce qu'il le soit, sans que cela change le reste du sous-sprint.
+**Il ne se transpose pas, et la raison est de fond.** Les deux modèles sont incompatibles :
 
-Le frontend interroge lui-même l'état du drapeau au chargement, et masque ou affiche l'entrée de menu en conséquence : c'est ce mécanisme qui remplace l'ancienne condition de démarrage.
+| | DOTTEL | Ce module |
+| --- | --- | --- |
+| Forme | un **drapeau `rattrapage`** posé sur un processus ordinaire du même mois | un **état `COMPLEMENTAIRE` distinct**, qui référence l'état d'origine clôturé |
+| Qui est rattrapé | **calculé** : « seuls les bénéficiaires non payés seront… » | **saisi librement** par l'agent, jour par jour |
+| Ce qui le rend possible | une **liste d'enrôlés** à comparer aux payés | **rien** — il n'existe aucune liste de bénéficiaires attendus |
+| Ce qui empêche le double paiement | la comparaison à la liste | **RG-15**, contrôlée à chaque ligne saisie |
+
+Le calcul « bénéficiaires non payés » de DOTTEL **suppose l'enrôlement**, interdit dans ce module
+(CLAUDE.md §15). Le transposer réintroduirait l'enrôlement par la porte de la régularisation.
+**Ne reprendre de ce mode que la présentation** — le bandeau signalant qu'on travaille sur une
+période déjà payée.
+
+## Point mis à jour : le Sprint 6bis est terminé, et la régularisation est ouverte
+
+*Mis à jour le 16 septembre 2026.* La version précédente de cette section envisageait que le
+Sprint 6bis ne soit pas encore réalisé. **Il l'est** : ouverture contrôlée d'un état
+complémentaire (6bis.1) et unicité inter-états RG-15 (6bis.2), vérifiées de bout en bout. Et
+**`RATTRAPAGE_ACTIF` vaut `true` depuis la migration V8 du Workflow**, le métier ayant validé.
+
+**Les étapes 5 et 6 se réalisent donc sans condition.** Tous les endpoints qu'elles consomment
+existent.
+
+**Le masquage conditionnel reste nécessaire**, pour une autre raison qu'à l'origine : le drapeau
+n'est plus l'attente d'une décision, c'est la **commande d'urgence**. Il se referme par un simple
+`UPDATE`, sans redéploiement, et l'interface doit alors cesser d'offrir la régularisation.
+
+Référence : `docs/dispositifs_provisoires.md` (avec un **tiret bas** — la version précédente de ce
+guide écrivait `dispositifs-provisoires.md`, un chemin qui n'existe pas), section **1.4**,
+« Comportement côté frontend ».
+
+## Ce qui a changé depuis la rédaction de ce guide
+
+| Pour ce sous-sprint | Conséquence |
+| --- | --- |
+| Filtres du suivi et des rapports | **`dateDebut`, `dateFin`**, plus de `periode=AAAA-MM` |
+| Rapports : l'**unité**, pas l'agence | le paramètre est **`codeUnite`**. La version précédente disait « l'agence » — c'est la confusion que CLAUDE.md §15 interdit (voir l'étape 4) |
+| Nom des exports | `rapport-rations-<unité>-<AAAAMMJJ>.<pdf\|xlsx>`, premier jour de la période |
+| `GET /parametres/fonctionnalites` | rend `{ rattrapageActif: boolean }`, et **vaut `true`** |
+| Ouverture d'un complémentaire | `POST /processus` avec `typeProcessus: COMPLEMENTAIRE`, `idProcessusOrigine`, `motifOuverture`, **et les bornes de l'origine** |
+| Circuit d'un complémentaire | **toujours au Directeur Réseau**, quel que soit le montant (6bis.1) |
+| Doublon inter-états | `409 DOUBLON_INTER_ETATS`, message **nommant l'état en conflit** — déjà traité à l'écran de saisie depuis le 7F.4 révisé |
+| Suivi par le DRH | **impossible** : le Reporting ne l'autorise pas (tableau révisé du 7F.2) |
+
+**Les huit refus possibles à l'ouverture d'un complémentaire**, lus dans
+`GestionnaireErreursApi` du Workflow :
+
+| Code | Statut | Cause |
+| --- | --- | --- |
+| `FONCTIONNALITE_NON_OUVERTE` | 422 | drapeau refermé entre-temps |
+| `ORIGINE_REQUISE` | 422 | aucun état d'origine désigné |
+| `ETAT_NON_CLOTURE` | 422 | l'origine n'est pas clôturée — on ne régularise qu'un état clos |
+| `MOTIF_OBLIGATOIRE` | 422 | motif absent ou fait d'espaces |
+| `PERIODE_NON_CONCORDANTE` | 422 | bornes envoyées différentes de celles de l'origine |
+| `DELAI_REGULARISATION_DEPASSE` | 422 | origine trop ancienne (`DELAI_REGULARISATION_JOURS`, provisoirement 90) |
+| `UNITE_NON_CONCORDANTE` | 403 | unité envoyée différente de celle de l'origine |
+| `DELAI_REGULARISATION_INDISPONIBLE` | 500 | paramètre de délai illisible — refus, jamais une valeur de repli |
 
 ## 1. Configuration recommandée
 
@@ -50,7 +109,7 @@ Dernier sous-sprint du frontend. Il complète le parcours de l'Analyste RH avec 
 
 Un point d'ergonomie sur la régularisation : le refus pour unicité inter-états est le message le plus délicat du module. L'agent tente de rattraper un bénéficiaire et le système refuse, en indiquant que la prestation figure déjà dans un autre état de la période. Sans explication précise, l'agent ne comprendra pas pourquoi son rattrapage est bloqué.
 
-Un second point d'ergonomie, propre à cette version du sprint : si la fonctionnalité n'est pas encore ouverte par le métier, l'agent ne doit même pas voir l'entrée de menu qui y mène. Un menu visible mais menant à un refus systématique serait plus déroutant qu'un menu absent.
+Un second point d'ergonomie : si la fonctionnalité est **refermée** — c'est désormais un geste d'urgence, le métier l'ayant ouverte —, l'agent ne doit même pas voir l'entrée de menu qui y mène. Un menu visible mais menant à un refus systématique serait plus déroutant qu'un menu absent.
 
 ## 4. Objectifs
 
@@ -72,22 +131,28 @@ First Bank.
 
 AVANT TOUT : lis CLAUDE.md, section 11 pour le contrat d'api du
 service Reporting, section 7 pour l'etat complementaire, et
-docs/dispositifs-provisoires.md section 1.4 sur le comportement
-frontend attendu. Confirme en 3 lignes les quatre endpoints de
+docs/dispositifs_provisoires.md (TIRET BAS) section 1.4 sur le
+comportement frontend attendu. Confirme en 3 lignes les quatre endpoints de
 reporting et la maniere dont le frontend doit traiter le drapeau
 RATTRAPAGE_ACTIF.
 
 CONTEXTE DE CETTE SESSION : Sprint 7F.7, dernier sous-sprint du
-frontend. Suivi, rapports et regularisation. Les ecrans de
-regularisation se construisent systematiquement, mais leur AFFICHAGE
-depend du drapeau RATTRAPAGE_ACTIF lu depuis
-GET /parametres/fonctionnalites.
+frontend. Suivi, rapports et regularisation. Le Sprint 6bis est
+TERMINE et RATTRAPAGE_ACTIF vaut true (migration V8) : la
+regularisation est ouverte. Son AFFICHAGE depend toujours du drapeau
+lu depuis GET /parametres/fonctionnalites, qui sert desormais de
+commande d'urgence.
 
-Tu as acces en lecture au projet DOTTEL :
-[CHEMIN_PROJET_DOTTEL]
+Tu as acces en LECTURE SEULE au frontend de reference DOTTEL :
+D:\stage afriland\formation spécialisée DSI\projet de gestion des absences\implementation\afb-dottel-mm\frontend
+N'ECRIS JAMAIS dans ce depot.
 
-Ses ecrans de suivi fournissent les patrons de presentation. Le
-parcours de regularisation n'a aucun equivalent chez lui.
+Ses ecrans de suivi fournissent les patrons de presentation.
+ATTENTION : DOTTEL a un "mode rattrapage", mais son modele est
+INCOMPATIBLE avec ce module -- il calcule les beneficiaires non payes
+a partir d'une liste d'enroles, et l'enrolement est interdit ici. Ne
+transpose PAS ce calcul. Lis la section "Reutilisation du projet
+DOTTEL" de ce guide.
 
 SERVICE CONCERNE : frontend, contre les services Reporting et
 Workflow.
@@ -107,16 +172,29 @@ client axios le gere avant de typer la fonction. Montre le fichier.
 ```
 Cree l'ecran de suivi des demandes :
 
-- Filtres combinables : periode, unite, session, nature,
-  beneficiaire.
+- Filtres combinables : periode (dateDebut et dateFin, via le
+  selecteur de periode du 7F.1), unite, session, nature, beneficiaire.
+  Ce sont exactement les parametres de GET /reporting/demandes.
 - Tableau pagine, avec le composant du Sprint 7F.1.
-- Colonnes : periode, unite, montant total, statut d'avancement,
-  statut d'integration comptable.
+- Colonnes : periode (ses deux bornes), unite, type (normal ou
+  complementaire), montant total, statut d'avancement, statut
+  d'integration comptable.
 
-Le statut d'integration comptable merite une attention : il indique
-si l'etat transmis a ete pris en charge, integre ou rejete par la
-comptabilite. Un etat cloture depuis longtemps sans accuse est un
-signal, et l'interface doit le rendre visible.
+Le statut d'integration comptable merite une attention. Il se lit sur
+DEUX champs de la reponse, transmisComptabilite et statutIntegration,
+et un statutIntegration NUL a deux sens sans rapport :
+- transmisComptabilite = false : jamais transmis ;
+- transmisComptabilite = true : publication NON CONFIRMEE -- on ignore
+  si l'etat est parti. C'est le signal a rendre visible.
+Pour le detail, GET /transmission/processus/{id} rend une "situation"
+parmi cinq (NON_TRANSMIS, PUBLICATION_NON_CONFIRMEE, EN_ATTENTE_ACCUSE,
+INTEGRE, REJETE) et un message en clair : utilise-les plutot que de
+reconstruire la logique cote interface.
+
+VOCABULAIRE (decision du Sprint 6.2) : ecris "envoye a la
+comptabilite", JAMAIS "transmis" ni "paye". Un etat peut etre envoye
+ET rejete par la comptabilite : rien n'a ete paye. Un lecteur presse
+qui lit "84 000 FCFA transmis" comprend "verses aux agents".
 
 Une recherche sans resultat n'est pas une erreur : affiche un etat
 vide explicite.
@@ -144,13 +222,25 @@ Montre le fichier.
 ```
 Cree l'ecran de rapports, reserve a l'Analyste RH :
 
-- Selection de la periode et de l'agence.
+- Selection de la periode (dateDebut, dateFin) et de l'UNITE.
+
+  ATTENTION : la version precedente de ce guide disait "l'agence". Le
+  parametre reel est codeUnite. Code agence et code unite ont le meme
+  format mais des roles distincts (CLAUDE.md §4 et §15) : l'agence
+  domicilie le compte du beneficiaire, l'unite SUPPORTE LA CHARGE. Un
+  rapport par agence regrouperait des depenses de plusieurs unites, et
+  son libelle mentirait. Ecris "unite" partout sur cet ecran.
 - Affichage du rapport consolide.
 - Deux boutons d'export, pdf et excel, declenchant le telechargement
   du fichier retourne par le serveur.
 
 Traite le cas d'une periode sans donnees : le rapport est vide, ce
-n'est pas une erreur.
+n'est pas une erreur. Le serveur rend 200 avec vide = true et une
+synthese a zero.
+
+Les fichiers exportes se nomment rapport-rations-<unite>-<AAAAMMJJ>,
+AAAAMMJJ etant le premier jour de la periode : ne le reconstruis pas
+cote interface, lis l'en-tete Content-Disposition.
 
 Le total affiche a l'ecran doit etre identique a celui des fichiers
 exportes. Ne recalcule rien cote interface : affiche ce que le
@@ -199,6 +289,30 @@ d'unite et visible seulement si le drapeau est ouvert :
 - Saisie d'un motif d'ouverture, obligatoire.
 - Confirmation.
 
+LA REQUETE : POST /processus avec typeProcessus = COMPLEMENTAIRE,
+idProcessusOrigine, motifOuverture, ET codeUnite, dateDebut, dateFin.
+Ces trois derniers doivent etre ceux de l'etat d'origine, a
+l'identique : le backend les compare et refuse sinon
+(PERIODE_NON_CONCORDANTE, UNITE_NON_CONCORDANTE). PRE-REMPLIS-LES
+depuis l'origine selectionnee et NE LES REND PAS MODIFIABLES : les
+laisser saisir, c'est offrir a l'agent de provoquer un refus.
+
+LA SELECTION DE L'ORIGINE se heurte au meme manque qu'au 7F.5 :
+GET /reporting/demandes n'a pas de filtre par statut. Reprends
+l'arbitrage rendu au 7F.5 sur ce point. Ne filtre pas cote client une
+liste paginee par le serveur.
+
+Traite les HUIT refus du tableau de la section "Ce qui a change". Deux
+meritent un soin particulier :
+- DELAI_REGULARISATION_DEPASSE : la periode est trop ancienne pour
+  etre regularisee dans le module. Dis-le, et dis que ce n'est pas une
+  panne.
+- ETAT_NON_CLOTURE : on ne regularise qu'un etat clos. Un etat encore
+  ouvert se corrige directement.
+
+APRES OUVERTURE, previens l'agent qu'un etat complementaire est TOUJOURS
+valide par le Directeur Reseau, quel que soit son montant.
+
 L'ecran doit indiquer clairement que l'etat d'origine ne sera pas
 modifie : il reste cloture avec ses signatures, et un nouvel etat
 distinct est ouvert sur la meme periode.
@@ -214,11 +328,18 @@ correspondance des erreurs du Sprint 7F.1, avec un message
 correspondant.
 
 La saisie sur un etat complementaire utilise ensuite les ecrans du
-Sprint 7F.4, sans modification, a un ajout pres : le traitement du
-refus pour unicite inter-etats. Le message est le plus delicat du
-module. Il doit indiquer que la prestation figure deja dans un autre
-etat de la periode, en citant le beneficiaire, la journee, la nature
-et la session.
+Sprint 7F.4, SANS MODIFICATION : le refus pour unicite inter-etats
+(409 DOUBLON_INTER_ETATS) y est deja traite depuis la revision du
+guide 7F.4. VERIFIE-le plutot que de le refaire.
+
+Le message est le plus delicat du module. Il indique que la prestation
+figure deja dans un autre etat de la periode, en citant le
+beneficiaire, la journee, la nature, la session -- ET L'ETAT EN
+CONFLIT, que le backend nomme. Affiche-le tel quel.
+
+AJOUTE un bandeau permanent sur l'ecran de saisie d'un complementaire :
+on travaille sur une periode DEJA PAYEE. C'est la seule chose a
+reprendre du mode rattrapage de DOTTEL.
 
 Un agent qui tente un rattrapage legitime et se voit refuser doit
 comprendre immediatement pourquoi, sans quoi il croira a un
@@ -246,26 +367,39 @@ Lance la cartographie et verifie :
 Liste les ecarts sans les corriger.
 
 Puis fais le parcours complet a l'ecran, avec les six utilisateurs de
-test, drapeau ferme d'abord : declenchement, saisie, soumission,
-validation, aiguillage, cloture, suivi, rapport. Verifie que le menu
-de regularisation est absent.
+test, DRAPEAU OUVERT (sa valeur livree depuis la migration V8) :
+declenchement, saisie, soumission, validation, aiguillage, cloture,
+suivi, rapport.
 
-Ouvre ensuite le drapeau en base de test et rejoue le parcours de
-regularisation : ouverture d'etat complementaire, saisie, refus
-d'unicite sur une combinaison deja payee, saisie acceptee sur une
-combinaison nouvelle.
+Rejoue ensuite le parcours de regularisation : ouverture d'etat
+complementaire, saisie, refus d'unicite sur une combinaison deja
+payee (message nommant l'etat en conflit), saisie acceptee sur une
+combinaison nouvelle, puis validation -- qui doit monter au Directeur
+Reseau meme pour un petit montant.
+
+Verifie enfin le MASQUAGE, drapeau FERME : UPDATE parametre_systeme
+SET valeur = 'false' WHERE code = 'RATTRAPAGE_ACTIF'. Le menu doit
+disparaitre et la route etre bloquee par l'url.
+
+PUIS REOUVRE-LE IMMEDIATEMENT : SET valeur = 'true'. Le metier l'a
+ouvert ; le laisser ferme apres un test couperait la regularisation
+sans qu'aucune alerte ne le signale. Confirme-moi la reouverture par
+une requete.
 ```
 
 ### Étape 8. Clôture du Sprint 7F
 
 ```
 Mets a jour CLAUDE.md avec les decisions prises pendant le Sprint 7F :
-1. Le lieu de conservation du jeton cote navigateur (7F.3).
-2. La politique de rafraichissement du jeton (7F.3).
+1. La CONFIRMATION du lieu de conservation du jeton (7F.3) -- en
+   memoire, detenu par keycloak-js, decision de fait du Sprint 0.4.
+2. La CONFIRMATION de la politique de rafraichissement (7F.3) --
+   updateToken avant chaque appel, decision de fait du Sprint 0.4.
 3. La disposition retenue pour l'ecran de saisie journaliere (7F.4).
 4. La maniere de signaler qu'une grille est sans effet (7F.6).
 5. La table de correspondance des codes d'erreur et ses messages,
-   incluant desormais FONCTIONNALITE_NON_OUVERTE.
+   incluant desormais FONCTIONNALITE_NON_OUVERTE, DOUBLON_INTER_ETATS
+   et les huit refus d'ouverture d'un complementaire.
 6. Le mecanisme de masquage conditionnel fonde sur les
    fonctionnalites actives (7F.7).
 
@@ -290,7 +424,14 @@ Propose les ajouts section par section.
 | Code `FONCTIONNALITE_NON_OUVERTE` traité avec un message clair | Vérifié |
 | Aucun `.jsx`, aucun `any`, aucun mot de passe | Vérifié |
 | Aucun résidu DOTTEL | Vérifié |
-| Parcours complet validé, drapeau fermé puis ouvert | Vérifié |
+| Parcours complet validé drapeau ouvert, masquage vérifié drapeau fermé | Vérifié |
+| **Drapeau rouvert après le test, confirmé par requête** | Vérifié |
+| Rapports filtrés par **unité**, jamais par agence | Vérifié |
+| « Envoyé à la comptabilité », jamais « transmis » ni « payé » | Vérifié |
+| Publication non confirmée (`transmis` + statut nul) signalée | Vérifié |
+| Bornes de l'origine pré-remplies et non modifiables à l'ouverture | Vérifié |
+| Huit refus d'ouverture d'un complémentaire traités | Vérifié |
+| Calcul « bénéficiaires non payés » de DOTTEL non transposé | Vérifié |
 | CLAUDE.md complété des décisions du Sprint 7F | Fait |
 
 ## 7. Points de vigilance
@@ -301,6 +442,9 @@ Propose les ajouts section par section.
 - Ne recalculer aucun total côté interface. L'écran doit afficher ce que le serveur retourne, sinon les chiffres finiraient par diverger de ceux des exports.
 - L'historique doit montrer les passages répétés au même niveau. C'est la trace des allers-retours, et elle a une valeur de contrôle interne.
 - Les résidus du projet source sont le risque de fin de sprint : une route, un rôle ou un terme de DOTTEL laissé dans le code passe inaperçu et sème la confusion plus tard.
+- **Le mode rattrapage de DOTTEL est le piège le plus subtil du Sprint 7F.** Il ressemble au besoin, il est soigné, et il repose sur une liste d'enrôlés : le transposer réintroduirait l'enrôlement sous un autre nom.
+- **Rouvrir le drapeau après avoir testé le masquage.** Un drapeau oublié fermé coupe la régularisation en silence : aucune erreur, seulement un menu absent.
+- **Agence et unité ne se confondent jamais**, y compris dans un libellé d'écran. Un rapport « par agence » regrouperait les charges de plusieurs unités.
 
 ## 8. Commit
 
@@ -315,7 +459,7 @@ git commit -m "sprint-7F.7: suivi, reporting et regularisation pilotee par drape
 - Refus d'unicite inter-etats explicite
 - Cloture du sprint 7F
 
-Refs: US-15 a US-18, RG-15, docs/dispositifs-provisoires.md"
+Refs: US-15 a US-18, RG-15, docs/dispositifs_provisoires.md"
 ```
 
 ---

@@ -111,8 +111,11 @@ Deroule les scenarios SC-07 a SC-10.
 SC-07, grilles tarifaires : cinq cas.
 SC-08, suivi et reporting : quatre cas, dont la coherence des
 exports.
-SC-09, etat complementaire : quatre cas, a sauter si le Sprint 6bis
-n'a pas ete realise.
+SC-09, etat complementaire : quatre cas. Le Sprint 6bis est termine et
+RATTRAPAGE_ACTIF vaut true (migration V8) : ce scenario ne se saute
+plus. Toutes les journees saisies doivent tomber DANS la periode de
+l'etat d'origine, et le complementaire monte TOUJOURS au Directeur
+Reseau, quel que soit son montant.
 SC-10, administration : trois cas.
 
 Pour SC-08, ouvre reellement les fichiers exportes et compare les
@@ -178,7 +181,16 @@ Préparation du cas CT-18, entre deux validations :
 UPDATE parametre_systeme SET valeur = '50000' WHERE code = 'SEUIL_AIGUILLAGE_DR';
 ```
 
-Après recette, remise à la valeur initiale.
+Après recette, **remise à la valeur initiale, soit `100000`**, et **vérification par requête** :
+
+```sql
+UPDATE parametre_systeme SET valeur = '100000' WHERE code = 'SEUIL_AIGUILLAGE_DR';
+SELECT code, valeur FROM parametre_systeme WHERE code = 'SEUIL_AIGUILLAGE_DR';
+```
+
+**Ne pas se contenter de « remise à la valeur initiale ».** Un seuil oublié à `50000` après une recette ferait monter au Directeur Réseau des états qui n'ont pas à y aller, sans aucune erreur — le paramètre est relu à chaque validation (RG-08), et rien ne signale qu'il a changé. Le seuil de `100000` est une **décision métier**, maintenue lors du passage à l'hebdomadaire.
+
+**Même règle pour `RATTRAPAGE_ACTIF`** s'il est refermé pour éprouver le masquage : le rouvrir (`'true'`) et le vérifier par requête.
 
 ## 9. Tests et vérifications
 
