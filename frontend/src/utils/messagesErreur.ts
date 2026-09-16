@@ -23,6 +23,16 @@ export const LIBELLES_ERREUR: Record<string, string> = {
   UTILISATEUR_NON_HABILITE: 'Dossier hors de votre périmètre',
   SEPARATION_TACHES: 'Séparation des tâches',
   ETAT_NON_MODIFIABLE: 'État non modifiable',
+  // Sprint 7F.4 -- ecrans de saisie de l'agent d'unite.
+  PROCESSUS_EXISTANT: 'Un état couvre déjà cette période',
+  ETAT_INCOMPLET: 'État incomplet',
+  FICHE_INTROUVABLE: 'Fiche introuvable',
+  LIGNE_INTROUVABLE: 'Ligne introuvable',
+  PROCESSUS_INTROUVABLE: 'Processus introuvable',
+  REQUETE_INVALIDE: 'Demande invalide',
+  SERVICE_GRILLES_INDISPONIBLE: 'Service des grilles tarifaires indisponible',
+  SERVICE_WORKFLOW_INDISPONIBLE: 'Service de workflow indisponible',
+  SERVICE_IDENTITE_INDISPONIBLE: "Service d'identité indisponible",
 }
 
 const LIBELLE_PAR_DEFAUT = 'Une erreur est survenue'
