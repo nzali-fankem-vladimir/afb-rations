@@ -68,16 +68,26 @@ class FonctionnaliteServiceTest {
     class Drapeau {
 
         /**
-         * <b>Le test le plus important du fichier.</b> Il lit la valeur que la migration
-         * V2 a reellement posee, sans rien modifier : la fonctionnalite est fermee par
-         * defaut, et c'est ce qui protege le module tant que RG-15 n'existe pas.
+         * Valeur {@code 'false'} : la fonctionnalite est fermee.
+         *
+         * <p><b>Ce test lisait autrefois la valeur ambiante de la base</b>, en affirmant
+         * qu'elle valait {@code false} « depuis la migration V2 ». C'etait vrai de la
+         * migration, pas de la base : le drapeau est precisement fait pour changer par
+         * {@code UPDATE}, sans redeploiement. Le test serait tombe le jour ou le metier
+         * l'ouvrirait legitimement — et c'est ce qui s'est produit a la verification
+         * reelle du Sprint 6bis.2, puis a la migration V8.
+         *
+         * <p>Un test qui depend d'une valeur d'exploitation ne dit rien du code : il
+         * mesure l'environnement. La valeur est donc posee ici, et le test eprouve ce
+         * qu'il doit eprouver — la lecture du drapeau, pas son etat du jour.
          */
         @Test
-        @DisplayName("1. Valeur de la migration V2 : la fonctionnalite est FERMEE")
-        void fermeParDefaut() {
+        @DisplayName("1. Valeur 'false' : la fonctionnalite est FERMEE")
+        void fermeQuandFausse() {
+            fixerDrapeau("false");
+
             assertThat(fonctionnaliteService.rattrapageActif())
-                    .as("RATTRAPAGE_ACTIF vaut false depuis la migration V2 : "
-                            + "la regularisation ne doit pas s'ouvrir toute seule")
+                    .as("un drapeau a 'false' ferme la regularisation")
                     .isFalse();
         }
 

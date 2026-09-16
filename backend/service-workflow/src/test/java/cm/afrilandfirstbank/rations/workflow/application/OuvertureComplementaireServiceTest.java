@@ -130,7 +130,20 @@ class OuvertureComplementaireServiceTest {
     class Drapeau {
 
         /**
-         * Test 1 du guide. Drapeau ferme — la valeur de la migration V2 —, la demande
+         * Les trois premiers tests eprouvent un drapeau FERME. Ils le supposaient ferme
+         * en base — valeur de la migration V2 —, et sont tombes des que la migration V8
+         * l'a ouvert. Chaque test pose desormais la situation qu'il eprouve : une
+         * valeur d'exploitation ne fait pas partie du jeu d'essai.
+         *
+         * <p>Le test 4 (parametre supprime) n'en depend pas : il retire la ligne.
+         */
+        @BeforeEach
+        void fermerLeDrapeauPourCeGroupe() {
+            fermerLeDrapeau();
+        }
+
+        /**
+         * Test 1 du guide. Drapeau ferme — pose par le test, voir plus haut —, la demande
          * est refusee <b>quelle que soit sa qualite par ailleurs</b> : ici l'origine
          * existe, elle est close, dans les delais, sur la bonne unite, avec un motif.
          * Tout est juste, et le refus tombe quand meme.
@@ -839,6 +852,10 @@ class OuvertureComplementaireServiceTest {
 
     private void ouvrirLeDrapeau() {
         fixerValeur(FonctionnaliteService.CODE_RATTRAPAGE_ACTIF, "true");
+    }
+
+    private void fermerLeDrapeau() {
+        fixerValeur(FonctionnaliteService.CODE_RATTRAPAGE_ACTIF, "false");
     }
 
     private void supprimerLeDrapeau() {
