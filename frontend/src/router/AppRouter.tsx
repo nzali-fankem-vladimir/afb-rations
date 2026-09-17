@@ -7,6 +7,8 @@ import { PageIntrouvable } from '../pages/PageIntrouvable'
 import { PageProvisoire } from '../pages/PageProvisoire'
 import { ProcessusListPage } from '../pages/processus/ProcessusListPage'
 import { SaisieProcessusPage } from '../pages/saisie/SaisieProcessusPage'
+import { ExamenProcessusPage } from '../pages/validation/ExamenProcessusPage'
+import { ValidationListPage } from '../pages/validation/ValidationListPage'
 import { useAuth } from '../hooks/useAuth'
 import { ProtectedRoute } from './ProtectedRoute'
 
@@ -24,6 +26,8 @@ function elementPourLien(href: string) {
     // /saisie/:idProcessus (route de detail ci-dessous).
     case '/saisie':
       return <Navigate to="/processus" replace />
+    case '/validation':
+      return <ValidationListPage />
     default:
       return null
   }
@@ -55,6 +59,13 @@ export function AppRouter() {
                   protege rien, seul le garde-role compte. */}
               {lien.href === '/saisie' && (
                 <Route path="/saisie/:idProcessus" element={<SaisieProcessusPage />} />
+              )}
+              {/* /validation/:idProcessus : route de detail sans lien propre dans la
+                  sidebar, meme convention que /saisie/:idProcessus (decision Sprint
+                  7F.4, section 2 de docs/decisions/2026-09-16-ecrans-de-saisie-agent-
+                  et-appels-multi-services.md). */}
+              {lien.href === '/validation' && (
+                <Route path="/validation/:idProcessus" element={<ExamenProcessusPage />} />
               )}
             </Route>
           ))}

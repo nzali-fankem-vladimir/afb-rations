@@ -34,6 +34,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import cm.afrilandfirstbank.rations.reporting.domaine.NatureEnum;
 import cm.afrilandfirstbank.rations.reporting.domaine.Rapport;
 import cm.afrilandfirstbank.rations.reporting.domaine.SessionEnum;
+import cm.afrilandfirstbank.rations.reporting.domaine.StatutEnum;
 import cm.afrilandfirstbank.rations.reporting.domaine.exception.FormatExportInvalideException;
 import cm.afrilandfirstbank.rations.reporting.domaine.exception.PeriodeInvalideException;
 
@@ -83,8 +84,15 @@ public class ReportingController {
      * Recherche multicritère paginée (CT-30).
      *
      * <p>Tous les filtres sont optionnels et se combinent librement : période,
-     * unité, session, nature, bénéficiaire. {@code periode} suit le format
+     * unité, session, nature, bénéficiaire, statut. {@code periode} suit le format
      * {@code AAAA-MM}, comme les autres dates du contrat d'API (ISO 8601).
+     *
+     * <p>{@code statut} (Sprint 7F.5) relaie tel quel un filtre que l'endpoint
+     * interne {@code GET /processus/recherche} du service Workflow accepte déjà
+     * depuis le Sprint 6.1 : sans lui, un écran de validation ne pouvait pas
+     * demander « en attente de mon niveau » sans reconstituer côté client une
+     * liste déjà paginée par le serveur — faux dès que la page consultée ne
+     * contient aucun dossier en attente.
      *
      * <p>Une recherche sans résultat rend {@code 200} avec une page vide — jamais
      * une erreur. Un volume trop grand pour être montré est refusé en
@@ -104,6 +112,7 @@ public class ReportingController {
             @RequestParam(required = false) SessionEnum session,
             @RequestParam(required = false) NatureEnum nature,
             @RequestParam(required = false) String beneficiaire,
+            @RequestParam(required = false) StatutEnum statut,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestHeader(HttpHeaders.AUTHORIZATION) String enteteAutorisation) {
@@ -111,7 +120,7 @@ public class ReportingController {
         exigerBornesOrdonnees(dateDebut, dateFin);
 
         CriteresRecherche criteres = new CriteresRecherche(dateDebut, dateFin, codeUnite, nature,
-                session, beneficiaire);
+                session, beneficiaire, statut);
 
         PageResponse<DemandeResponse> reponse = mapperVersReponse(
                 suiviService.rechercher(criteres, page, size, enteteAutorisation));

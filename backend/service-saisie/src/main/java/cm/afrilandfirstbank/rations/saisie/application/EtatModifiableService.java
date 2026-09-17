@@ -100,7 +100,7 @@ public class EtatModifiableService {
 
         if (!processus.estModifiable()) {
             throw new EtatNonModifiableException(String.format(
-                    "L'etat de la periode %02d/%d pour l'unite %s est %s : il n'est plus modifiable. "
+                    "L'etat de la periode du %s au %s pour l'unite %s est %s : il n'est plus modifiable. "
                             + "Demandez son retour au chef d'unite pour reprendre la saisie.",
                     processus.dateDebut(), processus.dateFin(),
                     processus.codeUnite(), processus.statut()));

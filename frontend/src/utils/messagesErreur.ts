@@ -33,6 +33,11 @@ export const LIBELLES_ERREUR: Record<string, string> = {
   SERVICE_GRILLES_INDISPONIBLE: 'Service des grilles tarifaires indisponible',
   SERVICE_WORKFLOW_INDISPONIBLE: 'Service de workflow indisponible',
   SERVICE_IDENTITE_INDISPONIBLE: "Service d'identité indisponible",
+  // Sprint 7F.5 -- ecrans de validation hierarchique.
+  TRANSITION_INTERDITE: 'Dossier déjà traité',
+  // 500, pas 422 : le validateur n'a rien a corriger, c'est le parametre
+  // d'aiguillage RG-08 qui est indisponible (CLAUDE.md section 15).
+  SEUIL_INDISPONIBLE: "Seuil d'aiguillage indisponible",
 }
 
 const LIBELLE_PAR_DEFAUT = 'Une erreur est survenue'

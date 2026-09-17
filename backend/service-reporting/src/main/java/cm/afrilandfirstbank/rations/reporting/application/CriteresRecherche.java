@@ -3,9 +3,10 @@ package cm.afrilandfirstbank.rations.reporting.application;
 import java.time.LocalDate;
 import cm.afrilandfirstbank.rations.reporting.domaine.NatureEnum;
 import cm.afrilandfirstbank.rations.reporting.domaine.SessionEnum;
+import cm.afrilandfirstbank.rations.reporting.domaine.StatutEnum;
 
 /**
- * Les cinq criteres de la recherche multicritere (CT-30), reunis en un objet.
+ * Les criteres de la recherche multicritere (CT-30), reunis en un objet.
  *
  * <h2>Pourquoi un objet plutot que cinq parametres</h2>
  *
@@ -20,12 +21,15 @@ import cm.afrilandfirstbank.rations.reporting.domaine.SessionEnum;
  * {@code processus_mensuel}. Le contrat expose {@code periode=2026-08} : la
  * traduction se fait au controleur, ou vivent les questions de forme.
  *
- * @param mois 1 a 12, ou nul
- * @param annee annee de paiement, ou nul
+ * @param dateDebut borne de periode, ou nul
+ * @param dateFin borne de periode, ou nul
  * @param codeUnite cinq chiffres du referentiel des codes guichets, ou nul
  * @param nature RATION ou TRANSPORT, ou nul
  * @param session JOUR ou SOIR, ou nul
  * @param beneficiaire numero de compte courant exact, ou fragment de nom, ou nul
+ * @param statut filtre d'avancement du dossier (Sprint 7F.5) -- relaye tel quel a
+ *        {@code GET /processus/recherche}, qui l'accepte deja depuis le Sprint 6.1 ;
+ *        vit dans {@code rations_workflow}, jamais un critere de ligne
  */
 public record CriteresRecherche(
         LocalDate dateDebut,
@@ -33,11 +37,12 @@ public record CriteresRecherche(
         String codeUnite,
         NatureEnum nature,
         SessionEnum session,
-        String beneficiaire) {
+        String beneficiaire,
+        StatutEnum statut) {
 
     /** Aucun filtre : toutes les demandes accessibles a l'utilisateur. */
     public static CriteresRecherche aucun() {
-        return new CriteresRecherche(null, null, null, null, null, null);
+        return new CriteresRecherche(null, null, null, null, null, null, null);
     }
 
     /**

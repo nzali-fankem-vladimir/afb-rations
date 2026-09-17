@@ -69,7 +69,7 @@ public class RapportService {
             String loginUtilisateur,
             String enteteAutorisation) {
 
-        CriteresRecherche criteres = new CriteresRecherche(dateDebut, dateFin, codeUnite, null, null, null);
+        CriteresRecherche criteres = new CriteresRecherche(dateDebut, dateFin, codeUnite, null, null, null, null);
         List<EnTeteDemande> enTetes = agregationService.rechercher(criteres, enteteAutorisation);
 
         List<LigneRapport> lignes = enTetes.stream()

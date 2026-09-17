@@ -17,6 +17,13 @@ export interface ModaleProps {
   /** Absent : la modale est purement informative, seul le bouton "Fermer" est propose. */
   onConfirmer?: () => void | Promise<void>
   onAnnuler?: () => void
+  /**
+   * Desactive le bouton de confirmation independamment de `enCours` (Sprint 7F.5) --
+   * ex. un motif obligatoire vide ou compose uniquement d'espaces (RG-10). Le
+   * controle reste redit cote serveur, cette desactivation n'evite qu'un aller-retour
+   * pour rien.
+   */
+  confirmerDesactive?: boolean
 }
 
 export function Modale({
@@ -28,6 +35,7 @@ export function Modale({
   largeur = 'max-w-sm',
   onConfirmer,
   onAnnuler,
+  confirmerDesactive = false,
 }: ModaleProps) {
   const [enCours, setEnCours] = useState(false)
   const titreId = useId()
@@ -64,7 +72,7 @@ export function Modale({
             {onConfirmer ? 'Annuler' : 'Fermer'}
           </Button>
           {onConfirmer && (
-            <Button variant={variantConfirmer} onClick={confirmer} disabled={enCours}>
+            <Button variant={variantConfirmer} onClick={confirmer} disabled={enCours || confirmerDesactive}>
               {enCours ? 'Veuillez patienter…' : libelleConfirmer}
             </Button>
           )}

@@ -4,6 +4,7 @@ import { CheckCircle2, Send } from 'lucide-react'
 import { AffichageErreur } from '../../components/communs/AffichageErreur'
 import { Alert, AlertDescription } from '../../components/communs/Alert'
 import { Button } from '../../components/communs/Button'
+import { Modale } from '../../components/communs/Modale'
 import { Tableau } from '../../components/communs/Tableau'
 import type { Colonne } from '../../components/communs/Tableau'
 import type { ApiErrorResponse } from '../../api/apiClient'
@@ -40,9 +41,9 @@ export function ConsultationEtatTab({ idProcessus, modifiable, onSoumissionReuss
   const [etat, setEtat] = useState<EtatProcessusResponse | null>(null)
   const [chargement, setChargement] = useState(true)
   const [erreurChargement, setErreurChargement] = useState<ApiErrorResponse | null>(null)
-  const [soumissionEnCours, setSoumissionEnCours] = useState(false)
   const [erreurSoumission, setErreurSoumission] = useState<ApiErrorResponse | null>(null)
   const [soumissionReussie, setSoumissionReussie] = useState<SoumissionResponse | null>(null)
+  const [confirmationOuverte, setConfirmationOuverte] = useState(false)
 
   useEffect(() => {
     let annule = false
@@ -61,12 +62,16 @@ export function ConsultationEtatTab({ idProcessus, modifiable, onSoumissionReuss
     }
   }, [idProcessus])
 
+  // Boucle par Modale (guide implicite : desactiver une action impossible vaut
+  // mieux que la laisser echouer -- ici, un clic de trop sur "Soumettre").
+  // L'etat de chargement du bouton de confirmation est gere par Modale
+  // elle-meme (prop `enCours` interne), rien a dupliquer ici.
   const soumettre = async () => {
     setErreurSoumission(null)
-    setSoumissionEnCours(true)
     try {
       const reponse = await soumettreProcessus(idProcessus)
       setSoumissionReussie(reponse)
+      setConfirmationOuverte(false)
       onSoumissionReussie()
       // L'ecriture est fermee cote Saisie apres soumission : le total recalcule
       // ne peut plus differer du total desormais porte par le processus.
@@ -74,8 +79,6 @@ export function ConsultationEtatTab({ idProcessus, modifiable, onSoumissionReuss
       setEtat(etatMisAJour)
     } catch (erreurApi) {
       setErreurSoumission(erreurApi as ApiErrorResponse)
-    } finally {
-      setSoumissionEnCours(false)
     }
   }
 
@@ -113,14 +116,38 @@ export function ConsultationEtatTab({ idProcessus, modifiable, onSoumissionReuss
         </span>
       </div>
 
-      {erreurSoumission && <AffichageErreur erreur={erreurSoumission} />}
-
       <div className="flex justify-end">
-        <Button onClick={soumettre} disabled={!modifiable || soumissionReussie !== null} isLoading={soumissionEnCours}>
-          {!soumissionEnCours && <Send className="h-4 w-4" aria-hidden="true" />}
+        <Button
+          onClick={() => {
+            setErreurSoumission(null)
+            setConfirmationOuverte(true)
+          }}
+          disabled={!modifiable || soumissionReussie !== null}
+        >
+          <Send className="h-4 w-4" aria-hidden="true" />
           Soumettre l'état
         </Button>
       </div>
+
+      {confirmationOuverte && (
+        <Modale
+          titre="Confirmer la soumission"
+          libelleConfirmer="Soumettre"
+          variantConfirmer="default"
+          onAnnuler={() => setConfirmationOuverte(false)}
+          onConfirmer={soumettre}
+          contenu={
+            <div className="flex flex-col gap-4">
+              <p className="text-sm text-neutral-700">
+                Le total de la période ({etat.montantTotalFcfa === null ? '—' : formatMontantFcfa(etat.montantTotalFcfa)})
+                sera transmis pour validation. Une fois soumis, l'état n'est plus modifiable — seul un retour du
+                chef d'unité ou du directeur réseau permettrait de le corriger.
+              </p>
+              {erreurSoumission && <AffichageErreur erreur={erreurSoumission} />}
+            </div>
+          }
+        />
+      )}
     </div>
   )
 }

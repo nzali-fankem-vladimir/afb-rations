@@ -41,7 +41,11 @@ export const Alert = forwardRef<HTMLDivElement, AlertProps>(({ className, varian
 ))
 Alert.displayName = 'Alert'
 
-export const AlertDescription = forwardRef<HTMLParagraphElement, HTMLAttributes<HTMLParagraphElement>>(
-  ({ className, ...props }, ref) => <p ref={ref} className={cn('leading-relaxed', className)} {...props} />,
+// <div>, pas <p> : le contenu porte le plus souvent plusieurs blocs (un titre,
+// un detail, une liste de manques -- AffichageErreur, ResultatValidation...),
+// et un <p> imbrique dans un <p> est un HTML invalide qui declenche une erreur
+// d'hydratation (Sprint 7F.5, constate en reel sur l'ecran de reprise agent).
+export const AlertDescription = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
+  ({ className, ...props }, ref) => <div ref={ref} className={cn('leading-relaxed', className)} {...props} />,
 )
 AlertDescription.displayName = 'AlertDescription'

@@ -24,6 +24,22 @@ export function formatJourSemaineCourt(dateIso: string): string {
 }
 
 /**
+ * Une date-heure ISO (LocalDateTime backend, ex. "2026-09-16T10:23:45") affichee
+ * au format francais JJ/MM/AAAA HH:mm. Utilise pour les signatures et les etapes
+ * de l'historique (guide 7F.5, etape 3) -- jamais la seule date, l'heure
+ * distingue deux passages du meme jour au meme niveau apres un retour.
+ */
+export function formatDateHeure(dateTimeIso: string): string {
+  return new Date(dateTimeIso).toLocaleString('fr-FR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+/**
  * Toutes les dates entre dateDebut et dateFin, BORNES INCLUSES (Maille 1) :
  * dateFin est le dernier jour de la periode, jamais le premier de la suivante.
  * Utilise pour borner le calendrier de saisie a la periode reelle de l'etat

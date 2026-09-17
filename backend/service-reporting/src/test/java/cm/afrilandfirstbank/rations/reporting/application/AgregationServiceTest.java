@@ -80,7 +80,7 @@ class AgregationServiceTest {
     @Test
     @DisplayName("2. filtre sur la periode seule : transmis au Workflow, la Saisie n'est pas appelee")
     void filtrePeriodeSeule_transmisAuWorkflow_sansLaSaisie() {
-        CriteresRecherche criteres = new CriteresRecherche(LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 1).plusMonths(1).minusDays(1), null, null, null, null);
+        CriteresRecherche criteres = new CriteresRecherche(LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 1).plusMonths(1).minusDays(1), null, null, null, null, null);
 
         when(workflowClient.rechercher(eq(LocalDate.of(2026, 8, 1)), eq(LocalDate.of(2026, 8, 31)), isNull(), isNull(), eq(LIMITE), eq(JETON)))
                 .thenReturn(new ResultatRechercheDemandes.Obtenue(List.of(enTete(5))));
@@ -92,9 +92,24 @@ class AgregationServiceTest {
     }
 
     @Test
+    @DisplayName("2bis. filtre sur le statut (Sprint 7F.5) : relaye tel quel au Workflow, la Saisie n'est pas appelee")
+    void filtreStatut_relayeAuWorkflow_sansLaSaisie() {
+        CriteresRecherche criteres = new CriteresRecherche(null, null, null, null, null, null,
+                cm.afrilandfirstbank.rations.reporting.domaine.StatutEnum.EN_ATTENTE_DA);
+
+        when(workflowClient.rechercher(isNull(), isNull(), isNull(), eq("EN_ATTENTE_DA"), eq(LIMITE), eq(JETON)))
+                .thenReturn(new ResultatRechercheDemandes.Obtenue(List.of(enTete(7))));
+
+        List<EnTeteDemande> resultat = service.rechercher(criteres, JETON);
+
+        assertThat(resultat).extracting(EnTeteDemande::id).containsExactly(7L);
+        verifyNoInteractions(saisieClient);
+    }
+
+    @Test
     @DisplayName("3. filtre sur la nature seule : la Saisie est appelee et restreint le resultat")
     void filtreNatureSeule_croiseAvecLaSaisie() {
-        CriteresRecherche criteres = new CriteresRecherche(null, null, null, NatureEnum.RATION, null, null);
+        CriteresRecherche criteres = new CriteresRecherche(null, null, null, NatureEnum.RATION, null, null, null);
 
         when(workflowClient.rechercher(isNull(), isNull(), isNull(), isNull(), eq(LIMITE), eq(JETON)))
                 .thenReturn(new ResultatRechercheDemandes.Obtenue(List.of(enTete(1), enTete(2), enTete(3))));
@@ -110,7 +125,7 @@ class AgregationServiceTest {
     @Test
     @DisplayName("4. filtres combines periode et beneficiaire : croisement strict des deux sources")
     void filtresCombines_periodeEtBeneficiaire_croisentLesDeuxSources() {
-        CriteresRecherche criteres = new CriteresRecherche(LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 1).plusMonths(1).minusDays(1), null, null, null, "10001234567");
+        CriteresRecherche criteres = new CriteresRecherche(LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 1).plusMonths(1).minusDays(1), null, null, null, "10001234567", null);
 
         when(workflowClient.rechercher(eq(LocalDate.of(2026, 8, 1)), eq(LocalDate.of(2026, 8, 31)), isNull(), isNull(), eq(LIMITE), eq(JETON)))
                 .thenReturn(new ResultatRechercheDemandes.Obtenue(List.of(enTete(10), enTete(11), enTete(12))));
@@ -128,7 +143,7 @@ class AgregationServiceTest {
     @Test
     @DisplayName("5. aucun resultat : reponse vide explicite, jamais une erreur")
     void aucunResultat_reponseVideExplicite() {
-        CriteresRecherche criteres = new CriteresRecherche(null, null, null, NatureEnum.TRANSPORT, null, null);
+        CriteresRecherche criteres = new CriteresRecherche(null, null, null, NatureEnum.TRANSPORT, null, null, null);
 
         when(workflowClient.rechercher(isNull(), isNull(), isNull(), isNull(), eq(LIMITE), eq(JETON)))
                 .thenReturn(new ResultatRechercheDemandes.Obtenue(List.of()));
@@ -167,7 +182,7 @@ class AgregationServiceTest {
     @Test
     @DisplayName("8b. service Saisie injoignable ET critere de ligne demande : echec net, jamais un resultat partiel")
     void serviceSaisieInjoignable_avecCritereDeLigne_echecNet() {
-        CriteresRecherche criteres = new CriteresRecherche(null, null, null, NatureEnum.RATION, null, null);
+        CriteresRecherche criteres = new CriteresRecherche(null, null, null, NatureEnum.RATION, null, null, null);
 
         when(workflowClient.rechercher(isNull(), isNull(), isNull(), isNull(), eq(LIMITE), eq(JETON)))
                 .thenReturn(new ResultatRechercheDemandes.Obtenue(List.of(enTete(1))));
@@ -182,7 +197,7 @@ class AgregationServiceTest {
     @Test
     @DisplayName("Refus de portee du Workflow : relaye tel quel, en UtilisateurNonHabiliteException")
     void refusDePortee_relayeTelQuel() {
-        CriteresRecherche criteres = new CriteresRecherche(null, null, "00099", null, null, null);
+        CriteresRecherche criteres = new CriteresRecherche(null, null, "00099", null, null, null, null);
 
         when(workflowClient.rechercher(isNull(), isNull(), eq("00099"), isNull(), eq(LIMITE), eq(JETON)))
                 .thenReturn(new ResultatRechercheDemandes.AccesRefuse(

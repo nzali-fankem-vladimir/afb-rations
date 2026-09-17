@@ -2,13 +2,16 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 
 import { AffichageErreur } from '../../components/communs/AffichageErreur'
+import { Alert, AlertDescription } from '../../components/communs/Alert'
 import { BadgeStatutProcessus } from '../../components/communs/Badge'
 import { PageHeader } from '../../components/layout/PageHeader'
 import { cn } from '../../utils/cn'
 import type { ApiErrorResponse } from '../../api/apiClient'
 import type { ProcessusResponse } from '../../api/processusApi'
 import { consulterProcessus } from '../../api/processusApi'
-import { formatPeriode } from '../../utils/formatters'
+import type { EtapeHistoriqueResponse } from '../../api/reportingApi'
+import { consulterHistorique } from '../../api/reportingApi'
+import { formatDateHeure, formatPeriode } from '../../utils/formatters'
 import { estStatutModifiable } from '../../utils/statutProcessus'
 import { ConsultationEtatTab } from './ConsultationEtatTab'
 import { SaisieJournaliereTab } from './SaisieJournaliereTab'
@@ -29,6 +32,7 @@ export function SaisieProcessusPage() {
   const [chargement, setChargement] = useState(true)
   const [erreur, setErreur] = useState<ApiErrorResponse | null>(null)
   const [onglet, setOnglet] = useState<Onglet>('SAISIE')
+  const [etapeRetour, setEtapeRetour] = useState<EtapeHistoriqueResponse | null>(null)
 
   useEffect(() => {
     let annule = false
@@ -46,6 +50,35 @@ export function SaisieProcessusPage() {
       annule = true
     }
   }, [idProcessusNumerique])
+
+  // Auteur et date du retour (guide 7F.5, etape 6, US-11) : absents de
+  // ProcessusResponse.motifRetour, qui ne porte que le texte -- un seul appel
+  // supplementaire, uniquement quand l'etat est effectivement RETOURNE. Ne
+  // reinitialise jamais etapeRetour a null hors de ce cas : le rendu ne le lit
+  // que sous la garde `processus.statut === 'RETOURNE'`, une valeur restee en
+  // memoire d'un statut anterieur n'est donc jamais affichee a tort.
+  useEffect(() => {
+    if (processus?.statut !== 'RETOURNE') {
+      return
+    }
+    let annule = false
+    consulterHistorique(idProcessusNumerique)
+      .then((historique) => {
+        if (annule) return
+        const derniereEtapeRetournee = [...historique.etapes]
+          .filter((etape) => etape.statutEtape === 'RETOURNEE')
+          .sort((a, b) => b.ordreEtape - a.ordreEtape)[0]
+        setEtapeRetour(derniereEtapeRetournee ?? null)
+      })
+      .catch(() => {
+        // L'affichage du motif reste possible via processus.motifRetour meme si
+        // l'historique est indisponible : l'auteur et la date restent alors tus,
+        // mais l'agent n'est jamais prive du texte du retour lui-meme.
+      })
+    return () => {
+      annule = true
+    }
+  }, [idProcessusNumerique, processus?.statut])
 
   if (chargement) {
     return (
@@ -87,6 +120,19 @@ export function SaisieProcessusPage() {
           </div>
           <BadgeStatutProcessus statut={processus.statut} />
         </div>
+
+        {processus.statut === 'RETOURNE' && processus.motifRetour && (
+          <Alert variant="warning">
+            <AlertDescription>
+              <p className="font-medium">
+                Ce dossier a été retourné{etapeRetour ? ` par ${etapeRetour.loginActeur ?? etapeRetour.nomActeur ?? 'un valideur'}` : ''}
+                {etapeRetour ? ` le ${formatDateHeure(etapeRetour.dateAction)}` : ''}.
+              </p>
+              <p>Motif : {processus.motifRetour}</p>
+              <p>Corrigez vos lignes puis soumettez à nouveau depuis l'onglet « Consultation &amp; soumission ».</p>
+            </AlertDescription>
+          </Alert>
+        )}
 
         {onglet === 'SAISIE' ? (
           <SaisieJournaliereTab

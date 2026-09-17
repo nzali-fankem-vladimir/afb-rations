@@ -1174,3 +1174,70 @@ du contrat d'API qui doit être corrigé en priorité** : il est lu par l'équip
 module de comptabilisation, et c'est lui qui a propagé l'erreur jusque dans les
 jeux d'essai. À reprendre dans la même passe que la forme de la période, quand la
 DFT aura statué (M-04).
+
+---
+
+## PDF signé — endpoint de téléchargement reporté (Sprint 7F.5)
+
+**Ouvert le 16 septembre 2026**, à l'étape 1 du Sprint 7F.5 (écrans de
+validation hiérarchique). Décision tranchée avec l'utilisateur : **aucun
+endpoint de téléchargement n'est créé à ce sprint** ; l'écran d'examen du
+Chef d'Unité et du Directeur Réseau affiche les signatures apposées (acteur,
+date, via `GET /reporting/processus/{id}/historique`) sans lien vers le
+document lui-même. Voir
+`docs/decisions/2026-09-16-ecrans-de-validation-hierarchique-et-trois-manques-backend.md`
+point 3.
+
+### Le fait
+
+`pieceJointe.cheminFichier` (rendu par `POST /processus/{id}/soumission` et
+par `ValidationResponse.pieceJointe`) est un **chemin relatif côté serveur**
+(exemple : `2026/09/etat-rations-00002-20260901-p6005.pdf`), pas une URL.
+Aucun des 26 endpoints du contrat d'API ne sert ce fichier. Le seul document
+téléchargeable du module aujourd'hui est le rapport d'activité du service
+Reporting (`GET /reporting/rapports/export`, Sprint 6.2).
+
+### Pourquoi ce n'est pas un détail d'affichage
+
+Un chef d'unité ou un directeur réseau qui valide un dossier n'a aujourd'hui
+**aucun moyen de relire le document PDF signé** avant de se prononcer une
+seconde fois (second niveau) ou d'y renvoyer un contrôle interne après coup.
+L'écran de validation du Sprint 7F.5 compense partiellement en affichant les
+signatures (acteur, date) directement depuis l'historique — ce qui couvre le
+« qui a validé, quand », mais pas le « avec quel montant exact affiché sur la
+pièce archivée ».
+
+### Ce qu'il faudrait construire
+
+| Élément | Exigence |
+| --- | --- |
+| Endpoint de téléchargement | Côté service Workflow — c'est lui qui détient `piece_jointe` (CLAUDE.md §4) et déjà `GET /processus/{id}` ; jamais le service Transmission, qui n'a pas de base. |
+| Vérification de portée | Unité par unité, comme tous les autres endpoints du contrat (RG-12, doctrine constante du module) — jamais un accès direct par chemin de fichier. |
+| Événement d'audit | **Obligatoire.** CLAUDE.md §9.2 trace « ce qui fait sortir un fichier du système » — seul précédent aujourd'hui : `EXPORT_RAPPORT` du service Reporting (Sprint 6.3). Un PDF signé qui sortirait sans trace serait le **seul** fichier du module dans ce cas, et casserait la doctrine énoncée au Sprint 6.3 : « on trace ce qui fait sortir un fichier du système, pas ce qui affiche un dossier ». |
+| Rôle | Les trois rôles du circuit a minima (`AGENT_UNITE`, `CHEF_UNITE_DA`, `DIRECTEUR_RESEAU_DR`), sur le modèle de `GET /processus/{id}` — à confirmer avec le métier si l'ARH ou la DRH doivent y accéder aussi. |
+
+### Ce qui rouvrirait ce point
+
+Le premier sous-sprint frontend qui a réellement besoin d'afficher ou de
+télécharger le PDF — candidat naturel : un futur écran de suivi/reporting
+(après le 7F.7) ou une demande explicite du contrôle interne. **Ne pas
+construire cet endpoint « en passant » dans un sous-sprint qui n'en a pas
+besoin** : il touche un service hors périmètre frontend et doit être livré
+avec ses propres tests et sa vérification réelle, comme le rappelle le guide
+7F.5 lui-même.
+
+### Vérifié le 17 septembre 2026 : aucun sous-sprint planifié ne le porte
+
+Relecture de `docs/initialisation projet/planning_de_developpement.md` et de
+`guide_implementation_00_document_maitre.md` : la planification frontend
+s'arrête à **7F.7 (« suivi et reporting »)**, dernier sous-sprint listé.
+Aucun des deux documents ne nomme un endpoint de téléchargement du PDF signé,
+à aucun sous-sprint. **Ce point n'a donc aujourd'hui aucun propriétaire dans
+le planning** — sans intervention, il resterait ouvert indéfiniment une fois
+le 7F.7 clos, plutôt que d'être repris par le sous-sprint suivant qui s'y
+prêterait.
+
+**Action attendue** : au moment d'arrêter le contenu du sous-sprint qui suit
+le 7F.7 (module Reporting côté frontend, ou tout sous-sprint ultérieur),
+vérifier explicitement si ce point est repris ; sinon, le signaler comme
+non planifié plutôt que de le laisser retomber dans l'oubli une seconde fois.

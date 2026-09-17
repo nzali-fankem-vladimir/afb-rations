@@ -161,3 +161,122 @@ export async function soumettreProcessus(id: number): Promise<SoumissionResponse
   const reponse = await workflowApiClient.post<SoumissionResponse>(`/processus/${id}/soumission`)
   return reponse.data
 }
+
+// --- Sprint 7F.5 : validation, aiguillage et retour -------------------------
+
+/**
+ * Les TROIS valeurs d'aiguillage, plus `null` (guide 7F.5, tableau section "Ce
+ * qui a change"). Deduit de DecisionAiguillage.java (service Workflow), pas du
+ * seul contrat d'api : celui-ci ne connait pas encore
+ * COMPLEMENTAIRE_ENVOI_DIRECTEUR_RESEAU (Sprint 6bis.1), et le contrat est de
+ * toute facon ignore par git.
+ */
+export type AiguillageEnum =
+  | 'SOUS_SEUIL_CLOTURE_DIRECTE'
+  | 'ENVOI_DIRECTEUR_RESEAU'
+  | 'COMPLEMENTAIRE_ENVOI_DIRECTEUR_RESEAU'
+
+/**
+ * Le document, apres apposition du visa (ValidationResponse.PieceJointeResponse).
+ *
+ * ATTENTION -- distinct de PieceJointeSoumission ci-dessus : pas de typeMime,
+ * et le dernier champ se nomme dateDerniereModification (pas dateCreation). Les
+ * deux DTO Java ne sont pas le meme type, malgre la ressemblance.
+ */
+export interface PieceJointeValidation {
+  id: number
+  cheminFichier: string
+  nombreSignatures: number
+  dateDerniereModification: string
+}
+
+/**
+ * Ce que la mise a disposition comptable a donne (ValidationResponse.TransmissionResponse).
+ * Nul quand la validation ne cloture pas -- un etat aiguille vers le directeur
+ * reseau n'a rien a transmettre. `transmis` peut valoir false MEME quand la
+ * validation a reussi : la cloture est acquise quand meme (CLAUDE.md 9.1), et
+ * aucune reprise automatique n'existe -- c'est le seul endroit ou un humain
+ * l'apprend (guide 7F.5, section "Ce qui a change").
+ */
+export interface TransmissionValidation {
+  transmis: boolean
+  motif: string | null
+  tentatives: number
+}
+
+/**
+ * Reponse de POST /processus/{id}/validation (ValidationResponse.java).
+ *
+ * aiguillage et seuilApplique sont NULS au second niveau (validation par le
+ * Directeur Reseau) : apres son visa il n'y a plus d'echelon, aucune
+ * comparaison n'a lieu. seuilApplique est aussi nul pour un etat COMPLEMENTAIRE
+ * au premier niveau -- le seuil n'est meme pas lu (Sprint 6bis.1). Un seuil nul
+ * ne veut jamais dire "seuil a zero" : zero est une valeur de seuil acceptee et
+ * se distinguerait alors par aiguillage = SOUS_SEUIL_CLOTURE_DIRECTE avec
+ * seuilApplique = 0.
+ */
+export interface ValidationResponse {
+  idProcessus: number
+  statut: string
+  montantTotal: number
+  aiguillage: AiguillageEnum | null
+  seuilApplique: number | null
+  pieceJointe: PieceJointeValidation
+  etape: EtapeSoumission
+  transmission: TransmissionValidation | null
+}
+
+/** Corps de POST /processus/{id}/retour (RetourRequest.java) : le motif, rien d'autre. */
+export interface RetourRequest {
+  motif: string
+}
+
+/** L'etape RETOURNEE qui porte le motif (RetourResponse.EtapeRetourneeResponse). */
+export interface EtapeRetourneeResponse {
+  id: number
+  ordreEtape: number
+  nomEtape: string
+  statutEtape: string
+  motifRetour: string
+  dateCreation: string
+}
+
+/**
+ * Reponse de POST /processus/{id}/retour (RetourResponse.java).
+ *
+ * niveauOrigine et statut sont rendus cote a cote deliberement : le statut
+ * vaut TOUJOURS RETOURNE, que le niveau d'origine soit CHEF_UNITE ou
+ * DIRECTEUR_RESEAU (RG-11) -- jamais un statut intermediaire.
+ *
+ * ATTENTION -- niveauOrigine vient de NiveauValidation.java (domaine), dont
+ * les constantes sont CHEF_UNITE et DIRECTEUR_RESEAU : PAS les memes libelles
+ * que RoleEnum (CHEF_UNITE_DA, DIRECTEUR_RESEAU_DR).
+ */
+export interface RetourResponse {
+  idProcessus: number
+  statut: string
+  niveauOrigine: 'CHEF_UNITE' | 'DIRECTEUR_RESEAU'
+  etape: EtapeRetourneeResponse
+}
+
+/**
+ * Valide un etat au niveau ou il se trouve (aucun corps de requete : le montant
+ * vient du processus, le seuil de parametre_systeme). Reserve a CHEF_UNITE_DA
+ * et DIRECTEUR_RESEAU_DR ; c'est le STATUT du dossier qui designe le niveau
+ * traite, pas le role de l'appelant (RG-07).
+ */
+export async function validerProcessus(id: number): Promise<ValidationResponse> {
+  const reponse = await workflowApiClient.post<ValidationResponse>(`/processus/${id}/validation`)
+  return reponse.data
+}
+
+/**
+ * Retourne un etat a l'agent d'unite, motif obligatoire (RG-10). RG-11 : le
+ * statut cible est toujours RETOURNE, quel que soit le niveau d'origine.
+ */
+export async function retournerProcessus(id: number, motif: string): Promise<RetourResponse> {
+  const reponse = await workflowApiClient.post<RetourResponse>(`/processus/${id}/retour`, {
+    motif,
+  } satisfies RetourRequest)
+  return reponse.data
+}

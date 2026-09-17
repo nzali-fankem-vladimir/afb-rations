@@ -18,11 +18,13 @@ import cm.afrilandfirstbank.rations.reporting.domaine.exception.UtilisateurNonHa
  *
  * <h2>Le probleme, en une phrase</h2>
  *
- * <p>La recherche multicritere de CT-30 porte sur cinq criteres : la periode et
- * l'unite vivent dans {@code rations_workflow}, la nature, la session et le
- * beneficiaire dans {@code rations_saisie}. Ce service n'a <b>pas de base</b> et
- * n'accede a aucune des deux (AR04). Le croisement se fait donc ici, en memoire,
- * a partir de deux appels d'API.
+ * <p>La recherche multicritere de CT-30 porte sur six criteres : la periode,
+ * l'unite et le statut vivent dans {@code rations_workflow} (le statut depuis le
+ * Sprint 7F.5 -- l'endpoint interne l'acceptait deja au Sprint 6.1, seul le
+ * relais manquait ici), la nature, la session et le beneficiaire dans
+ * {@code rations_saisie}. Ce service n'a <b>pas de base</b> et n'accede a aucune
+ * des deux (AR04). Le croisement se fait donc ici, en memoire, a partir de deux
+ * appels d'API.
  *
  * <h2>La strategie : deux appels a somme fixe</h2>
  *
@@ -108,8 +110,9 @@ public class AgregationService {
      * aurait ramene ce qu'on cherchait justement a ne pas ramener.
      */
     private List<EnTeteDemande> lireEnTetes(CriteresRecherche criteres, String enteteAutorisation) {
+        String statut = criteres.statut() == null ? null : criteres.statut().name();
         ResultatRechercheDemandes resultat = workflowClient.rechercher(
-                criteres.dateDebut(), criteres.dateFin(), criteres.codeUnite(), null,
+                criteres.dateDebut(), criteres.dateFin(), criteres.codeUnite(), statut,
                 limiteResultats, enteteAutorisation);
 
         return switch (resultat) {
