@@ -164,7 +164,7 @@ confirmation.
 | Motif obligatoire, bouton inactif si vide | ✅ Vérifié |
 | Message rappelant le retour vers l'agent | ✅ Vérifié |
 | Motif visible côté agent | ✅ Vérifié (texte + auteur + date) |
-| Parcours complet retour, correction, resoumission | ⏳ Vérification visuelle utilisateur (voir plus bas) |
+| Parcours complet retour, correction, resoumission | ✅ Confirmé par l'utilisateur le 17 septembre 2026, après correction des deux régressions ci-dessus |
 
 Contrôles techniques : `tsc -b --force` (0 erreur), `oxlint` (0 avertissement),
 `npm run build` réussi ; `mvn test -pl service-reporting` (34/34, dont le
@@ -265,8 +265,9 @@ correctif du crash de formatage, tous deux vérifiés actifs via
 11. Vérifier l'absence d'erreur dans la console et l'onglet réseau du
     navigateur.
 
-Si des ajustements sont faits après ce test, ce résumé sera mis à jour avant
-le commit.
+**Parcours confirmé par l'utilisateur le 17 septembre 2026**, après correction
+des deux régressions ci-dessus : le dernier critère resté en suspens est
+levé, le sprint est clos.
 
 ---
 
