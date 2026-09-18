@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 
 import { AffichageErreur } from '../../components/communs/AffichageErreur'
 import { Alert, AlertDescription } from '../../components/communs/Alert'
@@ -31,7 +31,15 @@ export function SaisieProcessusPage() {
   const [processus, setProcessus] = useState<ProcessusResponse | null>(null)
   const [chargement, setChargement] = useState(true)
   const [erreur, setErreur] = useState<ApiErrorResponse | null>(null)
-  const [onglet, setOnglet] = useState<Onglet>('SAISIE')
+  const [searchParams] = useSearchParams()
+  // Ouvre directement sur "Consultation & soumission" quand on arrive depuis
+  // l'historique (rattrapage post-7F.7, bouton "Voir le dossier") -- lu une
+  // seule fois au montage, jamais resynchronise ensuite : un agent qui bascule
+  // ensuite vers "Saisie" ne doit pas se faire ramener de force par un
+  // changement ulterieur de l'URL.
+  const [onglet, setOnglet] = useState<Onglet>(
+    searchParams.get('onglet') === 'consultation' ? 'CONSULTATION' : 'SAISIE',
+  )
   const [etapeRetour, setEtapeRetour] = useState<EtapeHistoriqueResponse | null>(null)
 
   useEffect(() => {
@@ -122,6 +130,23 @@ export function SaisieProcessusPage() {
             <BadgeStatutProcessus statut={processus.statut} />
           </div>
         </div>
+
+        {/* Bandeau permanent, jamais refermable : on saisit sur une periode
+            DEJA PAYEE, et c'est la seule chose reprise du mode rattrapage de
+            DOTTEL (guide 7F.7, etape 6 -- son calcul des "beneficiaires non
+            payes" suppose l'enrolement, interdit ici). */}
+        {processus.typeProcessus === 'COMPLEMENTAIRE' && (
+          <Alert variant="warning">
+            <AlertDescription>
+              <p className="font-medium">Régularisation sur une période déjà payée.</p>
+              <p>
+                L'état d'origine de cette période est clôturé et reste inchangé. Ne saisissez ici que les prestations
+                réellement omises : toute combinaison déjà servie sera refusée.
+                {processus.motifOuverture && <> Motif d'ouverture : {processus.motifOuverture}</>}
+              </p>
+            </AlertDescription>
+          </Alert>
+        )}
 
         {processus.statut === 'RETOURNE' && processus.motifRetour && (
           <Alert variant="warning">

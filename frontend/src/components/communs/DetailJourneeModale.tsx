@@ -1,7 +1,7 @@
-import { Badge } from '../../components/communs/Badge'
-import { Modale } from '../../components/communs/Modale'
-import { Tableau } from '../../components/communs/Tableau'
-import type { Colonne } from '../../components/communs/Tableau'
+import { Badge } from './Badge'
+import { Modale } from './Modale'
+import { Tableau } from './Tableau'
+import type { Colonne } from './Tableau'
 import type { JourneeConsolidee, LigneConsolidee } from '../../api/processusApi'
 import { formatDateLongue, formatMontantFcfa } from '../../utils/formatters'
 
@@ -47,15 +47,19 @@ export interface DetailJourneeModaleProps {
 }
 
 /**
- * Detail complet d'une journee pour le valideur (Chef d'Unite / Directeur
- * Reseau) : retour utilisateur post-refonte -- le tableau "Detail par
- * journee" de ExamenProcessusPage ne portait que le nombre de lignes et le
- * sous-total, sans l'identite des beneficiaires. Cette information existe
- * deja dans EtatProcessusResponse (JourneeConsolidee.lignes, RG-06) : rien
- * n'est redemande au serveur, seule la restitution manquait.
+ * Detail complet d'une journee : identite des beneficiaires, nature, session
+ * et montant, plutot que le seul nombre de lignes et le sous-total.
  *
- * Lecture seule : le valideur consulte, il ne modifie rien depuis cet ecran
- * (la modification reste le geste de l'agent d'unite, RG-11).
+ * Partagee entre l'ecran de validation (ExamenProcessusPage, Sprint 7F.6 --
+ * retour utilisateur) et l'onglet Consultation & soumission de l'agent
+ * (ConsultationEtatTab, Sprint 7F.7 -- meme constat, meme donnee deja
+ * chargee) : deplacee dans components/communs a ce second usage plutot que
+ * dupliquee, l'une et l'autre lisant le meme JourneeConsolidee.lignes
+ * (EtatProcessusResponse, RG-06) sans aucun appel reseau supplementaire.
+ *
+ * Lecture seule dans les deux cas : ce n'est pas depuis cette modale que se
+ * fait une correction (RG-11, geste exclusif de l'agent, ecran de saisie
+ * journaliere).
  */
 export function DetailJourneeModale({ journee, onFerme }: DetailJourneeModaleProps) {
   return (

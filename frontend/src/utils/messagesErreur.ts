@@ -54,6 +54,26 @@ export const LIBELLES_ERREUR: Record<string, string> = {
   PARAMETRE_INTROUVABLE: 'Paramètre introuvable',
   PARAMETRE_NON_MODIFIABLE: 'Paramètre non modifiable',
   VALEUR_PARAMETRE_INVALIDE: 'Valeur invalide',
+  // Sprint 7F.7 -- les huit refus a l'ouverture d'un etat complementaire
+  // (GestionnaireErreursApi du service Workflow, verifies un a un le
+  // 18 septembre 2026). MOTIF_OBLIGATOIRE est le huitieme : il figure deja
+  // plus haut, partage avec le retour d'un dossier (meme regle, RG-10).
+  //
+  // Chacun a son propre libelle : ces huit refus appellent huit gestes
+  // differents, et les fondre sous un "ouverture impossible" obligerait
+  // l'agent a lire le detail pour savoir lequel le concerne.
+  FONCTIONNALITE_NON_OUVERTE: 'Régularisation fermée',
+  ORIGINE_REQUISE: "État d'origine à choisir",
+  // On ne regularise qu'un etat clos : un etat encore dans le circuit se
+  // corrige directement, sans passer par un complementaire.
+  ETAT_NON_CLOTURE: 'État encore en cours',
+  PERIODE_NON_CONCORDANTE: "Période différente de celle de l'origine",
+  // Ce n'est pas une panne : le delai est une regle de gestion
+  // (DELAI_REGULARISATION_JOURS), et le message doit le dire.
+  DELAI_REGULARISATION_DEPASSE: 'Période trop ancienne pour être régularisée',
+  UNITE_NON_CONCORDANTE: "Unité différente de celle de l'origine",
+  // 500 : le parametre de delai est illisible, l'agent n'a rien a corriger.
+  DELAI_REGULARISATION_INDISPONIBLE: 'Délai de régularisation indisponible',
 }
 
 const LIBELLE_PAR_DEFAUT = 'Une erreur est survenue'

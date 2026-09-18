@@ -95,13 +95,20 @@ export interface EtapeHistoriqueResponse {
   dateAction: string
 }
 
-/** Reponse de GET /reporting/processus/{id}/historique (HistoriqueResponse.java). */
+/**
+ * Reponse de GET /reporting/processus/{id}/historique (HistoriqueResponse.java).
+ *
+ * `statut` est typé StatutEnum et non `string` : le backend le déclare
+ * `String` (comme sur DemandeResponse), mais il n'y écrit jamais qu'une valeur
+ * du statut de processus. Le typer au plus juste ici est ce qui permet de le
+ * rendre par le badge partagé, sans conversion de complaisance.
+ */
 export interface HistoriqueResponse {
   idProcessus: number
   dateDebut: string
   dateFin: string
   codeUnite: string
-  statut: string
+  statut: StatutEnum
   etapes: EtapeHistoriqueResponse[]
 }
 
@@ -117,4 +124,109 @@ export async function consulterHistorique(idProcessus: number): Promise<Historiq
     `/reporting/processus/${idProcessus}/historique`,
   )
   return reponse.data
+}
+
+// --- Sprint 7F.7 : rapports et exports ---------------------------------------
+
+/** Une ligne du rapport (RapportResponse.LigneRapportResponse.java). */
+export interface LigneRapport {
+  idProcessus: number
+  codeUnite: string
+  typeProcessus: TypeProcessusEnum
+  statut: StatutEnum
+  montantTotal: number
+  envoyeComptabilite: boolean
+  situationIntegration: SituationIntegrationEnum
+  dateCreation: string
+}
+
+/** Cumul d'une unite, present uniquement sur un rapport national (sans codeUnite demande). */
+export interface SousTotalUnite {
+  codeUnite: string
+  nombreEtats: number
+  montantTotal: number
+}
+
+/**
+ * Les totaux generaux (CT-32). Trois montants distincts, a ne jamais fondre :
+ * envoye + non envoye + rejete ne resument pas "paye" -- un etat envoye peut
+ * etre rejete ensuite par la comptabilite (vocabulaire impose au Sprint 6.2).
+ */
+export interface SyntheseRapport {
+  nombreEtats: number
+  montantTotalPeriode: number
+  montantEnvoyeComptabilite: number
+  montantNonEnvoyeComptabilite: number
+  montantRejeteComptabilite: number
+  repartitionParStatut: Record<string, number>
+  repartitionParSituation: Partial<Record<SituationIntegrationEnum, number>>
+}
+
+/**
+ * Reponse de GET /reporting/rapports (RapportResponse.java). `vide` a true et
+ * une synthese a zero sur une periode sans aucun etat -- jamais une erreur
+ * (CT-33). Aucun total n'est recalcule cote frontend : ecran et exports
+ * partagent la meme instance de rapport cote serveur (CT-32).
+ */
+export interface RapportResponse {
+  periodeDebut: string
+  periodeFin: string
+  codeUnite: string | null
+  dateGeneration: string
+  loginUtilisateur: string
+  vide: boolean
+  lignes: LigneRapport[]
+  sousTotauxParAgence: SousTotalUnite[]
+  synthese: SyntheseRapport
+}
+
+export interface CriteresRapport {
+  dateDebut: string
+  dateFin: string
+  codeUnite?: string
+}
+
+/** Rapport d'activite d'une periode, reserve a l'ARH. dateDebut/dateFin obligatoires. */
+export async function produireRapport(criteres: CriteresRapport): Promise<RapportResponse> {
+  const reponse = await reportingApiClient.get<RapportResponse>('/reporting/rapports', {
+    params: criteres,
+  })
+  return reponse.data
+}
+
+export type FormatExportRapport = 'pdf' | 'excel'
+
+export interface RapportExporte {
+  contenu: Blob
+  nomFichier: string
+}
+
+/** "attachment; filename=\"rapport-rations-00002-20260901.pdf\"" -> le nom seul. */
+function nomFichierDepuisEnTete(enTeteDisposition: string | undefined, repli: string): string {
+  const correspondance = enTeteDisposition?.match(/filename="?([^"]+)"?/)
+  return correspondance?.[1] ?? repli
+}
+
+/**
+ * Export du meme rapport que produireRapport, en PDF ou Excel -- memes chiffres,
+ * seule la mise en forme change (CT-32). Le nom de fichier vient du serveur
+ * (Content-Disposition), jamais reconstruit ici.
+ *
+ * ATTENTION -- `responseType: 'blob'` : une erreur (ex. 400 PERIODE_INVALIDE)
+ * arrive elle-meme sous forme de Blob. L'intercepteur de `apiClient.ts` la
+ * reconvertit deja (meme mecanisme que le telechargement du document signe,
+ * Sprint 7F.6).
+ */
+export async function exporterRapport(
+  criteres: CriteresRapport,
+  format: FormatExportRapport,
+): Promise<RapportExporte> {
+  const reponse = await reportingApiClient.get<Blob>('/reporting/rapports/export', {
+    params: { ...criteres, format },
+    responseType: 'blob',
+  })
+  return {
+    contenu: reponse.data,
+    nomFichier: nomFichierDepuisEnTete(reponse.headers['content-disposition'], `rapport-rations.${format === 'pdf' ? 'pdf' : 'xlsx'}`),
+  }
 }

@@ -5,6 +5,7 @@ import {
   ClipboardEdit,
   FileBarChart,
   FileCheck,
+  FilePlus2,
   Settings,
   ShieldCheck,
   Users,
@@ -21,12 +22,31 @@ import type { RoleEnum } from '../../types/enums'
  */
 export type GroupeNavigation = 'Mon travail' | 'Référentiel' | 'Administration'
 
+/**
+ * Fonctionnalites pilotees par un drapeau lu au chargement
+ * (GET /parametres/fonctionnalites, Sprint 7F.7 etape 5). Un lien qui en porte
+ * une n'apparait que si son drapeau est ouvert, ET sa route est protegee
+ * separement -- masquer un lien ne protege rien (doctrine du Sprint 7F.3,
+ * appliquee ici au drapeau plutot qu'au role).
+ */
+export type FonctionnaliteNavigation = 'rattrapage'
+
 export interface LienNavigation {
   href: string
   label: string
   icon: ComponentType<{ className?: string; 'aria-hidden'?: boolean }>
   roles: RoleEnum[]
   groupe: GroupeNavigation
+  /**
+   * Drapeau conditionnant l'AFFICHAGE de ce lien. Absent : le lien depend du
+   * seul role.
+   *
+   * ATTENTION -- `routeAccueil` rend le premier lien accessible au role sans
+   * consulter les drapeaux : un lien conditionnel place en tete de son role
+   * deviendrait une page d'accueil parfois inaccessible. Le garder apres un
+   * lien inconditionnel du meme role est ce qui l'evite aujourd'hui.
+   */
+  fonctionnalite?: FonctionnaliteNavigation
   /**
    * Marque le lien qui porte le compteur de dossiers en attente (Sidebar.tsx,
    * useCompteurValidation). Un seul lien le porte aujourd'hui ; le champ reste
@@ -64,6 +84,17 @@ export const LIENS_NAVIGATION: LienNavigation[] = [
     icon: BarChart3,
     roles: ['AGENT_UNITE', 'CHEF_UNITE_DA', 'DIRECTEUR_RESEAU_DR', 'ARH'],
     groupe: 'Mon travail',
+  },
+  // Place APRES /processus et /suivi, tous deux inconditionnels pour l'agent :
+  // routeAccueil ignore les drapeaux, et ce lien en tete ferait une page
+  // d'accueil qui disparait le jour ou la regularisation est refermee.
+  {
+    href: '/regularisation',
+    label: 'Régularisation',
+    icon: FilePlus2,
+    roles: ['AGENT_UNITE'],
+    groupe: 'Mon travail',
+    fonctionnalite: 'rattrapage',
   },
   { href: '/grilles', label: 'Grilles tarifaires', icon: Wallet, roles: ['ARH', 'DRH'], groupe: 'Référentiel' },
   { href: '/rapports', label: 'Rapports', icon: FileBarChart, roles: ['ARH'], groupe: 'Référentiel' },

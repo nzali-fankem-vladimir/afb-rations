@@ -11,6 +11,10 @@ import { GrillesTarifairesPage } from '../pages/grilles/GrillesTarifairesPage'
 import { ParametresAdminPage } from '../pages/admin/ParametresAdminPage'
 import { UtilisateursAdminPage } from '../pages/admin/UtilisateursAdminPage'
 import { ProcessusListPage } from '../pages/processus/ProcessusListPage'
+import { OuvertureComplementairePage } from '../pages/regularisation/OuvertureComplementairePage'
+import { HistoriquePage } from '../pages/reporting/HistoriquePage'
+import { RapportsPage } from '../pages/reporting/RapportsPage'
+import { SuiviPage } from '../pages/reporting/SuiviPage'
 import { SaisieProcessusPage } from '../pages/saisie/SaisieProcessusPage'
 import { ExamenProcessusPage } from '../pages/validation/ExamenProcessusPage'
 import { ValidationListPage } from '../pages/validation/ValidationListPage'
@@ -33,8 +37,14 @@ function elementPourLien(href: string) {
       return <Navigate to="/processus" replace />
     case '/validation':
       return <ValidationListPage />
+    case '/suivi':
+      return <SuiviPage />
     case '/grilles':
       return <GrillesTarifairesPage />
+    case '/rapports':
+      return <RapportsPage />
+    case '/regularisation':
+      return <OuvertureComplementairePage />
     case '/audit':
       return <AuditPage />
     case '/admin/utilisateurs':
@@ -64,7 +74,10 @@ export function AppRouter() {
           <Route index element={<Navigate to={routeAccueil(role)} replace />} />
 
           {LIENS_NAVIGATION.map((lien) => (
-            <Route key={lien.href} element={<ProtectedRoute roles={lien.roles} />}>
+            <Route
+              key={lien.href}
+              element={<ProtectedRoute roles={lien.roles} fonctionnalite={lien.fonctionnalite} />}
+            >
               <Route path={lien.href} element={elementPourLien(lien.href) ?? <PageProvisoire titre={lien.label} />} />
               {/* /saisie/:idProcessus : route de detail sans lien propre dans la
                   sidebar, declaree sous le meme ProtectedRoute que /saisie
@@ -79,6 +92,12 @@ export function AppRouter() {
                   et-appels-multi-services.md). */}
               {lien.href === '/validation' && (
                 <Route path="/validation/:idProcessus" element={<ExamenProcessusPage />} />
+              )}
+              {/* /suivi/:idProcessus : route de detail sans lien propre dans la sidebar,
+                  meme convention -- l'historique complet d'un dossier (guide 7F.7,
+                  etape 3), accessible depuis une ligne du suivi. */}
+              {lien.href === '/suivi' && (
+                <Route path="/suivi/:idProcessus" element={<HistoriquePage />} />
               )}
               {/* /grilles/decisions : route de detail sans lien propre dans la sidebar,
                   meme convention -- mais restreinte a la DRH par un second

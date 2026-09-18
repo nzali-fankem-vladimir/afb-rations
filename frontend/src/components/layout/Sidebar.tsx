@@ -4,6 +4,7 @@ import { ChevronUp, LogOut, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 
 import { useAuth } from '../../hooks/useAuth'
 import { useCompteurValidation } from '../../hooks/useCompteurValidation'
+import { useFonctionnalites } from '../../hooks/useFonctionnalites'
 import { cn } from '../../utils/cn'
 import { LIBELLE_ROLE } from '../../utils/libelleRole'
 import { Logo } from './Logo'
@@ -65,6 +66,7 @@ export function Sidebar() {
   const menuRef = useRef<HTMLDivElement>(null)
   const boutonCompteRef = useRef<HTMLButtonElement>(null)
   const compteValidation = useCompteurValidation(role, location.pathname)
+  const fonctionnalites = useFonctionnalites()
 
   useEffect(() => {
     ecrireSidebarReduite(reduite)
@@ -91,7 +93,16 @@ export function Sidebar() {
     return () => document.removeEventListener('keydown', surEchap)
   }, [menuOuvert])
 
-  const liensVisibles = LIENS_NAVIGATION.filter((lien) => possedeRole(...lien.roles))
+  // Deux filtres, dans cet ordre : le role, puis le drapeau de fonctionnalite.
+  // Un lien conditionnel reste masque tant que le drapeau n'est pas lu -- le
+  // faire apparaitre puis disparaitre serait pire que d'attendre une requete.
+  const liensVisibles = LIENS_NAVIGATION.filter((lien) => {
+    if (!possedeRole(...lien.roles)) return false
+    if (lien.fonctionnalite === 'rattrapage') {
+      return !fonctionnalites.chargement && fonctionnalites.rattrapageActif
+    }
+    return true
+  })
   const hrefActif = trouverHrefActif(
     location.pathname,
     liensVisibles.map((lien) => lien.href),

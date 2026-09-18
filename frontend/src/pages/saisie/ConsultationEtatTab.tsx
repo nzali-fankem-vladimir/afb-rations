@@ -4,12 +4,13 @@ import { CheckCircle2, Send } from 'lucide-react'
 import { AffichageErreur } from '../../components/communs/AffichageErreur'
 import { Alert, AlertDescription } from '../../components/communs/Alert'
 import { Button } from '../../components/communs/Button'
+import { DetailJourneeModale } from '../../components/communs/DetailJourneeModale'
 import { Modale } from '../../components/communs/Modale'
 import { StatTile } from '../../components/communs/StatTile'
 import { Tableau } from '../../components/communs/Tableau'
 import type { Colonne } from '../../components/communs/Tableau'
 import type { ApiErrorResponse } from '../../api/apiClient'
-import type { EtatProcessusResponse, SoumissionResponse } from '../../api/processusApi'
+import type { EtatProcessusResponse, JourneeConsolidee, SoumissionResponse } from '../../api/processusApi'
 import { consulterEtatProcessus, soumettreProcessus, telechargerDocument } from '../../api/processusApi'
 import { useToast } from '../../hooks/useToast'
 import { cn } from '../../utils/cn'
@@ -83,6 +84,12 @@ export function ConsultationEtatTab({ idProcessus, modifiable, onSoumissionReuss
 
   const [telechargementEnCours, setTelechargementEnCours] = useState(false)
   const [erreurTelechargement, setErreurTelechargement] = useState<ApiErrorResponse | null>(null)
+
+  // Journee dont le detail (identite des beneficiaires) est affiche dans une
+  // modale (retour utilisateur, Sprint 7F.7) : ce tableau ne portait jusque-la
+  // que le nombre de lignes et le sous-total, jamais qui est paye -- meme
+  // constat et meme modale que sur l'ecran de validation (guide 7F.6).
+  const [journeeDetail, setJourneeDetail] = useState<JourneeConsolidee | null>(null)
 
   // Un document existe des la premiere soumission (guide 7F.8) : le retour
   // eventuel a l'agent (RETOURNE) ne le fait pas disparaitre, il n'est
@@ -205,6 +212,13 @@ export function ConsultationEtatTab({ idProcessus, modifiable, onSoumissionReuss
         donnees={lignesAffichees}
         cleLigne={(journee) => journee.dateJour}
         messageVide="Aucune journée dans cette période."
+        actions={(journee) =>
+          journee.vide ? null : (
+            <Button variant="ghost" size="sm" onClick={() => setJourneeDetail(journeesParDate.get(journee.dateJour)!)}>
+              Voir
+            </Button>
+          )
+        }
       />
 
       {erreurTelechargement && <AffichageErreur erreur={erreurTelechargement} />}
@@ -247,6 +261,8 @@ export function ConsultationEtatTab({ idProcessus, modifiable, onSoumissionReuss
           }
         />
       )}
+
+      {journeeDetail && <DetailJourneeModale journee={journeeDetail} onFerme={() => setJourneeDetail(null)} />}
     </div>
   )
 }

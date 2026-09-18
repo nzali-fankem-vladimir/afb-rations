@@ -34,7 +34,7 @@ import { declencherTelechargement } from '../../utils/declencherTelechargement'
 import { enumererJours, formatDateHeure, formatDateJJMMAAAA, formatMontantFcfa, formatPeriode } from '../../utils/formatters'
 import { statutAttendPourRole } from '../../utils/statutProcessus'
 import { useAuth } from '../../hooks/useAuth'
-import { DetailJourneeModale } from './DetailJourneeModale'
+import { DetailJourneeModale } from '../../components/communs/DetailJourneeModale'
 import { RetourModale } from './RetourModale'
 import { ResultatValidation } from './ResultatValidation'
 
