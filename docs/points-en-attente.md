@@ -106,6 +106,16 @@ manque, pas le code.
 
 **Ouvert au Sprint 4.3. À surveiller en priorité en production.**
 
+**Mise à jour du 17 septembre 2026 (Sprint 7F.6).** La troisième et la quatrième
+ligne du tableau ci-dessous sont désormais closes : `PUT /parametres/{code}`
+(service Workflow, réservé ADMIN) remplace l'`UPDATE` SQL direct pour les trois
+paramètres `SEUIL_AIGUILLAGE_DR`, `DELAI_REGULARISATION_JOURS` et
+`COMPTE_CHARGE_RATIONS`, et publie un événement d'audit `MODIFICATION_PARAMETRE`
+portant l'ancienne et la nouvelle valeur. Voir
+`docs/decisions/2026-09-17-endpoint-ecriture-parametres-systeme.md`. Les deux
+premières lignes (supervision du log, contrôle après migration) restent des
+mesures d'exploitation, non couvertes par cet ajout.
+
 **La décision prise.** Si le paramètre `SEUIL_AIGUILLAGE_DR` est absent, désactivé
 ou porte une valeur illisible, le service Workflow **refuse la validation**
 (`500 SEUIL_INDISPONIBLE`) au lieu d'appliquer une valeur de repli. Une valeur par
@@ -131,10 +141,11 @@ c'est un point de fragilité qu'il faut connaître avant de le découvrir.
 | **Restreindre l'écriture sur `parametre_systeme`** | La table n'a aujourd'hui aucun endpoint d'administration : elle se modifie en SQL direct. Tant qu'il en est ainsi, l'accès en écriture à cette table est un accès au niveau d'approbation requis par la banque, et devrait être tracé au même titre. |
 | **Journaliser toute modification du seuil** | Le module trace le seuil **appliqué** à chaque validation (audit `VALIDATION_PROCESSUS`, champ `seuilApplique`), donc l'effet du changement. Il ne trace pas le changement lui-même : `parametre_systeme` n'a ni horodatage ni auteur (CLAUDE.md §4). Un contrôle interne qui voudrait savoir *qui* a abaissé le seuil et *quand* ne le trouvera nulle part dans ce module. |
 
-**Piste, si le métier le demande un jour.** Un endpoint d'administration du seuil,
-réservé à `ADMIN` ou à la DRH, publiant un événement d'audit — ce qui fermerait la
-dernière ligne du tableau. Hors périmètre du module tel que spécifié : il n'existe
-aucun endpoint `/parametres` au contrat d'API.
+**Résolu au Sprint 7F.6.** L'endpoint d'administration envisagé ici a été ajouté,
+réservé à `ADMIN`, publiant un événement d'audit — voir la mise à jour en tête de
+section. Motif de l'écart au périmètre d'origine : après le Sprint 7F, plus aucun
+sprint backend n'est prévu (Sprints 8 et 9 = déploiement et recette) ; reporter
+aurait rendu ce manque permanent plutôt que temporaire.
 
 ---
 
@@ -1066,6 +1077,16 @@ bascule, pas l'écriture de RG-15.
 
 ## T-02 — Le numéro de compte courant n'est contrôlé ni en longueur ni en format
 
+> **Corrigé le 17 septembre 2026 (Sprint 7F.6).** `IdentiteBeneficiaireRequest`
+> porte désormais `@Pattern(regexp = "^[0-9]{11}$")`, et l'écran de saisie contrôle
+> le format avant l'envoi. Vérifié en réel : un compte à 14 chiffres est refusé en
+> `400 REQUETE_INVALIDE`. **Écart de traçabilité relevé** : le résumé du sprint
+> Maille 1 annonçait cette correction comme faite, alors que le fichier n'avait
+> jamais été modifié (vérifié par `git log`). Rectifié dans ce résumé. **Reste
+> ouvert** : l'exemple à 14 chiffres du contrat d'API §7.1 (document de référence,
+> hors dépôt). Les comptes de développement faux ne sont pas corrigés, conformément
+> à l'arbitrage du 9 septembre.
+
 **Ouvert le 9 septembre 2026**, au cours de l'analyse du contenu de la charge
 comptable (M-04). Voir `docs/decisions/2026-09-09-contenu-de-la-charge-comptable.md`
 section 6.
@@ -1178,6 +1199,12 @@ DFT aura statué (M-04).
 ---
 
 ## PDF signé — endpoint de téléchargement reporté (Sprint 7F.5)
+
+**Fermé le 18 septembre 2026**, demande n°8 de la vérification visuelle du
+Sprint 7F.6. `GET /processus/{id}/document` construit, réservé aux trois
+rôles du circuit, événement d'audit `TELECHARGEMENT_DOCUMENT` obligatoire.
+Voir `docs/decisions/2026-09-18-endpoint-telechargement-document-signe.md`.
+Le texte ci-dessous est conservé tel quel pour l'historique de l'arbitrage.
 
 **Ouvert le 16 septembre 2026**, à l'étape 1 du Sprint 7F.5 (écrans de
 validation hiérarchique). Décision tranchée avec l'utilisateur : **aucun

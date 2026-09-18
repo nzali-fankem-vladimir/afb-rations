@@ -30,6 +30,8 @@ import cm.afrilandfirstbank.rations.workflow.api.dto.SoumissionResponse;
 import cm.afrilandfirstbank.rations.workflow.api.dto.ValidationResponse;
 import cm.afrilandfirstbank.rations.workflow.api.dto.VerrouTransmissionRequest;
 import cm.afrilandfirstbank.rations.workflow.api.dto.VerrouTransmissionResponse;
+import cm.afrilandfirstbank.rations.workflow.application.DocumentTelechargementService;
+import cm.afrilandfirstbank.rations.workflow.application.DocumentTelechargementService.DocumentTelecharge;
 import cm.afrilandfirstbank.rations.workflow.application.FonctionnaliteService;
 import cm.afrilandfirstbank.rations.workflow.application.IntegrationComptableService;
 import cm.afrilandfirstbank.rations.workflow.application.OuvertureComplementaireService;
@@ -57,11 +59,14 @@ import jakarta.validation.Valid;
  *   POST /processus/{id}/soumission        soumission          AGENT_UNITE        (4.2)
  *   POST /processus/{id}/validation        validation DA et DR DA, DR            (4.3, 4.4)
  *   POST /processus/{id}/retour            retour motive       DA, DR             (4.4)
+ *   GET  /processus/{id}/document          PDF signe, telecharge  roles du circuit (7F.8)
  * </pre>
  *
  * <p>Les six endpoints du contrat d'API sont desormais tous servis, et il n'y en a
  * pas un de plus. La reprise d'un etat retourne n'en ajoute aucun : elle est portee
- * par la resoumission (voir {@code SoumissionService}).
+ * par la resoumission (voir {@code SoumissionService}). Le telechargement du document
+ * signe (7F.8) ferme un point ouvert au Sprint 7F.5 ({@code docs/points-en-attente.md},
+ * section « PDF signe ») et n'appartient volontairement pas au contrat d'API initial.
  *
  * <h2>Plus un endpoint interne, hors contrat passerelle</h2>
  *
@@ -120,6 +125,7 @@ public class ProcessusController {
     private final IntegrationComptableService integrationComptableService;
     private final VerrouTransmissionService verrouTransmissionService;
     private final RechercheProcessusService rechercheProcessusService;
+    private final DocumentTelechargementService documentTelechargementService;
 
     public ProcessusController(ProcessusService processusService,
             FonctionnaliteService fonctionnaliteService,
@@ -129,7 +135,8 @@ public class ProcessusController {
             RetourService retourService,
             IntegrationComptableService integrationComptableService,
             VerrouTransmissionService verrouTransmissionService,
-            RechercheProcessusService rechercheProcessusService) {
+            RechercheProcessusService rechercheProcessusService,
+            DocumentTelechargementService documentTelechargementService) {
         this.processusService = processusService;
         this.fonctionnaliteService = fonctionnaliteService;
         this.ouvertureComplementaireService = ouvertureComplementaireService;
@@ -139,6 +146,7 @@ public class ProcessusController {
         this.integrationComptableService = integrationComptableService;
         this.verrouTransmissionService = verrouTransmissionService;
         this.rechercheProcessusService = rechercheProcessusService;
+        this.documentTelechargementService = documentTelechargementService;
     }
 
     /**
@@ -252,6 +260,42 @@ public class ProcessusController {
 
         return ResponseEntity.ok(EtatProcessusResponse.depuis(
                 processusService.consulterEtat(id, enteteAutorisation)));
+    }
+
+    /**
+     * Telecharge le document PDF signe d'un processus (rattrapage post-7F.6, demande n°8
+     * de la verification visuelle du Sprint 7F.6). Point ouvert au Sprint 7F.5,
+     * ferme ici : voir {@code docs/points-en-attente.md} section « PDF signe ».
+     *
+     * <p>Portee d'acces verifiee unite par unite, comme {@code GET /processus/{id}}
+     * dont {@link DocumentTelechargementService} reutilise le controle — le role
+     * n'est que le premier filtre (RG-12, doctrine constante du module).
+     *
+     * <p>Evenement d'audit obligatoire ({@code TELECHARGEMENT_DOCUMENT}) : CLAUDE.md
+     * section 9.2 trace ce qui fait sortir un fichier du systeme, et un document PDF
+     * signe en est le cas exact.
+     *
+     * <p>Refus possibles : {@code 404 PROCESSUS_INTROUVABLE} ; {@code 404
+     * PIECE_JOINTE_INTROUVABLE} si l'etat n'a jamais ete soumis ; {@code 403
+     * UTILISATEUR_NON_HABILITE} hors portee ; {@code 500 DOCUMENT_NON_PRODUIT} si le
+     * stockage ne peut pas relire un fichier que la base atteste exister ;
+     * {@code 503} si le service Identite ne repond pas.
+     */
+    @GetMapping("/{id}/document")
+    @PreAuthorize("hasAnyRole('AGENT_UNITE', 'CHEF_UNITE_DA', 'DIRECTEUR_RESEAU_DR')")
+    public ResponseEntity<byte[]> telechargerDocument(
+            @PathVariable Long id,
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String enteteAutorisation,
+            HttpServletRequest requeteHttp) {
+
+        DocumentTelecharge document = documentTelechargementService.telecharger(
+                id, enteteAutorisation, requeteHttp.getRemoteAddr());
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_TYPE, document.typeMime())
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"" + document.nomFichier() + "\"")
+                .body(document.contenu());
     }
 
     /**

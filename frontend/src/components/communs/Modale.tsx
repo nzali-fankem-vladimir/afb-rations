@@ -24,6 +24,8 @@ export interface ModaleProps {
    * pour rien.
    */
   confirmerDesactive?: boolean
+  /** Libelle du bouton secondaire. Absent : "Annuler" (ou "Fermer" sans onConfirmer). */
+  libelleAnnuler?: string
 }
 
 export function Modale({
@@ -36,6 +38,7 @@ export function Modale({
   onConfirmer,
   onAnnuler,
   confirmerDesactive = false,
+  libelleAnnuler,
 }: ModaleProps) {
   const [enCours, setEnCours] = useState(false)
   const titreId = useId()
@@ -62,14 +65,14 @@ export function Modale({
         if (event.target === event.currentTarget && !enCours) onAnnuler?.()
       }}
     >
-      <Card className={`max-h-[calc(100vh-2rem)] w-full overflow-y-auto ${largeur}`}>
+      <Card className={`animation-modale max-h-[calc(100vh-2rem)] w-full overflow-y-auto ${largeur}`}>
         <CardHeader>
           <CardTitle id={titreId}>{titre}</CardTitle>
         </CardHeader>
         <CardContent>{contenu ?? <p className="text-sm text-neutral-700">{message}</p>}</CardContent>
         <CardFooter className="gap-3">
           <Button variant="outline" onClick={onAnnuler} disabled={enCours}>
-            {onConfirmer ? 'Annuler' : 'Fermer'}
+            {libelleAnnuler ?? (onConfirmer ? 'Annuler' : 'Fermer')}
           </Button>
           {onConfirmer && (
             <Button variant={variantConfirmer} onClick={confirmer} disabled={enCours || confirmerDesactive}>

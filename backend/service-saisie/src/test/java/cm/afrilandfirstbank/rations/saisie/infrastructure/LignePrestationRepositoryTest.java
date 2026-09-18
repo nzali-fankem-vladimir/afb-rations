@@ -51,7 +51,7 @@ class LignePrestationRepositoryTest {
     @BeforeEach
     void preparerUneLigneRationJour() {
         Beneficiaire beneficiaire = beneficiaireRepository.saveAndFlush(
-                new Beneficiaire("MBALLA", "Paul", "03702009998888", "00002")); // Douala Bonanjo
+                new Beneficiaire("MBALLA", "Paul", "02009998888", "00002")); // Douala Bonanjo
         idBeneficiaire = beneficiaire.getId();
 
         FicheJournaliere fiche = ficheRepository.saveAndFlush(

@@ -38,15 +38,22 @@ import jakarta.validation.Valid;
 /**
  * Endpoints d'administration des profils locaux (sous-sprint 1.2).
  *
- * <p>Reserve au role ADMIN : l'annuaire porte l'identite, ce module porte
- * l'habilitation metier (CLAUDE.md section 10). Aucun endpoint de creation de
- * compte ici : les comptes viennent de l'annuaire, ce controleur n'attribue que
- * des habilitations a des comptes deja pre-provisionnes.
+ * <p>L'attribution de role reste reservee au role ADMIN : l'annuaire porte
+ * l'identite, ce module porte l'habilitation metier (CLAUDE.md section 10),
+ * et aucun endpoint de creation de compte n'existe ici -- les comptes
+ * viennent de l'annuaire, ce controleur n'attribue que des habilitations a
+ * des comptes deja pre-provisionnes.
+ *
+ * <p><b>La LECTURE est ouverte a ARH et DRH depuis le rattrapage post-7F.6</b>
+ * (retour utilisateur : le journal d'audit doit pouvoir se filtrer par
+ * utilisateur, et ARH/DRH sont deja les deux roles habilites a le consulter,
+ * CLAUDE.md section 11). Ouvrir la protection au niveau de la classe aurait
+ * aussi ouvert l'attribution de role -- ecriture sensible, seule restee
+ * @{@code PreAuthorize} sur sa propre methode.
  */
 @RestController
 @RequestMapping("/identite/utilisateurs")
-@PreAuthorize("hasRole('ADMIN')")
-@Tag(name = "Administration des utilisateurs", description = "Reserve au role ADMIN")
+@Tag(name = "Administration des utilisateurs", description = "Lecture : ADMIN, ARH, DRH. Ecriture : ADMIN seul.")
 public class UtilisateurAdminController {
 
     /** Borne haute de la taille de page : sans borne, un appel excessif degrade le service. */
@@ -62,13 +69,16 @@ public class UtilisateurAdminController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('ADMIN', 'ARH', 'DRH')")
     @Operation(summary = "Liste paginee des utilisateurs",
             description = """
                     Filtrable par role, code unite et statut actif, les trois filtres etant
                     combinables et tous facultatifs.
 
-                    **Role requis : ADMIN.** Tout autre role recoit 403, et la tentative est
-                    tracee en audit (CT-04).
+                    **Role requis : ADMIN, ARH ou DRH.** Tout autre role recoit 403, et la
+                    tentative est tracee en audit (CT-04). Ouvert a ARH et DRH pour alimenter le
+                    filtre "Utilisateur" du journal d'audit, qu'ils sont deja habilites a
+                    consulter -- lecture seule, l'attribution de role reste reservee a l'ADMIN.
 
                     Taille de page bornee a 100, quelle que soit la valeur demandee.
                     """)
@@ -127,6 +137,7 @@ public class UtilisateurAdminController {
     }
 
     @PutMapping("/{id}/role")
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Attribution du role et du code unite",
             description = """
                     L'identite vient de l'annuaire, l'habilitation metier vient du module.

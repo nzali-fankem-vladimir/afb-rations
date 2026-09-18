@@ -72,3 +72,67 @@ body {
   margin: 0;
   font-family: var(--font-sans);
 }
+
+/*
+ * Animations simples (rattrapage post-7F.6, retour utilisateur : verifier que
+ * les animations de la maquette de refonte sont bien appliquees au projet
+ * reel, pas seulement demontrees dans l'artefact). Trois mouvements, chacun
+ * sous 250 ms, chacun desactive par la regle globale ci-dessous des que le
+ * systeme demande la reduction des animations -- une seule regle plutot que
+ * repeter `motion-reduce:` partout ou ces classes sont utilisees.
+ */
+@keyframes glisse-toast {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes agrandissement-modale {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes apparition {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.animation-toast {
+  animation: glisse-toast 0.25s ease-out;
+}
+
+.animation-modale {
+  animation: agrandissement-modale 0.2s ease-out;
+}
+
+.animation-apparition {
+  animation: apparition 0.18s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

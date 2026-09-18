@@ -22,6 +22,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import cm.afrilandfirstbank.rations.commun.audit.PublicateurAudit;
+import cm.afrilandfirstbank.rations.workflow.application.DocumentTelechargementService;
 import cm.afrilandfirstbank.rations.workflow.application.FonctionnaliteService;
 import cm.afrilandfirstbank.rations.workflow.application.IntegrationComptableService;
 import cm.afrilandfirstbank.rations.workflow.application.OuvertureComplementaireService;
@@ -106,6 +107,10 @@ class IntegrationComptableIT {
     /** Requis depuis le Sprint 6.1 : le controleur sert aussi les endpoints internes de suivi. */
     @MockitoBean
     private RechercheProcessusService rechercheProcessusService;
+
+    /** Requis depuis le Sprint 7F.8 : le controleur sert aussi {@code GET /processus/{id}/document}. */
+    @MockitoBean
+    private DocumentTelechargementService documentTelechargementService;
 
     // --- Le secret partage --------------------------------------------------------
 

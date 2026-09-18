@@ -128,11 +128,11 @@ class ConsolidationServiceTest {
                 ficheRepository, ligneRepository, beneficiaireRepository, etatModifiableService);
 
         idMballa = beneficiaireRepository.saveAndFlush(
-                new Beneficiaire("MBALLA", "Paul", "03702009991111", UNITE)).getId();
+                new Beneficiaire("MBALLA", "Paul", "02009991111", UNITE)).getId();
         idNkoulou = beneficiaireRepository.saveAndFlush(
-                new Beneficiaire("NKOULOU", "Estelle", "03702009992222", "00001")).getId();
+                new Beneficiaire("NKOULOU", "Estelle", "02009992222", "00001")).getId();
         idAtangana = beneficiaireRepository.saveAndFlush(
-                new Beneficiaire("ATANGANA", "Serge", "03702009993333", UNITE)).getId();
+                new Beneficiaire("ATANGANA", "Serge", "02009993333", UNITE)).getId();
 
         Long fiche10 = ouvrirFiche(PROCESSUS, LE_10);
         Long fiche11 = ouvrirFiche(PROCESSUS, LE_11);

@@ -63,6 +63,13 @@ docker-compose.override.yml
 # Documents internes de preparation (non destines au depot public)
 docs/initialisation projet/
 sprint actuel.md
+
+# Methode de travail personnelle, reutilisable d'un projet a l'autre : ces dossiers
+# ne decrivent pas CE module, ils decrivent comment on le construit. Ils vivent
+# avec le developpeur, pas avec le depot du module (Sprint 7F.6).
+methode-projet/
+guide-fullstack-claude/
+GUIDE-MAQUETTES-ET-OUTILS-CLAUDE.md
 # Sortie generee par la cartographie graphify (non versionnee)
 graphify-out/
 

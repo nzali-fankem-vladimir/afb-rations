@@ -22,6 +22,7 @@ import cm.afrilandfirstbank.rations.commun.audit.PublicateurAudit;
 import cm.afrilandfirstbank.rations.grilles.domaine.exception.AuteurNonHabiliteException;
 import cm.afrilandfirstbank.rations.grilles.domaine.exception.ConflitGrilleException;
 import cm.afrilandfirstbank.rations.grilles.domaine.exception.GrilleIntrouvableException;
+import cm.afrilandfirstbank.rations.grilles.domaine.exception.GrilleNonProprietaireException;
 import cm.afrilandfirstbank.rations.grilles.domaine.exception.IncoherenceGrilleException;
 import cm.afrilandfirstbank.rations.grilles.domaine.exception.MotifRejetRequisException;
 import cm.afrilandfirstbank.rations.grilles.domaine.exception.TransitionGrilleInterditeException;
@@ -111,6 +112,21 @@ public class GestionnaireErreursApi {
                 "Le service Identite n'a pas repondu : l'auteur de l'action n'a pas pu etre "
                         + "identifie. La grille n'a pas ete enregistree ; reessayez dans "
                         + "quelques instants.");
+    }
+
+    /**
+     * L'appelant est un Analyste RH valide, mais pas l'auteur de la grille qu'il
+     * tente de retirer (rattrapage post-7F.6, demande n°7). Troisieme code de refus en 403
+     * cote service Grilles, distinct de {@code ACCES_REFUSE} (role) et
+     * {@code UTILISATEUR_NON_HABILITE} (aucun profil) -- meme doctrine que
+     * {@code SEPARATION_TACHES} cote Workflow (RG-12).
+     */
+    @ExceptionHandler(GrilleNonProprietaireException.class)
+    public ResponseEntity<ErreurApiDto> grilleNonProprietaire(GrilleNonProprietaireException exception,
+            HttpServletRequest requete) {
+        publierRefus(requete, "GRILLE_NON_PROPRIETAIRE", exception.getMessage());
+
+        return reponse(requete, HttpStatus.FORBIDDEN, "GRILLE_NON_PROPRIETAIRE", exception.getMessage());
     }
 
     /** Conflit d'unicite RG-14. Porte son propre code : les deux causes different. */

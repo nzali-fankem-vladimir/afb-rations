@@ -42,7 +42,7 @@ import cm.afrilandfirstbank.rations.saisie.infrastructure.BeneficiaireRepository
 @DisplayName("Résolution du bénéficiaire (US-03)")
 class ResolutionBeneficiaireServiceTest {
 
-    private static final String COMPTE = "03702001234567";
+    private static final String COMPTE = "02001234567";
     private static final String AGENCE = "00002"; // Douala Bonanjo
 
     @Mock

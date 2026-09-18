@@ -84,7 +84,20 @@ export function creerClientApi(baseURL: string | undefined): AxiosInstance {
         }
       }
 
-      const apiError: ApiErrorResponse = error.response?.data ?? {
+      // Un appel en responseType "blob" (telechargement d'un document, Sprint
+      // 7F.8) recoit aussi ses erreurs sous forme de Blob : Axios ne redecodes
+      // jamais selon le code de statut. Sans cette conversion, AffichageErreur
+      // recevrait un Blob a la place du format d'erreur uniforme.
+      let donnees = error.response?.data
+      if (donnees instanceof Blob && donnees.type.includes('json')) {
+        try {
+          donnees = JSON.parse(await donnees.text())
+        } catch {
+          donnees = undefined
+        }
+      }
+
+      const apiError: ApiErrorResponse = donnees ?? {
         timestamp: new Date().toISOString(),
         status: error.response?.status ?? 0,
         code: 'ERREUR_RESEAU',

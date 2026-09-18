@@ -24,6 +24,8 @@ import java.util.Map;
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
@@ -185,7 +187,7 @@ class SaisieControllerIT {
     void secondeOuvertureRendLaMemeFicheAvecSesLignes() throws Exception {
         keycloakEmet(SUB_AGENT, "jean_mbarga", "AGENT_UNITE");
         FicheJournaliere ficheExistante = fiche(501L, 740L, LocalDate.of(2026, 8, 18));
-        Beneficiaire beneficiaire = beneficiaire(88L, "MBARGA", "Jean", "00002000123456");
+        Beneficiaire beneficiaire = beneficiaire(88L, "MBARGA", "Jean", "02000123456");
         LignePrestation ligneExistante = ligne(1205L, 501L, 88L, NatureEnum.RATION, SessionEnum.JOUR, 2500, 12L);
 
         when(ficheJournaliereService.ouvrir(eq(740L), eq(LocalDate.of(2026, 8, 18)), anyString(), any()))
@@ -232,14 +234,14 @@ class SaisieControllerIT {
 
     private static final String CORPS_LIGNE_NOMINALE = """
             {"idFicheJournaliere":501,"beneficiaire":{"nom":"MBARGA","prenom":"Jean",
-            "numCompteCourant":"00002000123456","codeAgence":"00002"},
+            "numCompteCourant":"02000123456","codeAgence":"00002"},
             "nature":"RATION","session":"JOUR"}""";
 
     @Test
     @DisplayName("6. POST /saisie/lignes, creation nominale : 201, montant resolu depuis la grille")
     void creationNominale() throws Exception {
         keycloakEmet(SUB_AGENT, "jean_mbarga", "AGENT_UNITE");
-        Beneficiaire beneficiaire = beneficiaire(88L, "MBARGA", "Jean", "00002000123456");
+        Beneficiaire beneficiaire = beneficiaire(88L, "MBARGA", "Jean", "02000123456");
         LignePrestation ligneCreee = ligne(1205L, 501L, 88L, NatureEnum.RATION, SessionEnum.JOUR, 2500, 12L);
         when(ligneService.creer(any(), anyString(), any()))
                 .thenReturn(new LigneAvecBeneficiaire(ligneCreee, beneficiaire));
@@ -257,13 +259,36 @@ class SaisieControllerIT {
                 .andExpect(jsonPath("$.idGrille").value(12));
     }
 
+    /**
+     * Point T-02 (Sprint 7F.6) : le numero de compte courant fait onze chiffres. Un
+     * compte a 14 chiffres -- la forme fausse qu'ont propagee les jeux d'essai --,
+     * a 10 chiffres, ou portant un espace est refuse AVANT d'atteindre le service :
+     * aucun beneficiaire fantome ne peut naitre d'une faute de frappe.
+     */
+    @ParameterizedTest(name = "compte « {0} » refuse")
+    @ValueSource(strings = { "00002000123456", "0200012345", "020 00123456", "0200012345A" })
+    @DisplayName("6bis. POST /saisie/lignes, compte courant hors format : 400, service jamais appele")
+    void compteCourantHorsFormatRefuse(String compte) throws Exception {
+        keycloakEmet(SUB_AGENT, "jean_mbarga", "AGENT_UNITE");
+
+        mockMvc.perform(post("/saisie/lignes")
+                .header(HttpHeaders.AUTHORIZATION, JETON)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(CORPS_LIGNE_NOMINALE.replace("02000123456", compte)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("REQUETE_INVALIDE"))
+                .andExpect(jsonPath("$.message").value(Matchers.containsString("onze chiffres")));
+
+        verify(ligneService, never()).creer(any(), anyString(), any());
+    }
+
     @Test
     @DisplayName("7. POST /saisie/lignes, doublon : 409 DOUBLON_LIGNE")
     void creationEnDoublonRefusee() throws Exception {
         keycloakEmet(SUB_AGENT, "jean_mbarga", "AGENT_UNITE");
         when(ligneService.creer(any(), anyString(), any()))
                 .thenThrow(new DoublonLigneException(
-                        "MBARGA Jean (compte 00002000123456) figure deja sur la journee du 2026-08-18 "
+                        "MBARGA Jean (compte 02000123456) figure deja sur la journee du 2026-08-18 "
                                 + "en RATION / JOUR."));
 
         mockMvc.perform(post("/saisie/lignes")
@@ -294,7 +319,7 @@ class SaisieControllerIT {
     @DisplayName("9. POST /saisie/lignes, montant transmis par le client : ignore")
     void montantClientIgnore() throws Exception {
         keycloakEmet(SUB_AGENT, "jean_mbarga", "AGENT_UNITE");
-        Beneficiaire beneficiaire = beneficiaire(88L, "MBARGA", "Jean", "00002000123456");
+        Beneficiaire beneficiaire = beneficiaire(88L, "MBARGA", "Jean", "02000123456");
         LignePrestation ligneCreee = ligne(1205L, 501L, 88L, NatureEnum.RATION, SessionEnum.JOUR, 2500, 12L);
         when(ligneService.creer(any(), anyString(), any()))
                 .thenReturn(new LigneAvecBeneficiaire(ligneCreee, beneficiaire));
@@ -308,7 +333,7 @@ class SaisieControllerIT {
                 .content("""
                         {"idFicheJournaliere":501,"montantApplique":999999,
                         "beneficiaire":{"nom":"MBARGA","prenom":"Jean",
-                        "numCompteCourant":"00002000123456","codeAgence":"00002"},
+                        "numCompteCourant":"02000123456","codeAgence":"00002"},
                         "nature":"RATION","session":"JOUR"}"""))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.montantApplique").value(2500));
@@ -332,7 +357,7 @@ class SaisieControllerIT {
     @DisplayName("10. PUT /saisie/lignes/1205, changement de session : nouveau montant resolu")
     void modificationSessionRecalculeLeMontant() throws Exception {
         keycloakEmet(SUB_AGENT, "jean_mbarga", "AGENT_UNITE");
-        Beneficiaire beneficiaire = beneficiaire(88L, "MBARGA", "Jean", "00002000123456");
+        Beneficiaire beneficiaire = beneficiaire(88L, "MBARGA", "Jean", "02000123456");
         LignePrestation ligneRevisee =
                 ligne(1205L, 501L, 88L, NatureEnum.RATION, SessionEnum.SOIR, 3000, 13L);
         when(ligneService.modifier(eq(1205L), eq(NatureEnum.RATION), eq(SessionEnum.SOIR), anyString(), any()))
@@ -355,7 +380,7 @@ class SaisieControllerIT {
         keycloakEmet(SUB_AGENT, "jean_mbarga", "AGENT_UNITE");
         when(ligneService.modifier(eq(1205L), any(), any(), anyString(), any()))
                 .thenThrow(new DoublonLigneException(
-                        "MBARGA Jean (compte 00002000123456) figure deja sur la journee du 2026-08-18 "
+                        "MBARGA Jean (compte 02000123456) figure deja sur la journee du 2026-08-18 "
                                 + "en RATION / SOIR."));
 
         mockMvc.perform(put("/saisie/lignes/1205")
@@ -383,7 +408,7 @@ class SaisieControllerIT {
     @DisplayName("12b. Sprint 6.3 : l'adresse d'origine atteint le service sur la modification ET la suppression")
     void adresseOrigineTransmiseSurLesTroisEcrituresDeLigne() throws Exception {
         keycloakEmet(SUB_AGENT, "jean_mbarga", "AGENT_UNITE");
-        Beneficiaire beneficiaire = beneficiaire(88L, "MBARGA", "Jean", "00002000123456");
+        Beneficiaire beneficiaire = beneficiaire(88L, "MBARGA", "Jean", "02000123456");
         LignePrestation ligneRevisee =
                 ligne(1205L, 501L, 88L, NatureEnum.RATION, SessionEnum.SOIR, 3000, 13L);
         when(ligneService.modifier(eq(1205L), any(), any(), anyString(), any()))
@@ -434,8 +459,8 @@ class SaisieControllerIT {
     void consultationRendLesLignesEtLeSousTotal() throws Exception {
         keycloakEmet(SUB_AGENT, "jean_mbarga", "AGENT_UNITE");
         FicheJournaliere ficheConsultee = fiche(501L, 740L, LocalDate.of(2026, 8, 18));
-        Beneficiaire beneficiaire1 = beneficiaire(88L, "MBARGA", "Jean", "00002000123456");
-        Beneficiaire beneficiaire2 = beneficiaire(89L, "ATANGANA", "Paul", "00002000987654");
+        Beneficiaire beneficiaire1 = beneficiaire(88L, "MBARGA", "Jean", "02000123456");
+        Beneficiaire beneficiaire2 = beneficiaire(89L, "ATANGANA", "Paul", "02000987654");
         LignePrestation ligne1 = ligne(1205L, 501L, 88L, NatureEnum.RATION, SessionEnum.JOUR, 2500, 12L);
         LignePrestation ligne2 = ligne(1206L, 501L, 89L, NatureEnum.TRANSPORT, SessionEnum.JOUR, 1500, 14L);
 

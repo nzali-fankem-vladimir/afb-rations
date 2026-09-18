@@ -72,9 +72,9 @@ class ControleDoublonServiceTest {
         controleDoublonService = new ControleDoublonService(ligneRepository);
 
         idMballa = beneficiaireRepository.saveAndFlush(
-                new Beneficiaire("MBALLA", "Paul", "03702009998888", "00002")).getId(); // Douala Bonanjo
+                new Beneficiaire("MBALLA", "Paul", "02009998888", "00002")).getId(); // Douala Bonanjo
         idNkoulou = beneficiaireRepository.saveAndFlush(
-                new Beneficiaire("NKOULOU", "Estelle", "03702007776666", "00001")).getId(); // Siege Yaounde
+                new Beneficiaire("NKOULOU", "Estelle", "02007776666", "00001")).getId(); // Siege Yaounde
 
         idFicheDu15 = ficheRepository.saveAndFlush(
                 new FicheJournaliere(ID_PROCESSUS, LE_15_AOUT, "00002", LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 31))).getId();

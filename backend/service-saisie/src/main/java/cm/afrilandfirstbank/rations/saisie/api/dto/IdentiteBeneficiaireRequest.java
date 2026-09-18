@@ -16,12 +16,15 @@ import jakarta.validation.constraints.Size;
  * <b>seul numéro de compte courant</b>
  * ({@code docs/decisions/2026-08-28-resolution-beneficiaire-et-incoherence-nom.md}).
  *
- * <p><b>Formats contraints : un seul.</b> {@code codeAgence} est un code du
- * référentiel des guichets, que le contrat d'API §1.1 fixe à cinq chiffres. Le
- * numéro de compte courant, lui, n'a de format arrêté dans aucun document du
- * projet : le contraindre ici sur une intuition rejetterait des comptes valides,
- * et c'est la donnée qui décide <i>qui est payé</i>. Seule sa longueur est bornée,
- * par la colonne (VARCHAR(20), migration V1).
+ * <p><b>Deux formats contraints.</b> {@code codeAgence} est un code du référentiel
+ * des guichets, que le contrat d'API §1.1 fixe à cinq chiffres. Le numéro de compte
+ * courant fait <b>onze chiffres</b>, règle établie par le métier le 9 septembre
+ * 2026 (point T-02). Posée au Sprint 7F.6 : le résumé de la Maille 1 l'annonçait
+ * comme faite, mais ce fichier n'avait jamais été modifié. C'est la donnée qui
+ * décide <i>qui est payé</i> : une faute de frappe créerait un bénéficiaire fantôme
+ * et créditerait un mauvais compte, sans erreur visible. Contrôle sur les nouvelles
+ * saisies uniquement ; les comptes déjà en base ne sont pas corrigés (arbitrage du
+ * 9 septembre 2026).
  *
  * <p><b>{@code codeAgence} n'est pas {@code codeUnite}.</b> Même format, rôles
  * opposés : l'agence de domiciliation du compte porte la ligne de <i>crédit</i>,
@@ -39,8 +42,10 @@ public record IdentiteBeneficiaireRequest(
         @Size(max = 100, message = "le prénom du bénéficiaire ne peut pas dépasser 100 caractères")
         String prenom,
 
+        // @NotBlank garde un message distinct et plus clair sur un champ absent.
         @NotBlank(message = "le numéro de compte courant est obligatoire")
-        @Size(max = 20, message = "le numéro de compte courant ne peut pas dépasser 20 caractères")
+        @Pattern(regexp = "^[0-9]{11}$",
+                message = "le numéro de compte courant doit comporter exactement onze chiffres, sans espace ni séparateur")
         String numCompteCourant,
 
         @NotBlank(message = "le code agence est obligatoire")

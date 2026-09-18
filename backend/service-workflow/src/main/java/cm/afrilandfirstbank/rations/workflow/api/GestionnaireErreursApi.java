@@ -33,8 +33,11 @@ import cm.afrilandfirstbank.rations.workflow.domaine.exception.FonctionnaliteNon
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.MotifOuvertureRequisException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.MotifRetourRequisException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.OrigineRequiseException;
+import cm.afrilandfirstbank.rations.workflow.domaine.exception.ParametreIntrouvableException;
+import cm.afrilandfirstbank.rations.workflow.domaine.exception.ParametreNonModifiableException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.PeriodeNonConcordanteException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.PieceJointeExistanteException;
+import cm.afrilandfirstbank.rations.workflow.domaine.exception.PieceJointeIntrouvableException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ProcessusExistantException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ProcessusIntrouvableException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.ProcessusNonTransmisException;
@@ -45,6 +48,7 @@ import cm.afrilandfirstbank.rations.workflow.domaine.exception.ServiceSaisieIndi
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.SeuilIndisponibleException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.TransitionProcessusInterditeException;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.UniteNonConcordanteException;
+import cm.afrilandfirstbank.rations.workflow.domaine.exception.ValeurParametreInvalideException;
 
 import jakarta.servlet.http.HttpServletRequest;
 
@@ -185,6 +189,31 @@ public class GestionnaireErreursApi {
         return reponse(requete, HttpStatus.NOT_FOUND, "PROCESSUS_INTROUVABLE", exception.getMessage());
     }
 
+    /**
+     * Le processus existe et la portée est acquise, mais aucun document n'a
+     * encore été produit (l'état n'a jamais été soumis) : rattrapage post-7F.6,
+     * téléchargement du PDF signé, point ouvert du 16 septembre 2026 fermé à
+     * cette occasion (docs/points-en-attente.md, section « PDF signé »).
+     * Distinct de {@code DOCUMENT_NON_PRODUIT} (500), qui est une panne
+     * d'écriture ou de relecture sur un document que la base atteste exister.
+     */
+    @ExceptionHandler(PieceJointeIntrouvableException.class)
+    public ResponseEntity<ErreurApiDto> pieceJointeIntrouvable(PieceJointeIntrouvableException exception,
+            HttpServletRequest requete) {
+        return reponse(requete, HttpStatus.NOT_FOUND, "PIECE_JOINTE_INTROUVABLE", exception.getMessage());
+    }
+
+    /**
+     * Aucun parametre systeme ne porte ce code (guide 7F.6, etape 6, ajout
+     * backend scope). Sans trace de refus : un code inexistant est une
+     * maladresse d'URL, pas une tentative hors perimetre.
+     */
+    @ExceptionHandler(ParametreIntrouvableException.class)
+    public ResponseEntity<ErreurApiDto> parametreIntrouvable(ParametreIntrouvableException exception,
+            HttpServletRequest requete) {
+        return reponse(requete, HttpStatus.NOT_FOUND, "PARAMETRE_INTROUVABLE", exception.getMessage());
+    }
+
     // --- Conflit d'unicite (409) ----------------------------------------------
 
     @ExceptionHandler(ProcessusExistantException.class)
@@ -220,6 +249,21 @@ public class GestionnaireErreursApi {
     public ResponseEntity<ErreurApiDto> transitionInterdite(
             TransitionProcessusInterditeException exception, HttpServletRequest requete) {
         return reponse(requete, HttpStatus.UNPROCESSABLE_ENTITY, "TRANSITION_INTERDITE",
+                exception.getMessage());
+    }
+
+    /**
+     * Le code existe mais n'appartient pas aux trois codes modifiables par
+     * {@code PUT /parametres/{code}} (guide 7F.6, etape 6, ajout backend
+     * scope) -- {@code RATTRAPAGE_ACTIF} notamment, gouverne par sa propre
+     * doctrine (CLAUDE.md section 7). {@code 422} et non {@code 403} : la
+     * ressource existe et le role ADMIN est le bon, c'est une regle de
+     * gestion qui refuse.
+     */
+    @ExceptionHandler(ParametreNonModifiableException.class)
+    public ResponseEntity<ErreurApiDto> parametreNonModifiable(
+            ParametreNonModifiableException exception, HttpServletRequest requete) {
+        return reponse(requete, HttpStatus.UNPROCESSABLE_ENTITY, "PARAMETRE_NON_MODIFIABLE",
                 exception.getMessage());
     }
 
@@ -482,6 +526,18 @@ public class GestionnaireErreursApi {
             MissingServletRequestParameterException exception, HttpServletRequest requete) {
         return reponse(requete, HttpStatus.BAD_REQUEST, "REQUETE_INVALIDE",
                 "Le parametre obligatoire %s est absent.".formatted(exception.getParameterName()));
+    }
+
+    /**
+     * Format invalide pour la valeur proposee d'un parametre systeme (guide
+     * 7F.6, etape 6, ajout backend scope) : vide, non entiere pour un
+     * parametre entier, ou negative.
+     */
+    @ExceptionHandler(ValeurParametreInvalideException.class)
+    public ResponseEntity<ErreurApiDto> valeurParametreInvalide(
+            ValeurParametreInvalideException exception, HttpServletRequest requete) {
+        return reponse(requete, HttpStatus.BAD_REQUEST, "VALEUR_PARAMETRE_INVALIDE",
+                exception.getMessage());
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)

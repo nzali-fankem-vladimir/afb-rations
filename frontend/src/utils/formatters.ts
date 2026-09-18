@@ -1,3 +1,27 @@
+/** "Ration · jour", "Transport · soir"... : libelle d'un couple nature/session (RG-01, RG-02). */
+export function formatCombinaison(nature: 'RATION' | 'TRANSPORT', session: 'JOUR' | 'SOIR'): string {
+  return `${nature === 'RATION' ? 'Ration' : 'Transport'} · ${session === 'JOUR' ? 'jour' : 'soir'}`
+}
+
+/**
+ * Valeur affichee quand une donnee texte ou identifiante est absente (createur,
+ * adresse IP, code unite d'une portee nationale...). Jamais un tiret nu : un
+ * tiret sans mot ne dit pas si la donnee manque, est interdite ou vaut zero.
+ */
+export const NON_RENSEIGNE = 'non renseigné'
+
+/**
+ * Valeur affichee quand un champ ne s'applique pas a la situation plutot que
+ * d'etre simplement absent (ex. la date de fin d'une grille jamais activee).
+ */
+export const SANS_OBJET = 'sans objet'
+
+/** Veille d'une date ISO (AAAA-MM-JJ), en arithmetique UTC pour ne jamais glisser d'un jour. */
+export function veilleIso(dateIso: string): string {
+  const [annee, mois, jour] = dateIso.split('-').map(Number)
+  return new Date(Date.UTC(annee, mois - 1, jour) - 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+}
+
 /** Un montant FCFA, jamais un flottant, jamais recalcule (CLAUDE.md section 4 et 15). */
 export function formatMontantFcfa(montant: number): string {
   return `${montant.toLocaleString('fr-FR')} FCFA`
@@ -16,6 +40,12 @@ export function formatDateJJMMAAAA(dateIso: string): string {
  */
 export function formatPeriode(dateDebut: string, dateFin: string): string {
   return `du ${formatDateJJMMAAAA(dateDebut)} au ${formatDateJJMMAAAA(dateFin)}`
+}
+
+/** "mercredi 09/09/2026" : jour de semaine en toutes lettres, puis la date. */
+export function formatDateLongue(dateIso: string): string {
+  const jourSemaine = new Date(`${dateIso}T00:00:00`).toLocaleDateString('fr-FR', { weekday: 'long' })
+  return `${jourSemaine} ${formatDateJJMMAAAA(dateIso)}`
 }
 
 /** Jour de semaine abrege ("lun.", "mar.", ...), pour le selecteur de jour. */

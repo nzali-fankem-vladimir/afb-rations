@@ -19,9 +19,10 @@ import cm.afrilandfirstbank.rations.audit.application.RechercheAuditService;
 import cm.afrilandfirstbank.rations.audit.domaine.AuditLog;
 
 /**
- * Les deux endpoints de lecture du journal d'audit (CLAUDE.md section 11).
- * <b>Aucun endpoint d'ecriture</b> : l'alimentation se fait exclusivement par
- * le topic {@code rations.audit.evenement} (etape 5).
+ * Les endpoints de lecture du journal d'audit (CLAUDE.md section 11 -- deux au
+ * contrat d'origine, un troisieme ajoute au rattrapage post-7F.6, voir
+ * {@link #listerActions()}). <b>Aucun endpoint d'ecriture</b> : l'alimentation
+ * se fait exclusivement par le topic {@code rations.audit.evenement} (etape 5).
  *
  * <h2>Roles</h2>
  *
@@ -84,6 +85,24 @@ public class AuditController {
                 rechercheAuditService.consulterProcessus(id).stream()
                         .map(AuditEntreeResponse::depuis)
                         .toList());
+    }
+
+    /**
+     * Troisieme endpoint du contrat (rattrapage post-7F.6, retour utilisateur :
+     * "je veux savoir si les types d'action en liste deroulante sont bien
+     * tires du backend"). Avant cet ajout ils ne l'etaient pas : le frontend
+     * portait une copie figee des codes de CLAUDE.md section 9.2.
+     *
+     * <p>Rend les codes <b>reellement presents</b> dans {@code audit_log},
+     * jamais une enumeration statique — il n'en existe d'ailleurs aucune cote
+     * backend, {@code action} n'etant qu'une chaine litterale publiee par
+     * chacun des six services. Une base vide rend une liste vide, jamais une
+     * erreur.
+     */
+    @GetMapping("/actions")
+    @PreAuthorize("hasAnyRole('ARH', 'DRH', 'ADMIN')")
+    public ResponseEntity<List<String>> listerActions() {
+        return ResponseEntity.ok(rechercheAuditService.actionsDisponibles());
     }
 
 }

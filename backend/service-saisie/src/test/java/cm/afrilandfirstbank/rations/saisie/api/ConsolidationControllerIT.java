@@ -90,7 +90,7 @@ class ConsolidationControllerIT {
 
     /** Un etat a deux journees : 6 500 + 2 500 = 9 000. */
     private static EtatConsolide etatDeDeuxJournees() {
-        Beneficiaire mballa = new Beneficiaire("MBALLA", "Paul", "03702009991111", "00002");
+        Beneficiaire mballa = new Beneficiaire("MBALLA", "Paul", "02009991111", "00002");
         ReflectionTestUtils.setField(mballa, "id", 55L);
 
         JourneeConsolidee le10 = new JourneeConsolidee(
@@ -260,7 +260,7 @@ class ConsolidationControllerIT {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.journees[0].lignes[0].beneficiaire.nom").value("MBALLA"))
                 .andExpect(jsonPath("$.journees[0].lignes[0].beneficiaire.numCompteCourant")
-                        .value("03702009991111"))
+                        .value("02009991111"))
                 .andExpect(jsonPath("$.journees[0].lignes[0].beneficiaire.codeAgence").value("00002"))
                 .andExpect(jsonPath("$.journees[0].lignes[0].nature").value("RATION"))
                 .andExpect(jsonPath("$.journees[0].lignes[0].session").value("JOUR"))

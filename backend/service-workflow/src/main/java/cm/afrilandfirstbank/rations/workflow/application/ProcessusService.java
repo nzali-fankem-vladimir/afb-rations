@@ -127,9 +127,10 @@ public class ProcessusService {
         ProcessusMensuel processus = processusMensuelRepository.findById(idProcessus)
                 .orElseThrow(() -> new ProcessusIntrouvableException(idProcessus));
 
-        habilitationService.exigerHabilitationSurUnite(processus.getCodeUnite(), enteteAutorisation);
+        AgentHabilite appelant = habilitationService.exigerHabilitationSurUnite(processus.getCodeUnite(),
+                enteteAutorisation);
 
-        return new DetailProcessus(processus, motifDuRetourEnCours(processus));
+        return new DetailProcessus(processus, motifDuRetourEnCours(processus), appelant);
     }
 
     /**
@@ -187,16 +188,23 @@ public class ProcessusService {
     }
 
     /**
-     * Le detail rendu par {@code GET /processus/{id}} : le processus, et le motif du
-     * retour en cours s'il y en a un.
+     * Le detail rendu par {@code GET /processus/{id}} : le processus, le motif du
+     * retour en cours s'il y en a un, et l'appelant tel que l'habilitation vient de
+     * le verifier.
      *
      * <p>Le motif ne vit pas sur {@code processus_mensuel} mais sur
      * {@code etape_workflow} (CLAUDE.md section 4) : il faut donc les rapprocher
      * quelque part, et ce quelque part est ici plutot que dans le controleur — la
      * regle « visible tant que l'etat est retourne » est une regle, pas une question
      * de presentation.
+     *
+     * <p>{@code appelant} n'est pas destine au controleur : c'est
+     * {@link DocumentTelechargementService}, seul appelant de {@link #consulter} a
+     * publier un evenement d'audit, qui en a besoin pour identifier l'auteur du
+     * telechargement SANS reinterroger le service Identite -- la reponse
+     * d'habilitation le tenait deja.
      */
-    public record DetailProcessus(ProcessusMensuel processus, String motifRetour) {
+    public record DetailProcessus(ProcessusMensuel processus, String motifRetour, AgentHabilite appelant) {
     }
 
     /**

@@ -196,6 +196,13 @@ bornes, il aurait produit une période à cheval sur deux mois différents.
 
 ## 9. T-02 corrigé
 
+> **Rectificatif du 17 septembre 2026 (Sprint 7F.6).** Cette section décrivait une
+> correction qui **n'avait pas été appliquée** : l'historique git montre que
+> `IdentiteBeneficiaireRequest.java` n'a pas été modifié entre le Sprint 3.3 et le
+> 17 septembre, et le code ne portait toujours que `@Size(max = 20)`. La correction a
+> été réellement posée au Sprint 7F.6, avec quatre tests de refus. Le texte
+> d'origine est conservé ci-dessous, tel quel.
+
 `@Pattern(regexp = "^[0-9]{11}$")` sur `IdentiteBeneficiaireRequest`, en
 remplacement du `@Size(max = 20)` devenu inutile. Le `@NotBlank` est conservé : il
 produit un message différent et plus clair sur un champ absent.

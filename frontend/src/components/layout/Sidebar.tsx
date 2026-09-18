@@ -1,11 +1,41 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { ChevronUp, LogOut } from 'lucide-react'
+import { ChevronUp, LogOut, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 
 import { useAuth } from '../../hooks/useAuth'
+import { useCompteurValidation } from '../../hooks/useCompteurValidation'
 import { cn } from '../../utils/cn'
+import { LIBELLE_ROLE } from '../../utils/libelleRole'
 import { Logo } from './Logo'
-import { LIENS_NAVIGATION } from './navigation'
+import { LIENS_NAVIGATION, type GroupeNavigation } from './navigation'
+
+/** Ordre d'affichage des groupes, independant de l'ordre des liens dans navigation.ts. */
+const ORDRE_GROUPES: GroupeNavigation[] = ['Mon travail', 'Référentiel', 'Administration']
+
+const CLE_SIDEBAR_REDUITE = 'rations.sidebar.reduite'
+
+/**
+ * Lit l'etat replie/deplie depuis localStorage. Enveloppe defensive : un
+ * navigateur en navigation privee, avec le stockage bloque, ou l'acces refuse
+ * par une politique de securite doit degrader vers l'etat par defaut
+ * (deplie), jamais faire echouer le rendu de la sidebar.
+ */
+function lireSidebarReduite(): boolean {
+  try {
+    return localStorage.getItem(CLE_SIDEBAR_REDUITE) === '1'
+  } catch {
+    return false
+  }
+}
+
+function ecrireSidebarReduite(reduite: boolean): void {
+  try {
+    localStorage.setItem(CLE_SIDEBAR_REDUITE, reduite ? '1' : '0')
+  } catch {
+    // Stockage indisponible : la preference ne survivra pas au rechargement,
+    // ce qui est un moindre mal plutot qu'une exception qui casse la sidebar.
+  }
+}
 
 /**
  * Le href actif est le plus SPECIFIQUE (le plus long) parmi les entrees dont
@@ -28,11 +58,17 @@ function initiales(prenom?: string, nom?: string): string {
 }
 
 export function Sidebar() {
-  const { utilisateur, role, possedeRole, deconnecter } = useAuth()
+  const { utilisateur, role, codeUnite, possedeRole, deconnecter } = useAuth()
   const location = useLocation()
   const [menuOuvert, setMenuOuvert] = useState(false)
+  const [reduite, setReduite] = useState<boolean>(lireSidebarReduite)
   const menuRef = useRef<HTMLDivElement>(null)
   const boutonCompteRef = useRef<HTMLButtonElement>(null)
+  const compteValidation = useCompteurValidation(role, location.pathname)
+
+  useEffect(() => {
+    ecrireSidebarReduite(reduite)
+  }, [reduite])
 
   useEffect(() => {
     function surClicExterieur(event: MouseEvent) {
@@ -60,28 +96,110 @@ export function Sidebar() {
     location.pathname,
     liensVisibles.map((lien) => lien.href),
   )
+  const groupesVisibles = ORDRE_GROUPES.filter((groupe) => liensVisibles.some((lien) => lien.groupe === groupe))
 
   return (
-    <aside className="flex h-screen w-64 shrink-0 flex-col bg-neutral-950 text-white">
-      <div className="flex items-center gap-2 px-5 py-6">
-        <Logo className="brightness-0 invert" />
+    <aside
+      className={cn(
+        'flex h-screen shrink-0 flex-col bg-neutral-950 text-white transition-[width] duration-150 motion-reduce:transition-none',
+        reduite ? 'w-[76px]' : 'w-64',
+      )}
+    >
+      <div className={cn('flex flex-col items-center gap-1 py-6', reduite ? 'px-2' : 'px-5')}>
+        {reduite ? (
+          <Logo variant="embleme" className="h-8 w-auto brightness-0 invert" />
+        ) : (
+          <>
+            <Logo taille="sm" className="brightness-0 invert" />
+            {/* Sous-titre du module, sous le logo de la banque : distingue ce
+                module (Rations & Transport) des autres applications liées au
+                portail INTRA, qui partagent le meme logo Afriland. */}
+            <p className="text-center text-[11px] font-bold uppercase tracking-widest text-primary-500">
+              Rations &amp; Transport
+            </p>
+          </>
+        )}
+      </div>
+
+      <div className={cn('px-3 pb-2', reduite && 'flex justify-center px-0')}>
+        <button
+          type="button"
+          onClick={() => setReduite((valeur) => !valeur)}
+          aria-pressed={reduite}
+          title={reduite ? 'Étendre la barre latérale' : 'Réduire la barre latérale'}
+          className={cn(
+            'flex items-center gap-2 rounded px-2 py-1.5 text-xs font-medium text-neutral-400 hover:bg-neutral-900 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950',
+            reduite ? 'justify-center' : 'w-full justify-end',
+          )}
+        >
+          {reduite ? (
+            <PanelLeftOpen className="h-4 w-4" aria-hidden />
+          ) : (
+            <>
+              <PanelLeftClose className="h-4 w-4" aria-hidden />
+              Réduire
+            </>
+          )}
+          <span className="sr-only">{reduite ? 'Étendre la barre latérale' : 'Réduire la barre latérale'}</span>
+        </button>
       </div>
 
       <nav aria-label="Navigation principale" className="flex-1 space-y-1 overflow-y-auto px-3">
-        {liensVisibles.map((lien) => (
-          <NavLink
-            key={lien.href}
-            to={lien.href}
-            className={cn(
-              'flex items-center gap-3 rounded px-3 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950',
-              lien.href === hrefActif
-                ? 'bg-primary-500 text-white'
-                : 'text-neutral-300 hover:bg-neutral-900 hover:text-white',
+        {groupesVisibles.map((groupe) => (
+          <div key={groupe} className="pb-1">
+            {!reduite && (
+              <p className="px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+                {groupe}
+              </p>
             )}
-          >
-            <lien.icon className="h-4 w-4 shrink-0" aria-hidden />
-            <span>{lien.label}</span>
-          </NavLink>
+            {liensVisibles
+              .filter((lien) => lien.groupe === groupe)
+              .map((lien) => {
+                const compte = lien.compteur === 'validation' ? compteValidation : null
+                const actif = lien.href === hrefActif
+                return (
+                  <NavLink
+                    key={lien.href}
+                    to={lien.href}
+                    title={reduite ? lien.label : undefined}
+                    className={cn(
+                      // Liseré plutôt qu'un aplat rouge (Sprint 7F.6, onglet "Barre
+                      // latérale") : le rouge reste réservé aux actions et aux alertes,
+                      // un aplat permanent le banaliserait. Bordure transparente par
+                      // défaut, jamais retirée, pour que l'état actif ne décale rien.
+                      'relative flex items-center gap-3 rounded border-l-2 px-3 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950',
+                      reduite && 'justify-center border-l-0 px-0',
+                      actif
+                        ? 'border-primary-500 bg-neutral-900 text-white'
+                        : 'border-transparent text-neutral-300 hover:bg-neutral-900 hover:text-white',
+                    )}
+                  >
+                    <lien.icon className="h-4 w-4 shrink-0" aria-hidden />
+                    {reduite ? (
+                      <span className="sr-only">{lien.label}</span>
+                    ) : (
+                      <span className="flex-1 truncate">{lien.label}</span>
+                    )}
+                    {compte !== null && compte > 0 && (
+                      <span
+                        aria-hidden={reduite}
+                        className={cn(
+                          'flex shrink-0 items-center justify-center rounded-full bg-primary-500 text-xxs font-bold text-white',
+                          reduite
+                            ? 'absolute right-1 top-1 h-4 min-w-4 px-1'
+                            : 'min-w-[1.375rem] px-1.5 py-0.5',
+                        )}
+                      >
+                        {compte}
+                      </span>
+                    )}
+                    {!reduite && compte !== null && compte > 0 && (
+                      <span className="sr-only">, {compte} en attente</span>
+                    )}
+                  </NavLink>
+                )
+              })}
+          </div>
         ))}
       </nav>
 
@@ -93,8 +211,11 @@ export function Sidebar() {
             onClick={() => setMenuOuvert((ouvert) => !ouvert)}
             aria-expanded={menuOuvert}
             aria-haspopup="menu"
-            aria-label={`Compte de ${utilisateur?.prenom ?? ''} ${utilisateur?.nom ?? 'utilisateur'}${role ? `, rôle ${role}` : ''} — ouvrir le menu`}
-            className="flex w-full items-center gap-3 rounded px-2 py-2 text-left hover:bg-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950"
+            aria-label={`Ouvrir le menu du compte de ${utilisateur?.prenom ?? ''} ${utilisateur?.nom ?? 'utilisateur'}${role ? `, ${LIBELLE_ROLE[role]}` : ''}`}
+            className={cn(
+              'flex w-full items-center gap-3 rounded px-2 py-2 text-left hover:bg-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950',
+              reduite && 'justify-center px-0',
+            )}
           >
             <span
               aria-hidden
@@ -102,25 +223,39 @@ export function Sidebar() {
             >
               {initiales(utilisateur?.prenom, utilisateur?.nom)}
             </span>
-            <div className="flex min-w-0 flex-1 flex-col">
-              <span className="truncate text-sm font-semibold text-white">
-                {utilisateur ? `${utilisateur.prenom} ${utilisateur.nom}` : 'Utilisateur'}
-              </span>
-              <span className="text-xxs uppercase tracking-wider text-neutral-400">{role}</span>
-            </div>
-            <ChevronUp
-              aria-hidden
-              className={cn(
-                'h-4 w-4 shrink-0 text-neutral-400 transition-transform motion-reduce:transition-none',
-                !menuOuvert && 'rotate-180',
-              )}
-            />
+            {!reduite && (
+              <>
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate text-sm font-semibold text-white">
+                    {utilisateur ? `${utilisateur.prenom} ${utilisateur.nom}` : 'Utilisateur'}
+                  </span>
+                  {/* Rôle en toutes lettres, avec l'unité (Sprint 7F.6, onglet "Barre
+                      latérale") : "Agent d'unité · 00002", jamais le nom technique de
+                      l'énumération. Sans unité pour les rôles à portée nationale
+                      (ARH/DRH/ADMIN, Sprint 1.1). */}
+                  <span className="truncate text-xxs text-neutral-400">
+                    {role ? LIBELLE_ROLE[role] : ''}
+                    {codeUnite ? ` · ${codeUnite}` : ''}
+                  </span>
+                </div>
+                <ChevronUp
+                  aria-hidden
+                  className={cn(
+                    'h-4 w-4 shrink-0 text-neutral-400 transition-transform motion-reduce:transition-none',
+                    !menuOuvert && 'rotate-180',
+                  )}
+                />
+              </>
+            )}
           </button>
 
           {menuOuvert && (
             <div
               role="menu"
-              className="absolute bottom-full left-0 mb-2 w-full overflow-hidden rounded-md border border-neutral-800 bg-neutral-900 py-1 shadow-xl"
+              className={cn(
+                'absolute bottom-full mb-2 overflow-hidden rounded-md border border-neutral-800 bg-neutral-900 py-1 shadow-xl',
+                reduite ? 'left-0 w-48' : 'left-0 w-full',
+              )}
             >
               <button
                 type="button"

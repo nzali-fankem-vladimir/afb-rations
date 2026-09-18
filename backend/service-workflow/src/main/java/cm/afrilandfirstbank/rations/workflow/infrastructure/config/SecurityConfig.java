@@ -134,6 +134,12 @@ public class SecurityConfig {
         configuration.setAllowedOrigins(originsAutorisees);
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+        // Sans elle, le navigateur bloque la LECTURE de cet en-tete par le
+        // JavaScript appelant (Access-Control-Expose-Headers), meme quand la
+        // requete elle-meme aboutit : GET /processus/{id}/document (rattrapage
+        // post-7F.6) en depend pour nommer le fichier telecharge cote frontend.
+        // Sans cette ligne, le nom retombe toujours sur le repli generique.
+        configuration.setExposedHeaders(List.of("Content-Disposition"));
         configuration.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

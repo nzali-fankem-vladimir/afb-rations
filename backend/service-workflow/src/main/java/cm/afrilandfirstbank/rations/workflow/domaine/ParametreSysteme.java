@@ -76,4 +76,18 @@ public class ParametreSysteme {
         return actif;
     }
 
+    // --- Ecriture ----------------------------------------------------------------
+
+    /**
+     * Change la valeur portee, apres validation par l'appelant (guide 7F.6,
+     * etape 6, ajout backend scope). Aucune validation ici : le format attendu
+     * depend du code (entier positif pour un seuil ou un delai, texte libre
+     * pour un compte de charge), et cette entite ne connait pas cette
+     * distinction -- {@code ParametreAdminService} valide avant d'appeler ce
+     * mutateur, jamais apres.
+     */
+    public void changerValeur(String nouvelleValeur) {
+        this.valeur = nouvelleValeur;
+    }
+
 }

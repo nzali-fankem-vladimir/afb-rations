@@ -67,4 +67,13 @@ public class RechercheAuditService {
         return repository.parProcessus(idProcessus);
     }
 
+    /**
+     * {@code GET /audit/actions} (rattrapage post-7F.6) : les codes d'action
+     * reellement portes par le journal, pour que le filtre "Type d'action" du
+     * frontend suive le backend au lieu d'une copie figee dans le code client.
+     */
+    public List<String> actionsDisponibles() {
+        return repository.actionsDistinctes();
+    }
+
 }

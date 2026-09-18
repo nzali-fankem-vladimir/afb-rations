@@ -105,12 +105,12 @@ export function SaisieProcessusPage() {
   return (
     <>
       <PageHeader
-        surTitre={`Unité ${processus.codeUnite}`}
+        filAriane={[{ libelle: 'Processus', href: '/processus' }, { libelle: `Unité ${processus.codeUnite}` }]}
         titre={formatPeriode(processus.dateDebut, processus.dateFin)}
       />
       <div className="flex flex-col gap-6 p-8">
-        <div className="flex items-center justify-between">
-          <div role="tablist" aria-label="Sections" className="flex gap-2">
+        <div className="flex items-center justify-between border-b border-neutral-200">
+          <div role="tablist" aria-label="Sections" className="flex gap-6">
             <BoutonOnglet actif={onglet === 'SAISIE'} onClick={() => setOnglet('SAISIE')}>
               Saisie journalière
             </BoutonOnglet>
@@ -118,7 +118,9 @@ export function SaisieProcessusPage() {
               Consultation &amp; soumission
             </BoutonOnglet>
           </div>
-          <BadgeStatutProcessus statut={processus.statut} />
+          <div className="pb-2">
+            <BadgeStatutProcessus statut={processus.statut} />
+          </div>
         </div>
 
         {processus.statut === 'RETOURNE' && processus.motifRetour && (
@@ -172,9 +174,14 @@ function BoutonOnglet({
       role="tab"
       aria-selected={actif}
       onClick={onClick}
+      // Onglets soulignes plutot que pastilles pleines (Sprint 7F.6,
+      // proposition n°5) : le rouge de la charte reste un accent, il ne remplit
+      // plus un element de navigation permanent.
       className={cn(
-        'rounded-full px-4 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500',
-        actif ? 'bg-primary-500 text-white' : 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200',
+        '-mb-px border-b-2 px-1 pb-2.5 pt-1 text-sm font-semibold transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500',
+        actif
+          ? 'border-primary-500 text-neutral-900'
+          : 'border-transparent text-neutral-600 hover:text-neutral-900',
       )}
     >
       {children}

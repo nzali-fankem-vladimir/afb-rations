@@ -24,10 +24,12 @@ import cm.afrilandfirstbank.rations.grilles.api.dto.GrilleResponse;
 import cm.afrilandfirstbank.rations.grilles.api.dto.MontantApplicableResponse;
 import cm.afrilandfirstbank.rations.grilles.api.dto.PageResponse;
 import cm.afrilandfirstbank.rations.grilles.api.dto.RejetGrilleRequest;
+import cm.afrilandfirstbank.rations.grilles.api.dto.RetraitGrilleRequest;
 import cm.afrilandfirstbank.rations.grilles.api.dto.ValidationGrilleResponse;
 import cm.afrilandfirstbank.rations.grilles.application.DecisionGrilleService;
 import cm.afrilandfirstbank.rations.grilles.application.GrilleService;
 import cm.afrilandfirstbank.rations.grilles.application.ResolutionMontantService;
+import cm.afrilandfirstbank.rations.grilles.application.RetraitGrilleService;
 import cm.afrilandfirstbank.rations.grilles.domaine.GrilleTarifaire;
 import cm.afrilandfirstbank.rations.grilles.domaine.NatureEnum;
 import cm.afrilandfirstbank.rations.grilles.domaine.SessionEnum;
@@ -62,13 +64,16 @@ public class GrilleController {
     private final GrilleService grilleService;
     private final DecisionGrilleService decisionGrilleService;
     private final ResolutionMontantService resolutionMontantService;
+    private final RetraitGrilleService retraitGrilleService;
 
     public GrilleController(GrilleService grilleService,
             DecisionGrilleService decisionGrilleService,
-            ResolutionMontantService resolutionMontantService) {
+            ResolutionMontantService resolutionMontantService,
+            RetraitGrilleService retraitGrilleService) {
         this.grilleService = grilleService;
         this.decisionGrilleService = decisionGrilleService;
         this.resolutionMontantService = resolutionMontantService;
+        this.retraitGrilleService = retraitGrilleService;
     }
 
     // --- Resolution du montant applicable (Sprint 2.4, RG-03) ---------------
@@ -258,6 +263,50 @@ public class GrilleController {
                 requete, enteteAutorisation, requeteHttp.getRemoteAddr());
 
         return ResponseEntity.status(HttpStatus.CREATED).body(GrilleResponse.depuis(grille));
+    }
+
+    // --- Retrait par l'auteur, avant decision de la DRH (7F.9, demande n°7) ---
+
+    @PostMapping("/{id}/retrait")
+    @PreAuthorize("hasRole('ARH')")
+    @Operation(summary = "Retire une grille en attente, a la demande de son propre auteur",
+            description = """
+                    Passe la grille au statut **REJETEE**, comme un rejet de la Directrice RH,
+                    mais a l'initiative de l'Analyste RH qui l'a proposee -- avant toute decision.
+
+                    **Role requis :** ARH, ET auteur de cette proposition precise. Un Analyste RH
+                    qui tenterait de retirer la proposition d'un collegue recoit
+                    `403 GRILLE_NON_PROPRIETAIRE`.
+
+                    **Pourquoi retirer plutot que modifier :** aucun endpoint de ce module ne
+                    reecrit une grille en place (RG-14, decision Sprint 2.2). L'Analyste RH
+                    retire sa proposition, puis en soumet une nouvelle, corrigee, par
+                    `POST /grilles`.
+
+                    **Motif obligatoire (RG-10)**, meme regle qu'un rejet par la DRH.
+                    """)
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Grille retiree, motif enregistre"),
+            @ApiResponse(responseCode = "400", description = "Motif absent ou vide", content = @Content),
+            @ApiResponse(responseCode = "401", description = "Jeton absent, invalide ou expire", content = @Content),
+            @ApiResponse(responseCode = "403", description = "Role autre qu'ARH, aucun profil ouvert dans le module, "
+                    + "ou grille proposee par un autre Analyste RH. Trace en audit.", content = @Content),
+            @ApiResponse(responseCode = "404", description = "Aucune grille ne porte cet identifiant", content = @Content),
+            @ApiResponse(responseCode = "422", description = "Motif non exploitable (MOTIF_OBLIGATOIRE) ou statut "
+                    + "incompatible (TRANSITION_INTERDITE) -- la DRH a deja tranche", content = @Content),
+            @ApiResponse(responseCode = "503", description = "Service Identite injoignable : rien n'a ete modifie",
+                    content = @Content)
+    })
+    public ResponseEntity<GrilleResponse> retirer(
+            @PathVariable Long id,
+            @Valid @RequestBody RetraitGrilleRequest requete,
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String enteteAutorisation,
+            HttpServletRequest requeteHttp) {
+
+        GrilleTarifaire grille = retraitGrilleService.retirer(
+                id, requete.motif(), enteteAutorisation, requeteHttp.getRemoteAddr());
+
+        return ResponseEntity.ok(GrilleResponse.depuis(grille));
     }
 
     // --- Decision de la Directrice RH (Sprint 2.3, US-14) -------------------

@@ -280,3 +280,37 @@ export async function retournerProcessus(id: number, motif: string): Promise<Ret
   } satisfies RetourRequest)
   return reponse.data
 }
+
+// --- Sprint 7F.8 : telechargement du document signe -------------------------
+
+/** Le contenu binaire du document, et le nom de fichier annonce par le serveur. */
+export interface DocumentTelecharge {
+  contenu: Blob
+  nomFichier: string
+}
+
+/** "attachment; filename=\"etat-rations-00002-20260907-p740.pdf\"" -> le nom seul. */
+function nomFichierDepuisEnTete(enTeteDisposition: string | undefined, repli: string): string {
+  const correspondance = enTeteDisposition?.match(/filename="?([^"]+)"?/)
+  return correspondance?.[1] ?? repli
+}
+
+/**
+ * Telecharge le document PDF signe d'un etat (guide 7F.8, point ferme au
+ * Sprint 7F.5 -- docs/points-en-attente.md, section « PDF signe »).
+ *
+ * ATTENTION -- `responseType: 'blob'` : une erreur du serveur (404, 403...)
+ * arrive alors elle-meme sous forme de Blob, jamais de JSON deja decode.
+ * `creerClientApi` la reconvertit dans son intercepteur de reponse avant de la
+ * rendre a l'appelant : AffichageErreur ne voit donc jamais qu'un
+ * ApiErrorResponse ordinaire, quel que soit le type de requete qui a echoue.
+ */
+export async function telechargerDocument(id: number): Promise<DocumentTelecharge> {
+  const reponse = await workflowApiClient.get<Blob>(`/processus/${id}/document`, {
+    responseType: 'blob',
+  })
+  return {
+    contenu: reponse.data,
+    nomFichier: nomFichierDepuisEnTete(reponse.headers['content-disposition'], `etat-${id}.pdf`),
+  }
+}

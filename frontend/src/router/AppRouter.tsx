@@ -5,6 +5,11 @@ import { LIENS_NAVIGATION, routeAccueil } from '../components/layout/navigation'
 import { AccesInterdit } from '../pages/AccesInterdit'
 import { PageIntrouvable } from '../pages/PageIntrouvable'
 import { PageProvisoire } from '../pages/PageProvisoire'
+import { AuditPage } from '../pages/audit/AuditPage'
+import { DecisionGrillesPage } from '../pages/grilles/DecisionGrillesPage'
+import { GrillesTarifairesPage } from '../pages/grilles/GrillesTarifairesPage'
+import { ParametresAdminPage } from '../pages/admin/ParametresAdminPage'
+import { UtilisateursAdminPage } from '../pages/admin/UtilisateursAdminPage'
 import { ProcessusListPage } from '../pages/processus/ProcessusListPage'
 import { SaisieProcessusPage } from '../pages/saisie/SaisieProcessusPage'
 import { ExamenProcessusPage } from '../pages/validation/ExamenProcessusPage'
@@ -28,6 +33,14 @@ function elementPourLien(href: string) {
       return <Navigate to="/processus" replace />
     case '/validation':
       return <ValidationListPage />
+    case '/grilles':
+      return <GrillesTarifairesPage />
+    case '/audit':
+      return <AuditPage />
+    case '/admin/utilisateurs':
+      return <UtilisateursAdminPage />
+    case '/admin/parametres':
+      return <ParametresAdminPage />
     default:
       return null
   }
@@ -66,6 +79,15 @@ export function AppRouter() {
                   et-appels-multi-services.md). */}
               {lien.href === '/validation' && (
                 <Route path="/validation/:idProcessus" element={<ExamenProcessusPage />} />
+              )}
+              {/* /grilles/decisions : route de detail sans lien propre dans la sidebar,
+                  meme convention -- mais restreinte a la DRH par un second
+                  ProtectedRoute imbrique, le lien parent '/grilles' etant partage avec
+                  l'ARH (guide 7F.6, etape 4). */}
+              {lien.href === '/grilles' && (
+                <Route element={<ProtectedRoute roles={['DRH']} />}>
+                  <Route path="/grilles/decisions" element={<DecisionGrillesPage />} />
+                </Route>
               )}
             </Route>
           ))}

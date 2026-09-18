@@ -41,6 +41,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import cm.afrilandfirstbank.rations.commun.audit.EvenementAudit;
 import cm.afrilandfirstbank.rations.commun.audit.PublicateurAudit;
+import cm.afrilandfirstbank.rations.workflow.application.DocumentTelechargementService;
 import cm.afrilandfirstbank.rations.workflow.application.FonctionnaliteService;
 import cm.afrilandfirstbank.rations.workflow.application.EtatConsolide;
 import cm.afrilandfirstbank.rations.workflow.application.ManqueCompletude;
@@ -164,6 +165,15 @@ class ProcessusControllerIT {
      */
     @MockitoBean
     private RechercheProcessusService rechercheProcessusService;
+
+    /**
+     * Requis depuis le Sprint 7F.8 : le controleur sert aussi l'endpoint
+     * {@code GET /processus/{id}/document}. Sans cette doublure, le contexte de
+     * ce {@code @WebMvcTest} ne s'assemble pas. L'endpoint lui-meme est eprouve
+     * par {@code DocumentTelechargementServiceTest}.
+     */
+    @MockitoBean
+    private DocumentTelechargementService documentTelechargementService;
 
     /** Empreinte de reference : 8 caracteres de prefixe plus 64 de SHA-256. */
     private static final String EMPREINTE =
@@ -475,7 +485,7 @@ class ProcessusControllerIT {
     void contratInterServicesRespecte() throws Exception {
         keycloakEmet("AGENT_UNITE");
         when(processusService.consulter(anyLong(), anyString()))
-                .thenReturn(new ProcessusService.DetailProcessus(unProcessus(), null));
+                .thenReturn(new ProcessusService.DetailProcessus(unProcessus(), null, null));
 
         mockMvc.perform(get("/processus/740").header(HttpHeaders.AUTHORIZATION, JETON))
                 .andExpect(status().isOk())
@@ -493,7 +503,7 @@ class ProcessusControllerIT {
     @DisplayName("12. Les trois roles du circuit peuvent consulter")
     void lesTroisRolesDuCircuitConsultent() throws Exception {
         when(processusService.consulter(anyLong(), anyString()))
-                .thenReturn(new ProcessusService.DetailProcessus(unProcessus(), null));
+                .thenReturn(new ProcessusService.DetailProcessus(unProcessus(), null, null));
 
         for (String role : List.of("AGENT_UNITE", "CHEF_UNITE_DA", "DIRECTEUR_RESEAU_DR")) {
             keycloakEmet(role);
@@ -1076,7 +1086,7 @@ class ProcessusControllerIT {
         ReflectionTestUtils.setField(retourne, "statut", StatutEnum.RETOURNE);
 
         when(processusService.consulter(anyLong(), anyString())).thenReturn(
-                new ProcessusService.DetailProcessus(retourne, "Journee du 12 saisie deux fois."));
+                new ProcessusService.DetailProcessus(retourne, "Journee du 12 saisie deux fois.", null));
 
         mockMvc.perform(get("/processus/740").header(HttpHeaders.AUTHORIZATION, JETON))
                 .andExpect(status().isOk())

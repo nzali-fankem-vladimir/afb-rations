@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus } from 'lucide-react'
+import { ChevronRight, Plus } from 'lucide-react'
 
 import { AffichageErreur } from '../../components/communs/AffichageErreur'
-import { BadgeStatutProcessus } from '../../components/communs/Badge'
+import { Alert, AlertDescription } from '../../components/communs/Alert'
+import { Badge, BadgeStatutProcessus } from '../../components/communs/Badge'
 import { Button } from '../../components/communs/Button'
+import { StatTile } from '../../components/communs/StatTile'
 import { Tableau } from '../../components/communs/Tableau'
 import type { Colonne } from '../../components/communs/Tableau'
 import { PageHeader } from '../../components/layout/PageHeader'
@@ -15,6 +17,7 @@ import type { DemandeResponse } from '../../api/reportingApi'
 import type { PageResponse } from '../../types/pagination'
 import { formatMontantFcfa, formatPeriode } from '../../utils/formatters'
 import { DeclenchementModale } from './DeclenchementModale'
+import { useStatistiquesProcessus } from './useStatistiquesProcessus'
 
 const TAILLE_PAGE = 20
 
@@ -26,15 +29,31 @@ const COLONNES: Colonne<DemandeResponse>[] = [
   },
   { cle: 'codeUnite', entete: 'Unité' },
   {
+    cle: 'typeProcessus',
+    entete: 'Type',
+    rendu: (demande) =>
+      demande.typeProcessus === 'COMPLEMENTAIRE' ? (
+        <Badge variant="attente">Complémentaire</Badge>
+      ) : (
+        'Normal'
+      ),
+  },
+  {
     cle: 'montantTotal',
     entete: 'Montant total',
-    className: 'tabular-nums',
+    className: 'tabular-nums font-semibold text-neutral-900',
     rendu: (demande) => formatMontantFcfa(demande.montantTotal),
   },
   {
     cle: 'statut',
     entete: 'Statut',
     rendu: (demande) => <BadgeStatutProcessus statut={demande.statut} />,
+  },
+  {
+    cle: 'chevron',
+    entete: '',
+    className: 'w-8 text-neutral-400',
+    rendu: () => <ChevronRight className="h-4 w-4" aria-hidden />,
   },
 ]
 
@@ -52,6 +71,10 @@ export function ProcessusListPage() {
   const [chargement, setChargement] = useState(true)
   const [erreurListe, setErreurListe] = useState<ApiErrorResponse | null>(null)
   const [modaleOuverte, setModaleOuverte] = useState(false)
+  // Cle constante : ces compteurs se rafraichissent au montage de l'ecran (on
+  // y revient a chaque navigation depuis la sidebar), pas a chaque changement
+  // de page de la liste.
+  const statistiques = useStatistiquesProcessus('processus-liste')
 
   // Aucune reinitialisation synchrone de `chargement` ici : elle est deja vraie
   // au montage (valeur initiale) et remise a vrai par le changement de page
@@ -83,16 +106,44 @@ export function ProcessusListPage() {
 
   return (
     <>
-      <PageHeader surTitre="Saisie" titre="Mes processus" />
-      <div className="flex flex-col gap-6 p-8">
-        {erreurListe && <AffichageErreur erreur={erreurListe} />}
-
-        <div className="flex justify-end">
+      <PageHeader
+        surTitre={codeUnite ? `Unité ${codeUnite}` : 'Saisie'}
+        titre="Mes états"
+        actions={
           <Button onClick={() => setModaleOuverte(true)}>
             <Plus className="h-4 w-4" aria-hidden="true" />
             Déclencher un état
           </Button>
-        </div>
+        }
+      />
+      <div className="flex flex-col gap-6 p-8">
+        {erreurListe && <AffichageErreur erreur={erreurListe} />}
+
+        {statistiques && (
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <StatTile valeur={statistiques.enCoursSaisie} libelle="en cours de saisie" />
+            <StatTile valeur={statistiques.enAttenteValidation} libelle="en attente de validation" />
+            <StatTile valeur={statistiques.retourne} libelle="retourné à corriger" />
+            <StatTile valeur={statistiques.clotureCetteAnnee} libelle="clôturés cette année" />
+          </div>
+        )}
+
+        {statistiques?.premierRetourne && (
+          <Alert variant="warning">
+            <AlertDescription>
+              <p className="font-medium">
+                Un état vous a été retourné, période {formatPeriode(statistiques.premierRetourne.dateDebut, statistiques.premierRetourne.dateFin)}.
+              </p>
+              <p>Corrigez vos lignes, puis soumettez à nouveau.</p>
+              <Button
+                className="mt-2"
+                onClick={() => navigate(`/saisie/${statistiques.premierRetourne!.idProcessus}`)}
+              >
+                Ouvrir ce dossier
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
 
         <Tableau
           colonnes={COLONNES}

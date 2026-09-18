@@ -69,6 +69,19 @@ public class AuditLogRechercheRepositoryImpl implements AuditLogRechercheReposit
         return entityManager.createQuery(requete).getResultList();
     }
 
+    @Override
+    public List<String> actionsDistinctes() {
+        CriteriaBuilder cb = entityManager.getCriteriaBuilder();
+        CriteriaQuery<String> requete = cb.createQuery(String.class);
+        Root<AuditLog> racine = requete.from(AuditLog.class);
+
+        requete.select(racine.get("action"))
+                .distinct(true)
+                .orderBy(cb.asc(racine.get("action")));
+
+        return entityManager.createQuery(requete).getResultList();
+    }
+
     private Predicate[] predicats(FiltreAuditEntrees filtre, CriteriaBuilder cb, Root<AuditLog> racine) {
         List<Predicate> predicats = new ArrayList<>();
 

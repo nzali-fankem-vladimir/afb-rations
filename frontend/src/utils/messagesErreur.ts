@@ -38,6 +38,22 @@ export const LIBELLES_ERREUR: Record<string, string> = {
   // 500, pas 422 : le validateur n'a rien a corriger, c'est le parametre
   // d'aiguillage RG-08 qui est indisponible (CLAUDE.md section 15).
   SEUIL_INDISPONIBLE: "Seuil d'aiguillage indisponible",
+  // Sprint 7F.6 -- grilles tarifaires et administration.
+  // Deux causes distinctes du meme 409, RG-14 (Sprint 2.2) : ne jamais fusionner
+  // sous un seul libelle "grille deja existante", le remede differe.
+  GRILLE_EN_ATTENTE_EXISTANTE: 'Une proposition attend déjà la DRH',
+  GRILLE_ACTIVE_EXISTANTE: 'Date de début trop proche',
+  GRILLE_INTROUVABLE: 'Grille introuvable',
+  // Deux 409 de controle interne (Sprint 1.2), pas des pannes -- distincts
+  // l'un de l'autre pour que l'administrateur comprenne l'action a corriger.
+  AUTO_MODIFICATION_INTERDITE: 'Auto-modification impossible',
+  DERNIER_ADMINISTRATEUR: 'Dernier administrateur actif',
+  CODE_UNITE_INCOHERENT: 'Code unité requis pour ce rôle',
+  UTILISATEUR_INTROUVABLE: 'Utilisateur introuvable',
+  // Sprint 7F.6 -- ajout backend scope, ecriture des parametres systeme.
+  PARAMETRE_INTROUVABLE: 'Paramètre introuvable',
+  PARAMETRE_NON_MODIFIABLE: 'Paramètre non modifiable',
+  VALEUR_PARAMETRE_INVALIDE: 'Valeur invalide',
 }
 
 const LIBELLE_PAR_DEFAUT = 'Une erreur est survenue'

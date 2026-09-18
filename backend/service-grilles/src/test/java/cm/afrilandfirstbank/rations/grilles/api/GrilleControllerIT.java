@@ -37,6 +37,7 @@ import cm.afrilandfirstbank.rations.grilles.application.DecisionGrilleService;
 import cm.afrilandfirstbank.rations.grilles.application.DecisionGrilleService.ResultatValidation;
 import cm.afrilandfirstbank.rations.grilles.application.GrilleService;
 import cm.afrilandfirstbank.rations.grilles.application.ResolutionMontantService;
+import cm.afrilandfirstbank.rations.grilles.application.RetraitGrilleService;
 import cm.afrilandfirstbank.rations.grilles.domaine.GrilleTarifaire;
 import cm.afrilandfirstbank.rations.grilles.domaine.NatureEnum;
 import cm.afrilandfirstbank.rations.grilles.domaine.ResolutionMontant;
@@ -100,6 +101,10 @@ class GrilleControllerIT {
 
     @MockitoBean
     private ResolutionMontantService resolutionMontantService;
+
+    /** Requis depuis le Sprint 7F.9 : le controleur sert aussi POST /grilles/{id}/retrait. */
+    @MockitoBean
+    private RetraitGrilleService retraitGrilleService;
 
     private void keycloakEmet(String sub, String login, String role) {
         when(jwtDecoder.decode(anyString())).thenReturn(Jwt.withTokenValue("jeton-de-test")

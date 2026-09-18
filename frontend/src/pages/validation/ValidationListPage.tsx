@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { ChevronRight } from 'lucide-react'
 
 import { AffichageErreur } from '../../components/communs/AffichageErreur'
 import { Badge } from '../../components/communs/Badge'
@@ -31,7 +32,7 @@ const COLONNES: Colonne<DemandeResponse>[] = [
     // de recevoir un dossier de quelques milliers de FCFA (guide 7F.5, etape 2).
     rendu: (demande) =>
       demande.typeProcessus === 'COMPLEMENTAIRE' ? (
-        <Badge variant="attente">Complémentaire — toujours vers le DR</Badge>
+        <Badge variant="attente">Complémentaire (toujours vers le DR)</Badge>
       ) : (
         'Normal'
       ),
@@ -45,7 +46,21 @@ const COLONNES: Colonne<DemandeResponse>[] = [
     className: 'tabular-nums font-semibold text-neutral-900',
     rendu: (demande) => formatMontantFcfa(demande.montantTotal),
   },
+  {
+    cle: 'chevron',
+    entete: '',
+    className: 'w-8 text-neutral-400',
+    rendu: () => <ChevronRight className="h-4 w-4" aria-hidden />,
+  },
 ]
+
+// Note (maquette de refonte, Sprint 7F.6) : la maquette proposait d'afficher
+// "soumis par <login> · <date>" dans la liste. Donnee indisponible sur
+// GET /reporting/demandes (DemandeResponse ne porte ni auteur ni date de
+// soumission -- seule l'historique par dossier, GET /reporting/processus/{id}/
+// historique, la porte). L'ajouter ici couterait un appel supplementaire par
+// ligne visible (jusqu'a 20 par page) : ecarte, en attendant un eventuel
+// enrichissement de l'endpoint de liste.
 
 /**
  * Liste des dossiers en attente du niveau de l'utilisateur connecte (guide

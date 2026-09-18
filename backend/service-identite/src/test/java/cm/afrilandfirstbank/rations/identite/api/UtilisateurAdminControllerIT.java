@@ -126,6 +126,40 @@ class UtilisateurAdminControllerIT {
     }
 
     @Test
+    @DisplayName("9bis. GET /identite/utilisateurs avec un jeton ARH : 200 (rattrapage post-7F.6, filtre audit)")
+    void listeAvecJetonArhAutorisee() throws Exception {
+        keycloakEmet("b2c3d4e5-0000-0000-0000-000000000098", "alice_arh", "ARH");
+        when(utilisateurAdminService.lister(any(), any(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
+
+        mockMvc.perform(get("/identite/utilisateurs").header(HttpHeaders.AUTHORIZATION, "Bearer jeton-de-test"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("9ter. GET /identite/utilisateurs avec un jeton DRH : 200 (rattrapage post-7F.6, filtre audit)")
+    void listeAvecJetonDrhAutorisee() throws Exception {
+        keycloakEmet("c3d4e5f6-0000-0000-0000-000000000097", "diane_drh", "DRH");
+        when(utilisateurAdminService.lister(any(), any(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
+
+        mockMvc.perform(get("/identite/utilisateurs").header(HttpHeaders.AUTHORIZATION, "Bearer jeton-de-test"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("9quater. PUT /identite/utilisateurs/{id}/role avec un jeton ARH : 403 (lecture ouverte, ecriture non)")
+    void attributionAvecJetonArhRefusee() throws Exception {
+        keycloakEmet("b2c3d4e5-0000-0000-0000-000000000098", "alice_arh", "ARH");
+
+        mockMvc.perform(put("/identite/utilisateurs/11/role")
+                        .contentType("application/json")
+                        .content("{\"role\":\"CHEF_UNITE_DA\",\"codeUnite\":\"00002\"}")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer jeton-de-test"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     @DisplayName("10. filtres combines role et codeUnite : resultats coherents")
     void listeAvecFiltresCombines() throws Exception {
         keycloakEmet(SUB_ADMIN, "sara_biya", "ADMIN");

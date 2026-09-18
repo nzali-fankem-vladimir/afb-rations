@@ -89,7 +89,7 @@ class CreationLigneServiceTest {
 
         commande = new CommandeCreationLigne(
                 ID_FICHE,
-                new IdentiteBeneficiaire("MBALLA", "Paul", "03702009998888", "00002"),
+                new IdentiteBeneficiaire("MBALLA", "Paul", "02009998888", "00002"),
                 NatureEnum.RATION,
                 SessionEnum.JOUR);
     }
@@ -306,9 +306,9 @@ class CreationLigneServiceTest {
     }
 
     private void beneficiaireResolu() {
-        Beneficiaire beneficiaire = new Beneficiaire("MBALLA", "Paul", "03702009998888", "00002");
+        Beneficiaire beneficiaire = new Beneficiaire("MBALLA", "Paul", "02009998888", "00002");
         ReflectionTestUtils.setField(beneficiaire, "id", ID_BENEFICIAIRE);
-        when(resolutionBeneficiaireService.resoudre(eq("MBALLA"), eq("Paul"), eq("03702009998888"),
+        when(resolutionBeneficiaireService.resoudre(eq("MBALLA"), eq("Paul"), eq("02009998888"),
                 eq("00002"), any()))
                 .thenReturn(beneficiaire);
     }

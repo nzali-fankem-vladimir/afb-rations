@@ -23,6 +23,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import cm.afrilandfirstbank.rations.commun.audit.PublicateurAudit;
 import cm.afrilandfirstbank.rations.workflow.application.FonctionnaliteService;
+import cm.afrilandfirstbank.rations.workflow.application.ParametreAdminService;
 import cm.afrilandfirstbank.rations.workflow.infrastructure.config.RoleJwtConverter;
 import cm.afrilandfirstbank.rations.workflow.infrastructure.config.SecurityConfig;
 
@@ -61,6 +62,11 @@ class ParametreControllerIT {
 
     @MockitoBean
     private FonctionnaliteService fonctionnaliteService;
+
+    /** Requis depuis le guide 7F.6, etape 6 : ParametreController porte desormais
+     * un second service applicatif (PUT /parametres/{code}). */
+    @MockitoBean
+    private ParametreAdminService parametreAdminService;
 
     /**
      * Test 18 du guide, premiere moitie : la reponse reflete l'etat reel du parametre.

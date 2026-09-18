@@ -89,6 +89,7 @@ guide écrivait `dispositifs-provisoires.md`, un chemin qui n'existe pas), secti
 
 | Étape | Modèle | Effort |
 |---|---|---|
+| Maquette des écrans (étape 1bis) | Sonnet | Moyen |
 | Suivi et exports (étapes 2-4) | Sonnet | Moyen |
 | Fonctionnalités actives et régularisation (étapes 5-6) | Opus | Élevé |
 | Clôture (étapes 7-8) | Sonnet | Moyen |
@@ -109,10 +110,13 @@ Dernier sous-sprint du frontend. Il complète le parcours de l'Analyste RH avec 
 
 Un point d'ergonomie sur la régularisation : le refus pour unicité inter-états est le message le plus délicat du module. L'agent tente de rattraper un bénéficiaire et le système refuse, en indiquant que la prestation figure déjà dans un autre état de la période. Sans explication précise, l'agent ne comprendra pas pourquoi son rattrapage est bloqué.
 
-Un second point d'ergonomie : si la fonctionnalité est **refermée** — c'est désormais un geste d'urgence, le métier l'ayant ouverte —, l'agent ne doit même pas voir l'entrée de menu qui y mène. Un menu visible mais menant à un refus systématique serait plus déroutant qu'un menu absent.
+Un second point d'ergonomie : si la fonctionnalité est **refermée** (c'est désormais un geste d'urgence, le métier l'ayant ouverte), l'agent ne doit même pas voir l'entrée de menu qui y mène. Un menu visible mais menant à un refus systématique serait plus déroutant qu'un menu absent.
+
+**Méthode retenue depuis le Sprint 7F.6 : maquette avant code.** Une proposition d'interface se discute et se corrige en quelques minutes sur un artefact ; la même discussion sur du code déjà écrit coûte une réécriture. L'étape 1bis construit cette maquette pour les écrans de ce sous-sprint, avant que l'étape 2 ne touche au code réel. Deux règles d'écriture valables pour toute maquette et tout écran produits à partir de ce sprint : aucun émoji comme icône (préférer un glyphe géométrique sobre ou aucune icône), et aucun tiret cadratin (« — ») dans le texte affiché, remplacé par une virgule, des parenthèses, un point milieu (« · ») entre deux termes courts, ou une phrase reformulée — ces deux points, remontés par l'utilisateur lors de la vérification du Sprint 7F.6, s'appliquent à toute interface et à toute maquette produites pour ce projet.
 
 ## 4. Objectifs
 
+- Maquette (artefact) des écrans de ce sous-sprint, validée avec l'utilisateur avant l'implémentation
 - Écran de suivi multicritère des demandes
 - Écran d'historique d'un dossier
 - Écran de rapports avec exports PDF et Excel
@@ -165,6 +169,54 @@ PREMIERE ACTION : cree le module d'appel a l'api de reporting :
 fonctions typees pour la recherche, l'historique, le rapport et
 l'export. L'export retourne un fichier binaire : verifie comment le
 client axios le gere avant de typer la fonction. Montre le fichier.
+```
+
+### Étape 1bis. Maquette des écrans de ce sous-sprint
+
+```
+Avant d'ecrire le moindre ecran reel, produis une maquette (artefact
+HTML) des ecrans de ce sous-sprint, pour validation avant
+implementation -- meme methode qu'au Sprint 7F.6.
+
+UN SEUL artefact, avec un menu de gauche qui bascule entre panneaux
+(comme au 7F.6), couvrant :
+- l'ecran de suivi multicritere (filtres, tableau pagine, statut
+  d'integration comptable avec ses cinq situations) ;
+- l'ecran d'historique d'un dossier (chronologie, y compris les
+  passages repetes au meme niveau apres un retour) ;
+- l'ecran de rapports et exports (selection unite + periode,
+  synthese, deux boutons d'export) ;
+- l'ecran d'ouverture d'un etat complementaire (selection de
+  l'origine, motif obligatoire, recapitulatif des bornes non
+  modifiables, avertissement "periode deja payee") ;
+- l'etat MASQUE : ce que voit un agent quand RATTRAPAGE_ACTIF est
+  ferme (aucune entree de menu, pour verifier que son absence ne
+  laisse pas un trou visuel) ;
+- le refus d'unicite inter-etats (409 DOUBLON_INTER_ETATS), avec son
+  message le plus delicat du module -- nomme le beneficiaire, la
+  journee, la nature, la session ET l'etat en conflit ;
+- les modales necessaires (confirmation d'ouverture d'un
+  complementaire, avec recapitulatif ; les huit refus possibles,
+  chacun avec un message distinct) ;
+- les cinq etats (chargement, vide, vide apres filtre, erreur,
+  contenu) sur au moins l'ecran de suivi.
+
+Reprends la charte du projet a l'identique (frontend/src/index.css :
+rouge #e30613, gris neutres, Source Sans 3) et la barre laterale deja
+validee au 7F.6 (groupee, reductible, logo Afriland conserve). Donnees
+fictives uniquement.
+
+DEUX REGLES D'ECRITURE, remontees par l'utilisateur a la verification
+du 7F.6, valables pour cette maquette ET pour l'implementation qui
+suit :
+1. Aucun emoji comme icone. Un glyphe geometrique sobre (deja choisis
+   au 7F.6 : les icones de la sidebar) ou pas d'icone du tout.
+2. Aucun tiret cadratin (« — ») dans un texte affiche. Remplace-le
+   par une virgule, des parentheses, un point milieu (« · ») entre
+   deux termes courts ("Ration · jour"), ou reformule la phrase.
+
+Presente-moi le lien, section par section, avant de passer a l'etape
+2.
 ```
 
 ### Étape 2. Suivi multicritère
@@ -410,6 +462,8 @@ Propose les ajouts section par section.
 
 | Élément | Statut attendu |
 |---|---|
+| Maquette des écrans de ce sous-sprint validée avant l'implémentation | Fait |
+| Aucun émoji comme icône, aucun tiret cadratin dans un texte affiché | Vérifié |
 | Suivi multicritère avec statut d'intégration visible | Vérifié |
 | Recherche sans résultat traitée comme un état vide | Vérifié |
 | Historique montrant tous les passages | Vérifié |
@@ -445,6 +499,8 @@ Propose les ajouts section par section.
 - **Le mode rattrapage de DOTTEL est le piège le plus subtil du Sprint 7F.** Il ressemble au besoin, il est soigné, et il repose sur une liste d'enrôlés : le transposer réintroduirait l'enrôlement sous un autre nom.
 - **Rouvrir le drapeau après avoir testé le masquage.** Un drapeau oublié fermé coupe la régularisation en silence : aucune erreur, seulement un menu absent.
 - **Agence et unité ne se confondent jamais**, y compris dans un libellé d'écran. Un rapport « par agence » regrouperait les charges de plusieurs unités.
+- **Maquette avant code, pas maquette puis code sans relecture.** L'étape 1bis n'est utile que si les écrans réels de l'étape 2 y correspondent réellement à la fin du sous-sprint ; vérifier l'écart au moment de la clôture (étape 7).
+- **Aucun émoji, aucun tiret cadratin.** Deux marqueurs d'écriture assistée relevés par l'utilisateur à la vérification du Sprint 7F.6, sur la maquette autant que sur le code réel.
 
 ## 8. Commit
 

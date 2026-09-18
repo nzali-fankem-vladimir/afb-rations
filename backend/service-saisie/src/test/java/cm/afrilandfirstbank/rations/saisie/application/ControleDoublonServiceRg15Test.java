@@ -87,9 +87,9 @@ class ControleDoublonServiceRg15Test {
         controleDoublonService = new ControleDoublonService(ligneRepository);
 
         idMballa = beneficiaireRepository.saveAndFlush(
-                new Beneficiaire("MBALLA", "Paul", "03702009998888", UNITE)).getId();
+                new Beneficiaire("MBALLA", "Paul", "02009998888", UNITE)).getId();
         idNkoulou = beneficiaireRepository.saveAndFlush(
-                new Beneficiaire("NKOULOU", "Estelle", "03702007776666", UNITE)).getId();
+                new Beneficiaire("NKOULOU", "Estelle", "02007776666", UNITE)).getId();
 
         // L'etat d'origine, paye : MBALLA, RATION, JOUR, le 15 aout.
         FicheJournaliere origineDu15 = enregistrerFiche(
