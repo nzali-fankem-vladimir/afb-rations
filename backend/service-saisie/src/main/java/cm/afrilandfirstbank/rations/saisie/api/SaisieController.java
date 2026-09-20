@@ -116,9 +116,9 @@ public class SaisieController {
     }
 
     /**
-     * Modification avant soumission : nature et session seulement (décision
-     * prise avec l'utilisateur, étape 1). Traitée comme une création — RG-03 et
-     * RG-04 rejouent intégralement.
+     * Modification sur place avant soumission : nature, session et, facultativement,
+     * l'identité du bénéficiaire. Traitée comme une création — RG-03, RG-04 et RG-15
+     * rejouent intégralement, dans une seule transaction.
      */
     @PutMapping("/lignes/{id}")
     public ResponseEntity<LigneResponse> modifierLigne(
@@ -128,8 +128,7 @@ public class SaisieController {
             HttpServletRequest requeteHttp) {
 
         LigneAvecBeneficiaire resultat = ligneService.modifier(
-                idLigne, requete.nature(), requete.session(), enteteAutorisation,
-                requeteHttp.getRemoteAddr());
+                idLigne, requete.versCommande(), enteteAutorisation, requeteHttp.getRemoteAddr());
 
         return ResponseEntity.ok(LigneResponse.depuis(resultat.ligne(), resultat.beneficiaire()));
     }

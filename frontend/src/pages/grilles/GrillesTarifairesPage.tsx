@@ -11,6 +11,7 @@ import { Tableau } from '../../components/communs/Tableau'
 import type { Colonne } from '../../components/communs/Tableau'
 import { PageHeader } from '../../components/layout/PageHeader'
 import { useAuth } from '../../hooks/useAuth'
+import { useToast } from '../../hooks/useToast'
 import type { ApiErrorResponse } from '../../api/apiClient'
 import { listerGrilles } from '../../api/grillesApi'
 import type { GrilleResponse } from '../../api/grillesApi'
@@ -100,6 +101,7 @@ function enVigueurLe(grille: GrilleResponse, dateIso: string): boolean {
 export function GrillesTarifairesPage() {
   const navigate = useNavigate()
   const { role } = useAuth()
+  const { succes } = useToast()
 
   const [actives, setActives] = useState<GrilleResponse[]>([])
   const [enAttente, setEnAttente] = useState<GrilleResponse[]>([])
@@ -306,6 +308,7 @@ export function GrillesTarifairesPage() {
           grille={grilleARetirer}
           onFerme={() => setGrilleARetirer(null)}
           onSucces={() => {
+            succes('Proposition retirée', formatCombinaison(grilleARetirer.nature, grilleARetirer.session))
             setGrilleARetirer(null)
             recharger()
           }}

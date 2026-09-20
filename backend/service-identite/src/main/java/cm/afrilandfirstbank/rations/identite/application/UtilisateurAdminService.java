@@ -52,7 +52,8 @@ public class UtilisateurAdminService {
     }
 
     /**
-     * Attribue un role applicatif et un code unite a un profil existant.
+     * Attribue un role applicatif et un code unite a un profil existant, et
+     * l'active ou le desactive si {@code actif} est renseigne.
      *
      * <p>Trois controles de fond avant toute ecriture, decision
      * {@code docs/decisions/2026-08-26-attribution-role-administrateur.md} :
@@ -93,12 +94,25 @@ public class UtilisateurAdminService {
 
         RoleEnum roleAvant = cible.getRole();
         String codeUniteAvant = cible.getCodeUnite();
+        boolean actifAvant = cible.estActif();
 
         // 4. Modification de l'etat, PUIS 5. journalisation (document maitre
         // section 7.3). L'envoi reel sur le topic n'a lieu qu'apres le commit de
         // cette transaction : un rollback ne laisse donc pas derriere lui la
         // trace d'une attribution qui n'a pas eu lieu.
         cible.attribuerRoleEtCodeUnite(requete.role(), requete.codeUnite());
+
+        // Statut : absent, inchange. L'appelant est toujours un administrateur actif
+        // et distinct de la cible (controle d'auto-modification plus haut) : il en
+        // reste donc au moins un apres une desactivation, aucun garde supplementaire
+        // n'est necessaire.
+        if (requete.actif() != null && requete.actif() != actifAvant) {
+            if (requete.actif()) {
+                cible.reactiver();
+            } else {
+                cible.desactiver();
+            }
+        }
 
         publicateurAudit.publier(EvenementAudit.de(
                 appelant.getId(),
@@ -109,6 +123,7 @@ public class UtilisateurAdminService {
                 DeltaAudit.nouveau()
                         .champ("role", roleAvant, requete.role())
                         .champ("codeUnite", codeUniteAvant, requete.codeUnite())
+                        .champ("actif", actifAvant, cible.estActif())
                         .contexte("loginCible", cible.getLogin())
                         .enJson()));
 

@@ -39,6 +39,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import cm.afrilandfirstbank.rations.commun.audit.PublicateurAudit;
 import cm.afrilandfirstbank.rations.saisie.application.CommandeCreationLigne;
+import cm.afrilandfirstbank.rations.saisie.application.CommandeModificationLigne;
 import cm.afrilandfirstbank.rations.saisie.application.FicheJournaliereService;
 import cm.afrilandfirstbank.rations.saisie.application.FicheJournaliereService.FicheOuverte;
 import cm.afrilandfirstbank.rations.saisie.application.LigneAvecBeneficiaire;
@@ -360,7 +361,7 @@ class SaisieControllerIT {
         Beneficiaire beneficiaire = beneficiaire(88L, "MBARGA", "Jean", "02000123456");
         LignePrestation ligneRevisee =
                 ligne(1205L, 501L, 88L, NatureEnum.RATION, SessionEnum.SOIR, 3000, 13L);
-        when(ligneService.modifier(eq(1205L), eq(NatureEnum.RATION), eq(SessionEnum.SOIR), anyString(), any()))
+        when(ligneService.modifier(eq(1205L), any(CommandeModificationLigne.class), anyString(), any()))
                 .thenReturn(new LigneAvecBeneficiaire(ligneRevisee, beneficiaire));
 
         mockMvc.perform(put("/saisie/lignes/1205")
@@ -378,7 +379,7 @@ class SaisieControllerIT {
     @DisplayName("11. PUT /saisie/lignes/1205, la nouvelle combinaison est deja prise : 409")
     void modificationCreantUnDoublonRefusee() throws Exception {
         keycloakEmet(SUB_AGENT, "jean_mbarga", "AGENT_UNITE");
-        when(ligneService.modifier(eq(1205L), any(), any(), anyString(), any()))
+        when(ligneService.modifier(eq(1205L), any(CommandeModificationLigne.class), anyString(), any()))
                 .thenThrow(new DoublonLigneException(
                         "MBARGA Jean (compte 02000123456) figure deja sur la journee du 2026-08-18 "
                                 + "en RATION / SOIR."));
@@ -390,6 +391,47 @@ class SaisieControllerIT {
                         {"nature":"RATION","session":"SOIR"}"""))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("DOUBLON_LIGNE"));
+    }
+
+    @Test
+    @DisplayName("11 bis. PUT /saisie/lignes/1205 : l'identite du beneficiaire, compte compris, atteint le service")
+    void modificationTransmetLIdentiteDuBeneficiaire() throws Exception {
+        keycloakEmet(SUB_AGENT, "jean_mbarga", "AGENT_UNITE");
+        Beneficiaire beneficiaire = beneficiaire(90L, "NZALI", "Vladimir", "02000999888");
+        LignePrestation ligneRevisee =
+                ligne(1205L, 501L, 90L, NatureEnum.TRANSPORT, SessionEnum.SOIR, 2000, 14L);
+        org.mockito.ArgumentCaptor<CommandeModificationLigne> commande =
+                org.mockito.ArgumentCaptor.forClass(CommandeModificationLigne.class);
+        when(ligneService.modifier(eq(1205L), commande.capture(), anyString(), any()))
+                .thenReturn(new LigneAvecBeneficiaire(ligneRevisee, beneficiaire));
+
+        mockMvc.perform(put("/saisie/lignes/1205")
+                .header(HttpHeaders.AUTHORIZATION, JETON)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"nature":"TRANSPORT","session":"SOIR","nom":"NZALI","prenom":"Vladimir",
+                         "numCompteCourant":"02000999888","codeAgence":"00003"}"""))
+                .andExpect(status().isOk());
+
+        org.assertj.core.api.Assertions.assertThat(commande.getValue().numCompteCourant())
+                .isEqualTo("02000999888");
+        org.assertj.core.api.Assertions.assertThat(commande.getValue().codeAgence()).isEqualTo("00003");
+        org.assertj.core.api.Assertions.assertThat(commande.getValue().nom()).isEqualTo("NZALI");
+    }
+
+    @Test
+    @DisplayName("11 ter. PUT /saisie/lignes/1205 : un compte mal forme est refuse en 400, avant tout traitement")
+    void modificationAvecCompteMalFormeRefusee() throws Exception {
+        keycloakEmet(SUB_AGENT, "jean_mbarga", "AGENT_UNITE");
+
+        mockMvc.perform(put("/saisie/lignes/1205")
+                .header(HttpHeaders.AUTHORIZATION, JETON)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"nature":"RATION","session":"SOIR","numCompteCourant":"12 34"}"""))
+                .andExpect(status().isBadRequest());
+
+        verify(ligneService, never()).modifier(anyLong(), any(CommandeModificationLigne.class), anyString(), any());
     }
 
     @Test
@@ -411,7 +453,7 @@ class SaisieControllerIT {
         Beneficiaire beneficiaire = beneficiaire(88L, "MBARGA", "Jean", "02000123456");
         LignePrestation ligneRevisee =
                 ligne(1205L, 501L, 88L, NatureEnum.RATION, SessionEnum.SOIR, 3000, 13L);
-        when(ligneService.modifier(eq(1205L), any(), any(), anyString(), any()))
+        when(ligneService.modifier(eq(1205L), any(CommandeModificationLigne.class), anyString(), any()))
                 .thenReturn(new LigneAvecBeneficiaire(ligneRevisee, beneficiaire));
 
         mockMvc.perform(put("/saisie/lignes/1205")
@@ -430,7 +472,7 @@ class SaisieControllerIT {
         // Jusqu'au Sprint 6.3, ces deux appels passaient null en adresse, alors
         // que la creation la renseignait : trois ecritures sur la meme entite,
         // deux facons de les tracer. C'etait un oubli, et rien ne le signalait.
-        verify(ligneService).modifier(eq(1205L), any(), any(), anyString(), eq("10.20.30.40"));
+        verify(ligneService).modifier(eq(1205L), any(CommandeModificationLigne.class), anyString(), eq("10.20.30.40"));
         verify(ligneService).supprimer(eq(1205L), anyString(), eq("10.20.30.40"));
     }
 

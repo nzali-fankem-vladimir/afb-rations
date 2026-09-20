@@ -5,6 +5,7 @@ import { Alert, AlertDescription } from '../../components/communs/Alert'
 import { Button } from '../../components/communs/Button'
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/communs/Card'
 import { PageHeader } from '../../components/layout/PageHeader'
+import { useToast } from '../../hooks/useToast'
 import type { ApiErrorResponse } from '../../api/apiClient'
 import { rechercherAuditEntrees } from '../../api/auditApi'
 import type { AuditEntreeResponse } from '../../api/auditApi'
@@ -55,6 +56,7 @@ const PRESENTATION: Record<string, { titre: string; formater: (valeur: string) =
  * en phrases par `utils/auditLisible.ts`, jamais un identifiant ni un JSON.
  */
 export function ParametresAdminPage() {
+  const { succes } = useToast()
   const [parametres, setParametres] = useState<Record<string, ParametreResponse>>({})
   const [chargement, setChargement] = useState(true)
   const [erreur, setErreur] = useState<ApiErrorResponse | null>(null)
@@ -212,7 +214,8 @@ export function ParametresAdminPage() {
         <ModificationParametreModale
           parametre={parametres[codeEnEdition]}
           onFerme={() => setCodeEnEdition(null)}
-          onSucces={() => {
+          onSucces={(parametre) => {
+            succes('Paramètre modifié', parametre.libelle)
             setCodeEnEdition(null)
             recharger()
           }}

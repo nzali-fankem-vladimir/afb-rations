@@ -169,4 +169,15 @@ public class LignePrestation {
         this.idGrille = idGrille;
     }
 
+    /**
+     * Rattache la ligne à un autre bénéficiaire, sur place.
+     *
+     * <p>À n'appeler qu'après avoir rejoué RG-04 et RG-15 pour ce bénéficiaire :
+     * c'est {@code LigneService} qui en a la charge. Aucune autre mutation ne
+     * change la personne payée par une ligne.
+     */
+    public void rattacherA(Long idBeneficiaire) {
+        this.idBeneficiaire = idBeneficiaire;
+    }
+
 }

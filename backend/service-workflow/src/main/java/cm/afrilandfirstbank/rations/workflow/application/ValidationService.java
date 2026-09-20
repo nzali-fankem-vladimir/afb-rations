@@ -207,8 +207,12 @@ public class ValidationService {
         //    imprimee et la ligne etape_workflow portent le meme instant.
         LocalDateTime horodatage = LocalDateTime.now();
 
+        // Le cadre du directeur reseau n'existe que si l'etat va chez lui : il est
+        // trace au moment ou cette decision est prise, dans la meme ecriture.
+        boolean versDirecteurReseau = aiguillage != null && !aiguillage.estClotureDirecte();
+
         ResultatSignature signature = signatureService.enrichirEtSigner(
-                pieceJointe, acteur, niveau.nomEtape(), horodatage);
+                pieceJointe, acteur, niveau.nomEtape(), horodatage, versDirecteurReseau);
 
         // 10 a 14. Le document porte la signature et son ecriture est confirmee : on
         //          peut ecrire en base.

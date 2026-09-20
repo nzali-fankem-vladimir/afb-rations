@@ -102,7 +102,7 @@ export function FormulaireAjoutLigne({
   const [numCompteCourant, setNumCompteCourant] = useState('')
   const [codeAgence, setCodeAgence] = useState('')
   const [resultatTarif, setResultatTarif] = useState<ResultatTarif | null>(null)
-  const [avertissementTarif, setAvertissementTarif] = useState<string | null>(null)
+  const [avertissement, setAvertissement] = useState<string | null>(null)
   const [enregistrement, setEnregistrement] = useState(false)
   const [erreur, setErreur] = useState<ApiErrorResponse | null>(null)
   // Les erreurs de champ ne s'affichent qu'apres un premier clic sur « Ajouter »,
@@ -163,7 +163,7 @@ export function FormulaireAjoutLigne({
 
   const champModifie = <T,>(setter: (valeur: T) => void) => (valeur: T) => {
     setter(valeur)
-    setAvertissementTarif(null)
+    setAvertissement(null)
   }
 
   const reinitialiserBeneficiaire = () => {
@@ -183,7 +183,7 @@ export function FormulaireAjoutLigne({
     if (!nature || !session || aucunTarif) return
 
     setErreur(null)
-    setAvertissementTarif(null)
+    setAvertissement(null)
     setEnregistrement(true)
     try {
       const ligne = await creerLigne({
@@ -192,12 +192,25 @@ export function FormulaireAjoutLigne({
         nature,
         session,
       })
+      const avertissements: string[] = []
       if (tarif?.etat === 'trouve' && ligne.montantApplique !== null && ligne.montantApplique !== tarif.montant) {
-        setAvertissementTarif(
+        avertissements.push(
           `Le tarif a changé entre-temps : montant enregistré ${formatMontantFcfa(ligne.montantApplique)} ` +
             `au lieu de ${formatMontantFcfa(tarif.montant)} affiché.`,
         )
       }
+      // Compte deja connu sous un autre nom : le serveur garde le nom d'origine (le
+      // compte identifie le beneficiaire). Un nom different est aussi le signal
+      // d'une faute de frappe sur le numero, donc d'un paiement a la mauvaise
+      // personne : on le dit, sans bloquer.
+      const connu = ligne.beneficiaire
+      if (connu.nom !== nom || connu.prenom !== prenom) {
+        avertissements.push(
+          `Ce compte existe déjà sous le nom ${connu.nom} ${connu.prenom} : c'est ce nom qui est utilisé. ` +
+            `Vérifiez le numéro de compte ; pour corriger le nom, utilisez « Modifier ».`,
+        )
+      }
+      if (avertissements.length > 0) setAvertissement(avertissements.join(' '))
       succes(
         'Ligne ajoutée',
         `${nom} ${prenom} · ${formatCombinaison(nature, session)} · ` +
@@ -338,11 +351,11 @@ export function FormulaireAjoutLigne({
         </fieldset>
       </div>
 
-      {(avertissementTarif || erreur) && (
+      {(avertissement || erreur) && (
         <div className="flex flex-col gap-3 border-t border-neutral-100 p-5">
-          {avertissementTarif && (
+          {avertissement && (
             <Alert variant="warning">
-              <AlertDescription>{avertissementTarif}</AlertDescription>
+              <AlertDescription>{avertissement}</AlertDescription>
             </Alert>
           )}
           {erreur && <AffichageErreur erreur={erreur} />}

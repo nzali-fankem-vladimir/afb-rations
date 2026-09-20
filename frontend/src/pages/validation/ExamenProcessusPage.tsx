@@ -34,6 +34,7 @@ import { declencherTelechargement } from '../../utils/declencherTelechargement'
 import { enumererJours, formatDateHeure, formatDateJJMMAAAA, formatMontantFcfa, formatPeriode } from '../../utils/formatters'
 import { statutAttendPourRole } from '../../utils/statutProcessus'
 import { useAuth } from '../../hooks/useAuth'
+import { useToast } from '../../hooks/useToast'
 import { DetailJourneeModale } from '../../components/communs/DetailJourneeModale'
 import { RetourModale } from './RetourModale'
 import { ResultatValidation } from './ResultatValidation'
@@ -153,6 +154,7 @@ export function ExamenProcessusPage() {
   const { idProcessus } = useParams<{ idProcessus: string }>()
   const id = Number(idProcessus)
   const { role } = useAuth()
+  const { succes } = useToast()
 
   const [processus, setProcessus] = useState<ProcessusResponse | null>(null)
   const [etat, setEtat] = useState<EtatProcessusResponse | null>(null)
@@ -216,6 +218,16 @@ export function ExamenProcessusPage() {
     try {
       const reponse = await validerProcessus(id)
       setResultatValidation(reponse)
+      const versDirecteurReseau =
+        reponse.aiguillage === 'ENVOI_DIRECTEUR_RESEAU' || reponse.aiguillage === 'COMPLEMENTAIRE_ENVOI_DIRECTEUR_RESEAU'
+      succes(
+        'Dossier validé',
+        versDirecteurReseau
+          ? 'Transféré au Directeur Réseau'
+          : reponse.transmission && !reponse.transmission.transmis
+            ? "Clôturé, envoi à la comptabilité à vérifier"
+            : 'Clôturé, envoyé à la comptabilité',
+      )
     } catch (erreurApi) {
       setErreurValidation(erreurApi as ApiErrorResponse)
     } finally {
@@ -414,6 +426,7 @@ export function ExamenProcessusPage() {
           onFerme={() => setRetourModaleOuverte(false)}
           onSucces={(reponse) => {
             setResultatRetour(reponse)
+            succes('Dossier retourné', "Il revient à l'agent d'unité avec votre motif")
             setRetourModaleOuverte(false)
           }}
         />

@@ -9,6 +9,7 @@ import type { ApiErrorResponse } from '../../api/apiClient'
 import { ROLES_PORTEE_LOCALE, attribuerRole } from '../../api/adminApi'
 import type { UtilisateurResponse } from '../../api/adminApi'
 import type { RoleEnum } from '../../types/enums'
+import { BoutonsSegmentes } from '../../components/communs/BoutonsSegmentes'
 
 export interface AttributionRoleModaleProps {
   utilisateur: UtilisateurResponse
@@ -34,11 +35,20 @@ const REGEX_CODE_UNITE = /^\d{5}$/
 
 type Etape = 'saisie' | 'verification'
 
+const OPTIONS_STATUT = [
+  { valeur: 'actif', libelle: 'Actif' },
+  { valeur: 'inactif', libelle: 'Inactif' },
+]
+
 /**
- * Attribution d'un rôle et d'un code unité à un profil existant, réservée à
- * l'administrateur (guide 7F.6, étape 5). Aucune création de compte : ce
- * formulaire ne fait qu'attribuer une habilitation à un compte déjà
- * pré-provisionné (CLAUDE.md section 10).
+ * Modification d'un profil existant : rôle, code unité et statut actif ou inactif,
+ * réservée à l'administrateur (guide 7F.6, étape 5 ; statut ajouté après le
+ * 7F.7). Aucune création de compte : ce formulaire ne fait que régler
+ * l'habilitation d'un compte déjà pré-provisionné (CLAUDE.md section 10).
+ *
+ * Un profil inactif est refusé dès sa requête suivante (le profil est relu à
+ * chaque appel), mais sa session Keycloak n'est pas coupée : le jeton reste
+ * valide jusqu'à son expiration (limite consignée dans points-en-attente).
  *
  * Le code unité est obligatoire pour les rôles à portée locale (AGENT_UNITE,
  * CHEF_UNITE_DA) et facultatif pour les rôles à portée nationale --
@@ -54,6 +64,7 @@ export function AttributionRoleModale({ utilisateur, onFerme, onSucces }: Attrib
   const [etape, setEtape] = useState<Etape>('saisie')
   const [role, setRole] = useState<RoleEnum>(utilisateur.role)
   const [codeUnite, setCodeUnite] = useState(utilisateur.codeUnite ?? '')
+  const [actif, setActif] = useState(utilisateur.actif)
   const [erreur, setErreur] = useState<ApiErrorResponse | null>(null)
 
   const codeUniteSaisi = codeUnite.trim()
@@ -73,6 +84,7 @@ export function AttributionRoleModale({ utilisateur, onFerme, onSucces }: Attrib
       const profil = await attribuerRole(utilisateur.id, {
         role,
         codeUnite: codeUniteSaisi === '' ? null : codeUniteSaisi,
+        actif,
       })
       onSucces(profil)
     } catch (erreurApi) {
@@ -80,13 +92,13 @@ export function AttributionRoleModale({ utilisateur, onFerme, onSucces }: Attrib
     }
   }
 
-  const titre = `Habilitation de ${utilisateur.prenom} ${utilisateur.nom}`
+  const titre = `Modifier ${utilisateur.prenom} ${utilisateur.nom}`
 
   if (etape === 'verification') {
     return (
       <Modale
         titre={titre}
-        libelleConfirmer="Confirmer l'attribution"
+        libelleConfirmer="Confirmer la modification"
         variantConfirmer="default"
         libelleAnnuler="Retour"
         largeur="max-w-lg"
@@ -103,12 +115,23 @@ export function AttributionRoleModale({ utilisateur, onFerme, onSucces }: Attrib
                   avant: utilisateur.codeUnite ?? 'aucune (portée nationale)',
                   valeur: codeUniteSaisi === '' ? 'aucune (portée nationale)' : codeUniteSaisi,
                 },
+                {
+                  libelle: 'Statut',
+                  avant: utilisateur.actif ? 'Actif' : 'Inactif',
+                  valeur: actif ? 'Actif' : 'Inactif',
+                },
               ]}
             />
             <p className="text-sm text-neutral-700">
               Le changement s'applique dès la prochaine action de cet utilisateur, sans qu'il ait à
               se reconnecter.
             </p>
+            {utilisateur.actif && !actif && (
+              <p className="text-sm text-neutral-700">
+                Un profil inactif est refusé à sa prochaine action. Sa session de connexion n'est pas
+                coupée : le jeton déjà émis reste valide jusqu'à son expiration.
+              </p>
+            )}
             {erreur && <AffichageErreur erreur={erreur} />}
           </div>
         }
@@ -119,7 +142,7 @@ export function AttributionRoleModale({ utilisateur, onFerme, onSucces }: Attrib
   return (
     <Modale
       titre={titre}
-      libelleConfirmer="Vérifier"
+      libelleConfirmer="Appliquer"
       variantConfirmer="default"
       largeur="max-w-lg"
       onAnnuler={onFerme}
@@ -129,7 +152,7 @@ export function AttributionRoleModale({ utilisateur, onFerme, onSucces }: Attrib
         <div className="flex flex-col gap-4">
           <p className="text-sm text-neutral-700">
             Login : <span className="font-medium text-neutral-900">{utilisateur.login}</span>. L'identité vient
-            de l'annuaire ; seul le rôle et le code unité sont gérés ici.
+            de l'annuaire ; seuls le rôle, le code unité et le statut sont gérés ici.
           </p>
 
           <ChampListe
@@ -151,6 +174,16 @@ export function AttributionRoleModale({ utilisateur, onFerme, onSucces }: Attrib
             placeholder={codeUniteObligatoire ? 'Cinq chiffres, ex. 00002' : 'Facultatif pour ce rôle'}
             maxLength={5}
           />
+
+          <div className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium text-neutral-900">Statut du profil</span>
+            <BoutonsSegmentes
+              libelleGroupe="Statut du profil"
+              options={OPTIONS_STATUT}
+              valeur={actif ? 'actif' : 'inactif'}
+              onChange={(valeur) => setActif(valeur === 'actif')}
+            />
+          </div>
 
           {erreur && <AffichageErreur erreur={erreur} />}
         </div>

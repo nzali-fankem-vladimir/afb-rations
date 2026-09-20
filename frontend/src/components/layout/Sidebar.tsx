@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { ChevronUp, LogOut, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { LogOut, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 
 import { useAuth } from '../../hooks/useAuth'
 import { useCompteurValidation } from '../../hooks/useCompteurValidation'
@@ -61,37 +61,13 @@ function initiales(prenom?: string, nom?: string): string {
 export function Sidebar() {
   const { utilisateur, role, codeUnite, possedeRole, deconnecter } = useAuth()
   const location = useLocation()
-  const [menuOuvert, setMenuOuvert] = useState(false)
   const [reduite, setReduite] = useState<boolean>(lireSidebarReduite)
-  const menuRef = useRef<HTMLDivElement>(null)
-  const boutonCompteRef = useRef<HTMLButtonElement>(null)
   const compteValidation = useCompteurValidation(role, location.pathname)
   const fonctionnalites = useFonctionnalites()
 
   useEffect(() => {
     ecrireSidebarReduite(reduite)
   }, [reduite])
-
-  useEffect(() => {
-    function surClicExterieur(event: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setMenuOuvert(false)
-      }
-    }
-    document.addEventListener('mousedown', surClicExterieur)
-    return () => document.removeEventListener('mousedown', surClicExterieur)
-  }, [])
-
-  useEffect(() => {
-    if (!menuOuvert) return undefined
-    function surEchap(event: KeyboardEvent) {
-      if (event.key !== 'Escape') return
-      setMenuOuvert(false)
-      boutonCompteRef.current?.focus()
-    }
-    document.addEventListener('keydown', surEchap)
-    return () => document.removeEventListener('keydown', surEchap)
-  }, [menuOuvert])
 
   // Deux filtres, dans cet ordre : le role, puis le drapeau de fonctionnalite.
   // Un lien conditionnel reste masque tant que le drapeau n'est pas lu -- le
@@ -214,19 +190,11 @@ export function Sidebar() {
         ))}
       </nav>
 
-      <div className="border-t border-neutral-800 px-3 py-3" ref={menuRef}>
-        <div className="relative">
-          <button
-            type="button"
-            ref={boutonCompteRef}
-            onClick={() => setMenuOuvert((ouvert) => !ouvert)}
-            aria-expanded={menuOuvert}
-            aria-haspopup="menu"
-            aria-label={`Ouvrir le menu du compte de ${utilisateur?.prenom ?? ''} ${utilisateur?.nom ?? 'utilisateur'}${role ? `, ${LIBELLE_ROLE[role]}` : ''}`}
-            className={cn(
-              'flex w-full items-center gap-3 rounded px-2 py-2 text-left hover:bg-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950',
-              reduite && 'justify-center px-0',
-            )}
+      <div className="border-t border-neutral-800 px-3 py-3">
+        <div className={cn('flex items-center gap-2', reduite && 'flex-col')}>
+          <div
+            className={cn('flex min-w-0 flex-1 items-center gap-3 px-2 py-1', reduite && 'flex-none px-0')}
+            title={reduite && utilisateur ? `${utilisateur.prenom} ${utilisateur.nom}` : undefined}
           >
             <span
               aria-hidden
@@ -235,50 +203,33 @@ export function Sidebar() {
               {initiales(utilisateur?.prenom, utilisateur?.nom)}
             </span>
             {!reduite && (
-              <>
-                <div className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate text-sm font-semibold text-white">
-                    {utilisateur ? `${utilisateur.prenom} ${utilisateur.nom}` : 'Utilisateur'}
-                  </span>
-                  {/* Rôle en toutes lettres, avec l'unité (Sprint 7F.6, onglet "Barre
-                      latérale") : "Agent d'unité · 00002", jamais le nom technique de
-                      l'énumération. Sans unité pour les rôles à portée nationale
-                      (ARH/DRH/ADMIN, Sprint 1.1). */}
-                  <span className="truncate text-xxs text-neutral-400">
-                    {role ? LIBELLE_ROLE[role] : ''}
-                    {codeUnite ? ` · ${codeUnite}` : ''}
-                  </span>
-                </div>
-                <ChevronUp
-                  aria-hidden
-                  className={cn(
-                    'h-4 w-4 shrink-0 text-neutral-400 transition-transform motion-reduce:transition-none',
-                    !menuOuvert && 'rotate-180',
-                  )}
-                />
-              </>
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-sm font-semibold text-white">
+                  {utilisateur ? `${utilisateur.prenom} ${utilisateur.nom}` : 'Utilisateur'}
+                </span>
+                {/* Rôle en toutes lettres, avec l'unité (Sprint 7F.6, onglet "Barre
+                    latérale") : "Agent d'unité · 00002", jamais le nom technique de
+                    l'énumération. Sans unité pour les rôles à portée nationale
+                    (ARH/DRH/ADMIN, Sprint 1.1). */}
+                <span className="truncate text-xxs text-neutral-400">
+                  {role ? LIBELLE_ROLE[role] : ''}
+                  {codeUnite ? ` · ${codeUnite}` : ''}
+                </span>
+              </div>
             )}
+          </div>
+          {/* Déconnexion en un geste, à la place du menu déroulant : le chevron ne
+              disait pas qu'il menait à la déconnexion. L'icône de sortie, nommée
+              par l'infobulle et le lecteur d'écran, dit ce qu'elle fait. */}
+          <button
+            type="button"
+            onClick={() => void deconnecter()}
+            title="Se déconnecter"
+            aria-label="Se déconnecter"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded text-neutral-300 transition-colors hover:bg-primary-600 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950"
+          >
+            <LogOut className="h-4 w-4" aria-hidden />
           </button>
-
-          {menuOuvert && (
-            <div
-              role="menu"
-              className={cn(
-                'absolute bottom-full mb-2 overflow-hidden rounded-md border border-neutral-800 bg-neutral-900 py-1 shadow-xl',
-                reduite ? 'left-0 w-48' : 'left-0 w-full',
-              )}
-            >
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => void deconnecter()}
-                className="flex w-full items-center gap-3 px-3 py-2.5 text-sm font-medium text-primary-300 hover:bg-neutral-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white"
-              >
-                <LogOut className="h-4 w-4" aria-hidden />
-                Déconnexion
-              </button>
-            </div>
-          )}
         </div>
       </div>
     </aside>

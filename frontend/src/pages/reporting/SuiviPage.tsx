@@ -111,8 +111,9 @@ const COLONNES: Colonne<DemandeResponse>[] = [
 ]
 
 interface Filtres {
-  /** 1 a 12. Jamais vide : contrairement aux autres filtres, une periode est toujours active. */
+  /** 1 a 12, ou vide. Un mois n'a de sens qu'avec une annee : vide des que l'annee l'est. */
   mois: string
+  /** Vide : aucun filtre de periode (tous les processus). */
   annee: string
   codeUnite: string
   nature: string
@@ -128,6 +129,18 @@ interface Filtres {
  */
 function filtresInitiaux(): Filtres {
   return { ...moisEtAnneeCourants(), codeUnite: '', nature: '', session: '', beneficiaire: '' }
+}
+
+const AUCUN_FILTRE: Filtres = { mois: '', annee: '', codeUnite: '', nature: '', session: '', beneficiaire: '' }
+
+/**
+ * Bornes envoyees au serveur selon ce qui est renseigne : mois + annee (le mois),
+ * annee seule (toute l'annee), rien (aucune borne, liste complete).
+ */
+function bornesDePeriode(mois: string, annee: string): { dateDebut?: string; dateFin?: string } {
+  if (annee === '') return {}
+  if (mois === '') return { dateDebut: `${annee}-01-01`, dateFin: `${annee}-12-31` }
+  return bornesDuMois(Number(annee), Number(mois))
 }
 
 /**
@@ -153,7 +166,6 @@ export function SuiviPage() {
   const filtreUniteUtile = role !== null && ROLES_PORTEE_NATIONALE.includes(role)
 
   const [filtres, setFiltres] = useState<Filtres>(filtresInitiaux)
-  const [filtresActifs, setFiltresActifs] = useState(false)
   const [page, setPage] = useState(0)
   const [donnees, setDonnees] = useState<PageResponse<DemandeResponse> | null>(null)
   const [chargement, setChargement] = useState(true)
@@ -161,7 +173,7 @@ export function SuiviPage() {
 
   useEffect(() => {
     let annule = false
-    const { dateDebut, dateFin } = bornesDuMois(Number(filtres.annee), Number(filtres.mois))
+    const { dateDebut, dateFin } = bornesDePeriode(filtres.mois, filtres.annee)
     rechercherDemandes({
       dateDebut,
       dateFin,
@@ -192,18 +204,23 @@ export function SuiviPage() {
     setChargement(true)
     setErreur(null)
     setPage(0)
-    const suivants = { ...filtres, [cle]: valeur }
-    setFiltres(suivants)
-    setFiltresActifs(
-      suivants.codeUnite !== '' || suivants.nature !== '' || suivants.session !== '' || suivants.beneficiaire !== '',
-    )
+    // Sans annee, un mois ne veut rien dire (le serveur filtre par intervalle de
+    // dates, pas par "un mois quelconque de n'importe quelle annee") : le vider
+    // avec l'annee evite de laisser une valeur sans effet.
+    setFiltres((precedents) => ({
+      ...precedents,
+      [cle]: valeur,
+      ...(cle === 'annee' && valeur === '' ? { mois: '' } : {}),
+    }))
   }
 
-  const appliquerRaccourciMois = (calculer: () => MoisAnnee) => {
+  // Bascule : un clic sur le raccourci deja actif retire le filtre de periode
+  // (liste complete), un clic sur un raccourci inactif regle mois et annee.
+  const basculerRaccourciMois = (calculer: () => MoisAnnee, estActif: boolean) => {
     setChargement(true)
     setErreur(null)
     setPage(0)
-    setFiltres((precedents) => ({ ...precedents, ...calculer() }))
+    setFiltres((precedents) => ({ ...precedents, ...(estActif ? { mois: '', annee: '' } : calculer()) }))
   }
 
   const changerPage = (nouvellePage: number) => {
@@ -212,18 +229,25 @@ export function SuiviPage() {
     setPage(nouvellePage)
   }
 
-  // Reinitialise VRAIMENT tout, y compris le mois et l'annee (retour au mois
-  // courant) -- retour utilisateur : un filtre de periode qui n'a pas d'etat
-  // neutre (contrairement a Nature/Session, qui retombent sur "toutes les
-  // valeurs") a besoin d'une porte de sortie explicite, visible en
-  // permanence, pas seulement proposee quand une recherche ne rend rien.
+  // Retour a l'etat d'ouverture de la page (mois courant, autres filtres vides),
+  // porte de sortie visible en permanence.
   const reinitialiserFiltres = () => {
     setChargement(true)
     setErreur(null)
     setPage(0)
     setFiltres(filtresInitiaux())
-    setFiltresActifs(false)
   }
+
+  // Sortie du message "aucune demande" : ici il faut VOIR plus large, pas
+  // revenir a un mois courant qui vient justement de ne rien rendre.
+  const effacerTousLesFiltres = () => {
+    setChargement(true)
+    setErreur(null)
+    setPage(0)
+    setFiltres(AUCUN_FILTRE)
+  }
+
+  const filtresActifs = Object.values(filtres).some((valeur) => valeur.trim() !== '')
 
   const courant = moisEtAnneeCourants()
   const moisEstCourant = filtres.mois === courant.mois && filtres.annee === courant.annee
@@ -244,6 +268,8 @@ export function SuiviPage() {
               value={filtres.mois}
               onChange={(event) => changerFiltre('mois', event.target.value)}
               options={OPTIONS_MOIS}
+              libellePlaceholder=""
+              disabled={filtres.annee === ''}
               className="w-40"
             />
             <ChampListe
@@ -252,12 +278,13 @@ export function SuiviPage() {
               value={filtres.annee}
               onChange={(event) => changerFiltre('annee', event.target.value)}
               options={optionsAnnee()}
+              libellePlaceholder=""
               className="w-28"
             />
             <div className="flex gap-2 pb-1.5">
               <button
                 type="button"
-                onClick={() => appliquerRaccourciMois(moisEtAnneeCourants)}
+                onClick={() => basculerRaccourciMois(moisEtAnneeCourants, moisEstCourant)}
                 aria-pressed={moisEstCourant}
                 className={
                   moisEstCourant
@@ -269,7 +296,7 @@ export function SuiviPage() {
               </button>
               <button
                 type="button"
-                onClick={() => appliquerRaccourciMois(moisEtAnneePrecedents)}
+                onClick={() => basculerRaccourciMois(moisEtAnneePrecedents, moisEstPrecedent)}
                 aria-pressed={moisEstPrecedent}
                 className={
                   moisEstPrecedent
@@ -337,9 +364,9 @@ export function SuiviPage() {
           onLigneClick={(demande) => navigate(`/suivi/${demande.idProcessus}`)}
           messageVide={
             filtresActifs ? (
-              <MessageListeVide message="Aucune demande ne correspond à ces filtres." onEffacerFiltres={reinitialiserFiltres} />
+              <MessageListeVide message="Aucune demande ne correspond à ces filtres." onEffacerFiltres={effacerTousLesFiltres} />
             ) : (
-              'Aucune demande sur cette période.'
+              'Aucune demande.'
             )
           }
           pagination={

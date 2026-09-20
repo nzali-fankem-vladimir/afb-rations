@@ -90,8 +90,8 @@ class SignatureServiceTest {
 
         assertThat(visasDuFichier())
                 .contains("jean_mbarga")
-                .contains("Role : AGENT_UNITE")
-                .contains("Signe le 01/09/2026 a 10:24");
+                .contains("Rôle : AGENT_UNITE")
+                .contains("Signé le 01/09/2026 à 10:24");
     }
 
     @Test
@@ -129,50 +129,75 @@ class SignatureServiceTest {
     void enrichirConserveLaSignaturePrecedente() throws IOException {
         service.creerEtSigner(processus, etatDeReference(), agent(), T_AGENT);
 
-        service.enrichirEtSigner(pieceJointe(), chefUnite(), NomEtapeEnum.VALIDATION_DA, T_CHEF);
+        service.enrichirEtSigner(pieceJointe(), chefUnite(), NomEtapeEnum.VALIDATION_DA, T_CHEF, false);
 
         String visas = visasDuFichier();
         assertThat(visas)
                 // celle de l'agent, toujours la
                 .contains("jean_mbarga")
-                .contains("Signe le 01/09/2026 a 10:24")
+                .contains("Signé le 01/09/2026 à 10:24")
                 // et celle du chef d'unite, ajoutee
                 .contains("paul_essama")
-                .contains("Role : CHEF_UNITE_DA")
-                .contains("Signe le 02/09/2026 a 08:05");
+                .contains("Rôle : CHEF_UNITE_DA")
+                .contains("Signé le 02/09/2026 à 08:05");
 
-        assertThat(occurrences(visas, "Signe le ")).isEqualTo(2);
+        assertThat(occurrences(visas, "Signé le ")).isEqualTo(2);
     }
 
     @Test
     @DisplayName("6. les trois signatures du circuit coexistent sur le meme document")
     void troisSignaturesCoexistent() throws IOException {
         service.creerEtSigner(processus, etatDeReference(), agent(), T_AGENT);
-        service.enrichirEtSigner(pieceJointe(), chefUnite(), NomEtapeEnum.VALIDATION_DA, T_CHEF);
+        // Le chef d'unite aiguille vers le directeur reseau : son cadre est trace.
+        service.enrichirEtSigner(pieceJointe(), chefUnite(), NomEtapeEnum.VALIDATION_DA, T_CHEF, true);
         service.enrichirEtSigner(pieceJointe(), directeurReseau(), NomEtapeEnum.VALIDATION_DR,
-                T_DIRECTEUR);
+                T_DIRECTEUR, false);
 
         String visas = visasDuFichier();
         assertThat(visas)
                 .contains("jean_mbarga")
                 .contains("paul_essama")
                 .contains("sylvie_atangana");
-        assertThat(occurrences(visas, "Signe le ")).isEqualTo(3);
+        assertThat(occurrences(visas, "Signé le ")).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("6 bis. le cadre du directeur reseau n'apparait QUE si l'etat est aiguille vers lui")
+    void cadreDirecteurReseauConditionnel() throws IOException {
+        service.creerEtSigner(processus, etatDeReference(), agent(), T_AGENT);
+        assertThat(visasDuFichier()).doesNotContain("Directeur réseau");
+
+        // Cloture au premier niveau (sous le seuil) : le cadre n'est jamais trace.
+        service.enrichirEtSigner(pieceJointe(), chefUnite(), NomEtapeEnum.VALIDATION_DA, T_CHEF, false);
+        assertThat(visasDuFichier()).doesNotContain("Directeur réseau");
+    }
+
+    @Test
+    @DisplayName("6 ter. aiguille vers le DR, le cadre apparait des la validation du chef d'unite, vide jusqu'a son visa")
+    void cadreDirecteurReseauTraceALAiguillage() throws IOException {
+        service.creerEtSigner(processus, etatDeReference(), agent(), T_AGENT);
+
+        service.enrichirEtSigner(pieceJointe(), chefUnite(), NomEtapeEnum.VALIDATION_DA, T_CHEF, true);
+
+        String visas = visasDuFichier();
+        assertThat(visas).contains("Directeur réseau");
+        // Deux mentions seulement : le cadre du DR est trace mais reste vide.
+        assertThat(occurrences(visas, "Signé le ")).isEqualTo(2);
     }
 
     @Test
     @DisplayName("7. le detail de l'etat survit intact a l'enrichissement")
     void detailIntactApresEnrichissement() throws IOException {
         service.creerEtSigner(processus, etatDeReference(), agent(), T_AGENT);
-        service.enrichirEtSigner(pieceJointe(), chefUnite(), NomEtapeEnum.VALIDATION_DA, T_CHEF);
+        service.enrichirEtSigner(pieceJointe(), chefUnite(), NomEtapeEnum.VALIDATION_DA, T_CHEF, false);
 
         // Une regeneration aurait pu produire un document coherent en apparence :
         // on verifie donc aussi que le contenu metier n'a pas bouge d'un chiffre.
         String texte = texteDuFichier();
         assertThat(texte)
-                .contains("Journee du 03/09/2026")
+                .contains("03/09/2026")
                 .contains("MBARGA Jean")
-                .contains("Sous-total du 03/09/2026 : 4 000 FCFA")
+                .contains("Sous-total du 03/09/2026")
                 .contains("8 000 FCFA");
     }
 
@@ -182,7 +207,7 @@ class SignatureServiceTest {
         service.creerEtSigner(processus, etatDeReference(), agent(), T_AGENT);
         int avant = nombreDePages();
 
-        service.enrichirEtSigner(pieceJointe(), chefUnite(), NomEtapeEnum.VALIDATION_DA, T_CHEF);
+        service.enrichirEtSigner(pieceJointe(), chefUnite(), NomEtapeEnum.VALIDATION_DA, T_CHEF, false);
 
         assertThat(nombreDePages()).isEqualTo(avant);
     }
@@ -196,7 +221,7 @@ class SignatureServiceTest {
                 processus, etatDeReference(), agent(), T_AGENT);
 
         ResultatSignature seconde = service.enrichirEtSigner(
-                pieceJointe(), chefUnite(), NomEtapeEnum.VALIDATION_DA, T_CHEF);
+                pieceJointe(), chefUnite(), NomEtapeEnum.VALIDATION_DA, T_CHEF, false);
 
         assertThat(seconde.empreinte()).isNotEqualTo(premiere.empreinte());
         assertThat(seconde.empreinte())
@@ -209,7 +234,7 @@ class SignatureServiceTest {
         ResultatSignature premiere = service.creerEtSigner(
                 processus, etatDeReference(), agent(), T_AGENT);
 
-        service.enrichirEtSigner(pieceJointe(), chefUnite(), NomEtapeEnum.VALIDATION_DA, T_CHEF);
+        service.enrichirEtSigner(pieceJointe(), chefUnite(), NomEtapeEnum.VALIDATION_DA, T_CHEF, false);
 
         // Ce n'est pas un defaut, c'est la nature d'un document enrichi : l'etat
         // intermediaire n'existe plus. Seule la DERNIERE empreinte est verifiable,
@@ -226,7 +251,7 @@ class SignatureServiceTest {
     @DisplayName("11. enrichir un document absent echoue, sans rien ecrire")
     void enrichirUnDocumentAbsent() {
         assertThatThrownBy(() -> service.enrichirEtSigner(
-                pieceJointe(), chefUnite(), NomEtapeEnum.VALIDATION_DA, T_CHEF))
+                pieceJointe(), chefUnite(), NomEtapeEnum.VALIDATION_DA, T_CHEF, false))
                 .isInstanceOf(DocumentNonProduitException.class)
                 .hasMessageContaining("n'a pas pu etre relu");
 

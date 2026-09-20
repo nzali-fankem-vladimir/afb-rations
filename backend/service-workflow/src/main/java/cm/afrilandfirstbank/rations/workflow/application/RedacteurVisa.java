@@ -42,7 +42,7 @@ import cm.afrilandfirstbank.rations.workflow.domaine.NomEtapeEnum;
 final class RedacteurVisa {
 
     private static final DateTimeFormatter HORODATAGE =
-            DateTimeFormatter.ofPattern("dd/MM/yyyy 'a' HH:mm");
+            DateTimeFormatter.ofPattern("dd/MM/yyyy 'à' HH:mm");
 
     private RedacteurVisa() {
         // classe utilitaire
@@ -62,7 +62,7 @@ final class RedacteurVisa {
 
         new PdfCanvas(page)
                 .saveState()
-                .setStrokeColor(GabaritDocument.GRIS_FILET)
+                .setStrokeColor(GabaritDocument.FILET)
                 .setLineWidth(0.5f)
                 .rectangle(cadre)
                 .stroke()
@@ -96,12 +96,12 @@ final class RedacteurVisa {
                     .setFont(gras)
                     .setFontSize(GabaritDocument.CORPS)
                     .setMarginBottom(1f));
-            canvas.add(new Paragraph("Role : " + texte(mention.role()))
-                    .setFontSize(GabaritDocument.CORPS_TABLEAU)
+            canvas.add(new Paragraph("Rôle : " + texte(mention.role()))
+                    .setFontSize(GabaritDocument.CORPS_MENTION)
                     .setFontColor(GabaritDocument.GRIS)
                     .setMarginBottom(1f));
-            canvas.add(new Paragraph("Signe le " + mention.horodatage().format(HORODATAGE))
-                    .setFontSize(GabaritDocument.CORPS_TABLEAU)
+            canvas.add(new Paragraph("Signé le " + mention.horodatage().format(HORODATAGE))
+                    .setFontSize(GabaritDocument.CORPS_MENTION)
                     .setFontColor(GabaritDocument.GRIS));
         }
     }

@@ -52,13 +52,14 @@ import cm.afrilandfirstbank.rations.saisie.infrastructure.LignePrestationReposit
  *
  * <h2>Modification : traitée comme une création, jamais comme une mise à jour de champ</h2>
  *
- * <p>Changer la nature ou la session d'une ligne change le tarif qui s'applique
- * et peut faire apparaître un doublon. Les deux contrôles — RG-03, RG-04 —
- * rejouent donc intégralement, exactement comme à la création. Seul le
- * bénéficiaire ne peut pas changer (décision prise avec l'utilisateur, étape 1) :
- * une erreur de destinataire se corrige par suppression puis recréation, deux
- * actions tracées séparément, plutôt qu'une mutation qui changerait en place la
- * personne payée par une ligne existante.
+ * <p>Changer la nature, la session ou le bénéficiaire d'une ligne change le tarif
+ * qui s'applique et peut faire apparaître un doublon. RG-03, RG-04 et RG-15
+ * rejouent donc intégralement, exactement comme à la création, puis la ligne est
+ * modifiée <b>sur place</b>, dans une seule transaction. Le bénéficiaire pouvait
+ * autrefois se changer seulement par suppression puis recréation (décision du
+ * Sprint 3.3) ; ce chemin en deux temps pouvait laisser deux lignes pour la même
+ * prestation et refusait la correction d'une agence (retour utilisateur après le
+ * Sprint 7F.7).
  */
 @Service
 public class LigneService {
@@ -72,6 +73,7 @@ public class LigneService {
     private final CreationLigneService creationLigneService;
     private final ControleDoublonService controleDoublonService;
     private final ResolutionMontantClient resolutionMontantClient;
+    private final ResolutionBeneficiaireService resolutionBeneficiaireService;
     private final PublicateurAudit publicateurAudit;
 
     public LigneService(FicheJournaliereRepository ficheJournaliereRepository,
@@ -81,6 +83,7 @@ public class LigneService {
                         CreationLigneService creationLigneService,
                         ControleDoublonService controleDoublonService,
                         ResolutionMontantClient resolutionMontantClient,
+                        ResolutionBeneficiaireService resolutionBeneficiaireService,
                         PublicateurAudit publicateurAudit) {
         this.ficheJournaliereRepository = ficheJournaliereRepository;
         this.lignePrestationRepository = lignePrestationRepository;
@@ -89,6 +92,7 @@ public class LigneService {
         this.creationLigneService = creationLigneService;
         this.controleDoublonService = controleDoublonService;
         this.resolutionMontantClient = resolutionMontantClient;
+        this.resolutionBeneficiaireService = resolutionBeneficiaireService;
         this.publicateurAudit = publicateurAudit;
     }
 
@@ -117,66 +121,78 @@ public class LigneService {
     }
 
     /**
-     * Révise la nature et la session d'une ligne existante, avant soumission.
+     * Modifie une ligne <b>sur place</b>, avant soumission : nature, session et,
+     * facultativement, l'identité du bénéficiaire (nom, prénom, compte, agence).
      *
-     * <p>RG-04 est rejouée en excluant la ligne elle-même (sans quoi une
-     * modification qui ne change rien serait toujours vue comme doublon d'elle
-     * même). RG-03 est rejouée intégralement, à la date de la fiche.
+     * <p>Une seule transaction : RG-04, RG-15 et RG-03 sont rejouées pour la
+     * nouvelle combinaison, et ce n'est qu'après leur succès que la ligne (et,
+     * selon le cas, la fiche du bénéficiaire) est modifiée. Un refus laisse tout
+     * intact. Il n'y a plus de suppression suivie d'une création : ce chemin
+     * pouvait laisser deux lignes pour la même prestation.
      *
+     * <ul>
+     *   <li><b>Compte inchangé</b> : nom, prénom, agence corrigent la fiche du
+     *       bénéficiaire, avec l'avant et l'après dans la trace d'audit.</li>
+     *   <li><b>Compte différent</b> : la ligne est rattachée au bénéficiaire de ce
+     *       compte, créé s'il n'existe pas ; un bénéficiaire déjà connu garde ses
+     *       propres données.</li>
+     * </ul>
+     *
+     * @param adresseIp origine de la requête, ou {@code null} si inconnue
      * @throws LigneIntrouvableException ligne inexistante ({@code 404})
      * @throws DoublonLigneException la nouvelle combinaison existe déjà ailleurs
      *         sur la même journée ({@code 409})
+     * @throws DoublonInterEtatsException la prestation est déjà servie dans un autre
+     *         état de l'unité ({@code 409})
      * @throws GrilleIndisponibleException aucun tarif pour la nouvelle
      *         combinaison ({@code 422})
      */
     @Transactional
-    public LigneAvecBeneficiaire modifier(Long idLigne, NatureEnum nature, SessionEnum session,
-                                          String enteteAutorisation) {
-        return modifier(idLigne, nature, session, enteteAutorisation, null);
-    }
-
-    /**
-     * Même opération, avec l'adresse d'origine de la requête pour la trace
-     * d'audit.
-     *
-     * <p>Surcharge ajoutée au Sprint 6.3 : l'inventaire de couverture a relevé
-     * que {@code MODIFICATION_LIGNE_PRESTATION} et
-     * {@code SUPPRESSION_LIGNE_PRESTATION} publiaient une {@code adresseIp} nulle
-     * alors que {@code CREATION_LIGNE_PRESTATION} la renseignait — le contrôleur
-     * la détenait déjà et ne la passait qu'à la création. Trois opérations de
-     * même nature sur la même entité tracées de deux façons différentes : c'était
-     * un oubli, pas un choix.
-     *
-     * @param adresseIp origine de la requête, ou {@code null} si inconnue
-     */
-    @Transactional
-    public LigneAvecBeneficiaire modifier(Long idLigne, NatureEnum nature, SessionEnum session,
+    public LigneAvecBeneficiaire modifier(Long idLigne, CommandeModificationLigne commande,
                                           String enteteAutorisation, String adresseIp) {
         LignePrestation ligne = chargerLigne(idLigne);
         FicheJournaliere fiche = chargerFiche(ligne.getIdFicheJournaliere());
         etatModifiableService.exigerEcriturePossible(fiche.getIdProcessus(), enteteAutorisation);
 
-        Beneficiaire beneficiaire = chargerBeneficiaire(ligne.getIdBeneficiaire());
+        Beneficiaire actuel = chargerBeneficiaire(ligne.getIdBeneficiaire());
+
+        boolean changeDeCompte = commande.numCompteCourant() != null
+                && !commande.numCompteCourant().equals(actuel.getNumCompteCourant());
+
+        // Le bénéficiaire visé par la ligne une fois modifiée. Un compte différent
+        // en désigne un autre (existant, ou créé dans cette transaction : un refus
+        // plus bas le fait disparaître avec le reste).
+        Beneficiaire vise = changeDeCompte
+                ? resolutionBeneficiaireService.resoudre(
+                        ouActuel(commande.nom(), actuel.getNom()),
+                        ouActuel(commande.prenom(), actuel.getPrenom()),
+                        commande.numCompteCourant(),
+                        ouActuel(commande.codeAgence(), actuel.getCodeAgence()),
+                        adresseIp)
+                : actuel;
+
+        NatureEnum nature = commande.nature();
+        SessionEnum session = commande.session();
 
         // RG-04, en excluant la ligne revisee elle-meme.
         if (controleDoublonService.estDoublonSurLaJourneeHorsLigne(
-                fiche.getId(), beneficiaire.getId(), nature, session, ligne.getId())) {
+                fiche.getId(), vise.getId(), nature, session, ligne.getId())) {
             throw new DoublonLigneException(String.format(
                     "%s %s (compte %s) figure deja sur la journee du %s en %s / %s. "
                             + "Une meme prestation ne peut pas etre saisie deux fois.",
-                    beneficiaire.getNom(), beneficiaire.getPrenom(), beneficiaire.getNumCompteCourant(),
+                    vise.getNom(), vise.getPrenom(), vise.getNumCompteCourant(),
                     fiche.getDateJour(), nature, session));
         }
 
         // RG-15. Pas d'exclusion de ligne a prevoir ici : la ligne revisee vit
         // dans l'etat courant, que le controle ecarte deja par construction.
-        // Une modification de nature ou de session est une nouvelle combinaison,
-        // qui peut tres bien avoir deja ete servie ailleurs sur la periode.
+        // Une modification de nature, de session ou de beneficiaire est une nouvelle
+        // combinaison, qui peut tres bien avoir deja ete servie ailleurs sur la periode.
         controleDoublonService
-                .etatDeLaPeriodePortantDeja(fiche, beneficiaire.getId(), nature, session)
+                .etatDeLaPeriodePortantDeja(fiche, vise.getId(), nature, session)
                 .ifPresent(idEtatEnConflit -> {
                     throw new DoublonInterEtatsException(CreationLigneService.messageRg15(
-                            beneficiaire, fiche.getDateJour(), nature, session, idEtatEnConflit));
+                            vise, fiche.getDateJour(), nature, session, idEtatEnConflit));
                 });
 
         // RG-03, integralement rejouee pour la nouvelle combinaison.
@@ -186,12 +202,53 @@ public class LigneService {
         SessionEnum ancienneSession = ligne.getSession();
         Integer ancienMontant = ligne.getMontantApplique();
         Long ancienneGrille = ligne.getIdGrille();
+        Long ancienBeneficiaire = ligne.getIdBeneficiaire();
 
+        // Toutes les regles ont ete satisfaites : on peut ecrire.
+        CorrectionIdentite correction = changeDeCompte
+                ? null
+                : corrigerIdentiteSiDifferente(actuel, commande);
         ligne.reviser(nature, session, montant.montantFcfa(), montant.idGrille());
+        ligne.rattacherA(vise.getId());
 
         tracerModification(ligne, ancienneNature, ancienneSession, ancienMontant, ancienneGrille,
-                adresseIp);
-        return new LigneAvecBeneficiaire(ligne, beneficiaire);
+                ancienBeneficiaire, correction, adresseIp);
+        return new LigneAvecBeneficiaire(ligne, vise);
+    }
+
+    private static String ouActuel(String demande, String actuelle) {
+        return demande == null ? actuelle : demande;
+    }
+
+    /**
+     * Applique nom, prénom et agence demandés à la fiche du bénéficiaire s'ils
+     * diffèrent. Rend l'avant et l'après pour la trace d'audit, ou {@code null}
+     * si rien n'a changé.
+     */
+    private CorrectionIdentite corrigerIdentiteSiDifferente(Beneficiaire beneficiaire,
+                                                            CommandeModificationLigne commande) {
+        String nom = ouActuel(commande.nom(), beneficiaire.getNom());
+        String prenom = ouActuel(commande.prenom(), beneficiaire.getPrenom());
+        String agence = ouActuel(commande.codeAgence(), beneficiaire.getCodeAgence());
+
+        if (nom.equals(beneficiaire.getNom()) && prenom.equals(beneficiaire.getPrenom())
+                && agence.equals(beneficiaire.getCodeAgence())) {
+            return null;
+        }
+
+        CorrectionIdentite correction = new CorrectionIdentite(beneficiaire.getId(),
+                beneficiaire.getNom(), nom, beneficiaire.getPrenom(), prenom,
+                beneficiaire.getCodeAgence(), agence);
+        journal.info("Identite du beneficiaire {} corrigee depuis une modification de ligne.",
+                beneficiaire.getId());
+        beneficiaire.corrigerIdentite(nom, prenom, agence);
+        return correction;
+    }
+
+    /** L'avant et l'après d'une correction de la fiche du bénéficiaire, pour l'audit. */
+    private record CorrectionIdentite(Long idBeneficiaire, String nomAvant, String nomApres,
+                                      String prenomAvant, String prenomApres,
+                                      String agenceAvant, String agenceApres) {
     }
 
     /**
@@ -309,20 +366,28 @@ public class LigneService {
 
     private void tracerModification(LignePrestation ligne, NatureEnum ancienneNature,
                                     SessionEnum ancienneSession, Integer ancienMontant,
-                                    Long ancienneGrille, String adresseIp) {
+                                    Long ancienneGrille, Long ancienBeneficiaire,
+                                    CorrectionIdentite correction, String adresseIp) {
+        DeltaAudit delta = DeltaAudit.nouveau()
+                .contexte("idFicheJournaliere", ligne.getIdFicheJournaliere())
+                .champ("nature", ancienneNature, ligne.getNature())
+                .champ("session", ancienneSession, ligne.getSession())
+                .champ("montantApplique", ancienMontant, ligne.getMontantApplique())
+                .champ("idGrille", ancienneGrille, ligne.getIdGrille())
+                .champ("idBeneficiaire", ancienBeneficiaire, ligne.getIdBeneficiaire());
+        if (correction != null) {
+            delta.contexte("idBeneficiaireCorrige", correction.idBeneficiaire())
+                    .champ("nomBeneficiaire", correction.nomAvant(), correction.nomApres())
+                    .champ("prenomBeneficiaire", correction.prenomAvant(), correction.prenomApres())
+                    .champ("codeAgenceBeneficiaire", correction.agenceAvant(), correction.agenceApres());
+        }
         publicateurAudit.publier(EvenementAudit.de(
                 null,
                 "MODIFICATION_LIGNE_PRESTATION",
                 "ligne_prestation",
                 ligne.getId(),
                 adresseIp,
-                DeltaAudit.nouveau()
-                        .contexte("idFicheJournaliere", ligne.getIdFicheJournaliere())
-                        .champ("nature", ancienneNature, ligne.getNature())
-                        .champ("session", ancienneSession, ligne.getSession())
-                        .champ("montantApplique", ancienMontant, ligne.getMontantApplique())
-                        .champ("idGrille", ancienneGrille, ligne.getIdGrille())
-                        .enJson()));
+                delta.enJson()));
     }
 
     private void tracerSuppression(LignePrestation ligne, LocalDate journee, String adresseIp) {

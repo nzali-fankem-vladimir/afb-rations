@@ -46,7 +46,7 @@ export function SaisieJournaliereTab({ idProcessus, dateDebut, dateFin, modifiab
   // Avertissement post-correction (retour utilisateur, demande n°6) : affiche
   // apres la fermeture de la modale, jamais dedans -- une bannière qui
   // disparaitrait avec elle ne serait jamais lue.
-  const [avertissementCorrection, setAvertissementCorrection] = useState(false)
+  const [avertissementCorrection, setAvertissementCorrection] = useState<string | null>(null)
   // Beneficiaire en cours de saisie dans le formulaire, non enregistre : changer
   // de jour l'effacerait, on le demande d'abord (Sprint 7F.6, proposition n°4).
   const [brouillonEnCours, setBrouillonEnCours] = useState(false)
@@ -152,10 +152,7 @@ export function SaisieJournaliereTab({ idProcessus, dateDebut, dateFin, modifiab
     <div className="flex flex-col gap-6">
       {avertissementCorrection && (
         <Alert variant="warning">
-          <AlertDescription>
-            Le bénéficiaire a été corrigé, mais l'ancienne ligne n'a pas pu être supprimée
-            automatiquement. Les deux lignes apparaissent ci-dessous : supprimez l'ancienne vous-même.
-          </AlertDescription>
+          <AlertDescription>{avertissementCorrection}</AlertDescription>
         </Alert>
       )}
 
@@ -203,7 +200,7 @@ export function SaisieJournaliereTab({ idProcessus, dateDebut, dateFin, modifiab
             sousTotalFcfa={fiche.sousTotalFcfa}
             modifiable={modifiable}
             onDemanderModification={(ligne) => {
-              setAvertissementCorrection(false)
+              setAvertissementCorrection(null)
               setLigneEnModification(ligne)
             }}
             onDemanderSuppression={(ligne) => {
@@ -218,15 +215,13 @@ export function SaisieJournaliereTab({ idProcessus, dateDebut, dateFin, modifiab
         <ModaleModificationLigne
           ligne={ligneEnModification}
           onFerme={() => setLigneEnModification(null)}
-          onSucces={(suppressionEchouee) => {
-            if (!suppressionEchouee) {
-              succes(
-                'Ligne modifiée',
-                `${ligneEnModification.beneficiaire.nom} ${ligneEnModification.beneficiaire.prenom}`,
-              )
-            }
+          onSucces={(avertissement) => {
+            succes(
+              'Ligne modifiée',
+              `${ligneEnModification.beneficiaire.nom} ${ligneEnModification.beneficiaire.prenom}`,
+            )
             setLigneEnModification(null)
-            setAvertissementCorrection(suppressionEchouee)
+            setAvertissementCorrection(avertissement)
             void rafraichirFiche()
           }}
         />

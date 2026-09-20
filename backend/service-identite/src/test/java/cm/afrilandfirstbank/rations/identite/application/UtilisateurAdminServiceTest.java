@@ -132,6 +132,65 @@ class UtilisateurAdminServiceTest {
     }
 
     @Test
+    @DisplayName("desactivation : le profil devient inactif, avec l'avant et l'apres dans la trace")
+    void desactivationTracee() throws Exception {
+        Utilisateur ngonoMarie = utilisateur(10L, "marie_ngono", "NGONO", "Marie",
+                RoleEnum.AGENT_UNITE, "00002");
+        when(utilisateurRepository.findById(10L)).thenReturn(Optional.of(ngonoMarie));
+
+        Utilisateur resultat = service.attribuerRole(10L,
+                new AttributionRoleRequest(RoleEnum.AGENT_UNITE, "00002", false), appelantAdmin, "10.0.0.5");
+
+        assertThat(resultat.estActif()).isFalse();
+        ArgumentCaptor<EvenementAudit> capture = ArgumentCaptor.forClass(EvenementAudit.class);
+        verify(publicateurAudit).publier(capture.capture());
+        JsonNode delta = new ObjectMapper().readTree(capture.getValue().detailJson());
+        assertThat(delta.get("actif").get("avant").asBoolean()).isTrue();
+        assertThat(delta.get("actif").get("apres").asBoolean()).isFalse();
+    }
+
+    @Test
+    @DisplayName("reactivation : un profil inactif redevient actif")
+    void reactivation() {
+        Utilisateur ngonoMarie = utilisateur(10L, "marie_ngono", "NGONO", "Marie",
+                RoleEnum.AGENT_UNITE, "00002");
+        ngonoMarie.desactiver();
+        when(utilisateurRepository.findById(10L)).thenReturn(Optional.of(ngonoMarie));
+
+        Utilisateur resultat = service.attribuerRole(10L,
+                new AttributionRoleRequest(RoleEnum.AGENT_UNITE, "00002", true), appelantAdmin, null);
+
+        assertThat(resultat.estActif()).isTrue();
+    }
+
+    @Test
+    @DisplayName("statut absent : le statut du profil ne bouge pas")
+    void statutAbsentInchange() {
+        Utilisateur ngonoMarie = utilisateur(10L, "marie_ngono", "NGONO", "Marie",
+                RoleEnum.AGENT_UNITE, "00002");
+        ngonoMarie.desactiver();
+        when(utilisateurRepository.findById(10L)).thenReturn(Optional.of(ngonoMarie));
+
+        Utilisateur resultat = service.attribuerRole(10L,
+                new AttributionRoleRequest(RoleEnum.CHEF_UNITE_DA, "00002"), appelantAdmin, null);
+
+        assertThat(resultat.estActif()).isFalse();
+    }
+
+    @Test
+    @DisplayName("un administrateur ne peut pas se desactiver lui-meme")
+    void autoDesactivationRefusee() {
+        when(utilisateurRepository.findById(1L)).thenReturn(Optional.of(appelantAdmin));
+
+        assertThatThrownBy(() -> service.attribuerRole(1L,
+                new AttributionRoleRequest(RoleEnum.ADMIN, null, false), appelantAdmin, null))
+                .isInstanceOf(AutoModificationInterditeException.class);
+
+        assertThat(appelantAdmin.estActif()).isTrue();
+        verify(publicateurAudit, never()).publier(any(EvenementAudit.class));
+    }
+
+    @Test
     @DisplayName("2. attribution d'un role a portee nationale sans code unite")
     void attributionRoleNationalSansCodeUnite() {
         Utilisateur eloundaEric = utilisateur(11L, "eric_elounda", "ELOUNDA", "Eric",

@@ -24,22 +24,21 @@ import com.itextpdf.kernel.pdf.PdfWriter;
 import com.itextpdf.layout.Canvas;
 import com.itextpdf.layout.Document;
 import com.itextpdf.layout.borders.SolidBorder;
-import com.itextpdf.layout.element.AreaBreak;
 import com.itextpdf.layout.element.Cell;
 import com.itextpdf.layout.element.Image;
 import com.itextpdf.layout.element.Paragraph;
 import com.itextpdf.layout.element.Table;
-import com.itextpdf.layout.properties.AreaBreakType;
 import com.itextpdf.layout.properties.HorizontalAlignment;
 import com.itextpdf.layout.properties.TextAlignment;
 import com.itextpdf.layout.properties.UnitValue;
 
 import cm.afrilandfirstbank.rations.workflow.domaine.NomEtapeEnum;
 import cm.afrilandfirstbank.rations.workflow.domaine.ProcessusMensuel;
+import cm.afrilandfirstbank.rations.workflow.domaine.TypeProcessusEnum;
 import cm.afrilandfirstbank.rations.workflow.domaine.exception.DocumentNonProduitException;
 
 /**
- * Production du document PDF de l'etat mensuel (iText 8, US-06, Sprint 4.2).
+ * Production du document PDF de l'etat de paiement (iText 8, US-06, Sprint 4.2).
  *
  * <h2>Ce service ne touche jamais au disque</h2>
  *
@@ -52,10 +51,17 @@ import cm.afrilandfirstbank.rations.workflow.domaine.exception.DocumentNonProdui
  * <h2>Un seul document, genere puis enrichi</h2>
  *
  * <p>Ce service <b>cree</b> le document, avec la premiere signature deja en place.
- * Les signatures suivantes (sous-sprints 4.3 et 4.4) ne repassent pas par ici :
- * elles estampent le fichier existant dans le cadre que la page des visas leur a
- * reserve. Regenerer a chaque etape ferait perdre les signatures precedentes, ce
- * que le point de vigilance section 10 du guide interdit expressement.
+ * Les signatures suivantes ne repassent pas par ici : elles estampent le fichier
+ * existant dans la bande des visas que la creation leur a reservee. Regenerer a
+ * chaque etape ferait perdre les signatures precedentes.
+ *
+ * <h2>Contenu (retour utilisateur post-7F.7)</h2>
+ *
+ * <p>Le document ne porte que ce qui reste vrai apres sa generation. Il n'imprime
+ * <b>aucun statut</b> : il n'est jamais regenere apres la soumission, il afficherait
+ * donc le statut d'avant soumission sur un etat deja cloture. L'avancement se lit sur
+ * les visas. Le type d'etat n'apparait que pour un complementaire, avec l'etat dont
+ * il depend et son motif. Les journees sans ligne ne sont pas imprimees.
  *
  * <h2>Charte de production, document maitre section 8.2</h2>
  *
@@ -68,7 +74,7 @@ import cm.afrilandfirstbank.rations.workflow.domaine.exception.DocumentNonProdui
  *
  * <h2>Aucun calcul</h2>
  *
- * <p>Les sous-totaux journaliers et le total du mois sont <b>recopies</b> de
+ * <p>Les sous-totaux journaliers et le total de la periode sont <b>recopies</b> de
  * l'etat consolide, jamais readdiitionnes. RG-06 est partagee entre Saisie et
  * Workflow (decision Sprint 3.4) : il n'existe qu'un seul chemin de calcul, donc
  * aucune divergence possible entre le detail imprime et le total imprime. Un
@@ -79,18 +85,19 @@ import cm.afrilandfirstbank.rations.workflow.domaine.exception.DocumentNonProdui
 public class DocumentService {
 
     private static final DateTimeFormatter JOUR = DateTimeFormatter.ofPattern("dd/MM/yyyy");
-    private static final DateTimeFormatter HORODATAGE =
-            DateTimeFormatter.ofPattern("dd/MM/yyyy 'a' HH:mm");
 
     private static final String[] MOIS = {
-            "janvier", "fevrier", "mars", "avril", "mai", "juin",
-            "juillet", "aout", "septembre", "octobre", "novembre", "decembre"};
+            "janvier", "février", "mars", "avril", "mai", "juin",
+            "juillet", "août", "septembre", "octobre", "novembre", "décembre"};
 
-    /** Largeurs relatives des six colonnes du detail journalier. */
-    private static final float[] COLONNES = {26f, 21f, 10f, 13f, 12f, 18f};
+    /** Largeurs relatives des sept colonnes du detail : date, beneficiaire, compte, agence, nature, session, montant. */
+    private static final float[] COLONNES = {13f, 19f, 18f, 10f, 10f, 10f, 20f};
+
+    /** Nombre de colonnes qui precedent le montant, pour les lignes de total. */
+    private static final int COLONNES_AVANT_MONTANT = 6;
 
     /**
-     * Compose le document de l'etat mensuel.
+     * Compose le document de l'etat de paiement.
      *
      * @param processus le processus tel que Workflow le connait
      * @param etat l'etat consolide rendu par le service Saisie
@@ -107,35 +114,24 @@ public class DocumentService {
 
         try {
             PdfDocument pdf = new PdfDocument(new PdfWriter(sortie));
-            PdfFont normal = PdfFontFactory.createFont(StandardFonts.TIMES_ROMAN);
-            PdfFont gras = PdfFontFactory.createFont(StandardFonts.TIMES_BOLD);
+            PdfFont normal = PdfFontFactory.createFont(StandardFonts.HELVETICA);
+            PdfFont gras = PdfFontFactory.createFont(StandardFonts.HELVETICA_BOLD);
 
             pdf.addEventHandler(PdfDocumentEvent.END_PAGE, new PiedDePage(normal));
 
             try (Document document = new Document(pdf, GabaritDocument.FORMAT)) {
+                // La marge basse reserve la bande des visas sur TOUTES les pages : le
+                // detail ne l'atteint jamais, et elle se trouve libre sur la derniere.
                 document.setMargins(GabaritDocument.MARGE, GabaritDocument.MARGE,
-                        GabaritDocument.MARGE, GabaritDocument.MARGE);
+                        GabaritDocument.MARGE_BASSE, GabaritDocument.MARGE);
                 document.setFont(normal)
                         .setFontSize(GabaritDocument.CORPS)
                         .setFontColor(GabaritDocument.NOIR);
 
                 composerEnTete(document, gras);
                 composerIdentification(document, processus, etat, gras);
-                composerDetailJournalier(document, etat, gras);
-                composerTotal(document, etat, gras);
+                composerDetailEtTotal(document, etat, gras);
 
-                document.add(new AreaBreak(AreaBreakType.NEXT_PAGE));
-                document.add(titreSection("VISAS ET SIGNATURES", gras));
-                document.add(new Paragraph(
-                        "Chaque visa est appose automatiquement par le systeme au moment de "
-                                + "l'action, avec son horodatage (RG-09). Un cadre vide signale une "
-                                + "etape que le circuit n'a pas encore atteinte.")
-                        .setFontSize(GabaritDocument.CORPS_TABLEAU)
-                        .setFontColor(GabaritDocument.GRIS));
-
-                // Les cadres sont traces au point fixe defini par le gabarit, sur la
-                // derniere page. C'est ce qui permettra aux sous-sprints 4.3 et 4.4
-                // d'ecrire dans le bon cadre sans avoir a deviner ou il se trouve.
                 dessinerCadresVisas(pdf, signatures, normal, gras);
             }
 
@@ -164,9 +160,9 @@ public class DocumentService {
         document.add(new Image(ImageDataFactory.create(logo()))
                 .setWidth(GabaritDocument.LOGO_LARGEUR)
                 .setHorizontalAlignment(HorizontalAlignment.CENTER)
-                .setMarginBottom(18f));
+                .setMarginBottom(10f));
 
-        document.add(new Paragraph("ETAT MENSUEL DE PAIEMENT")
+        document.add(new Paragraph("ÉTAT DE PAIEMENT")
                 .setFont(gras)
                 .setFontSize(GabaritDocument.TITRE)
                 .setFontColor(GabaritDocument.NOIR)
@@ -174,141 +170,138 @@ public class DocumentService {
                 .setTextAlignment(TextAlignment.CENTER)
                 .setMarginBottom(2f));
 
-        document.add(new Paragraph("Rations et transport de la garde armee")
+        document.add(new Paragraph("Rations et transport de la garde armée")
                 .setFont(gras)
                 .setFontSize(GabaritDocument.TITRE)
                 .setFontColor(GabaritDocument.ROUGE)
                 .setTextAlignment(TextAlignment.CENTER)
-                .setMarginBottom(22f));
+                .setMarginBottom(14f));
     }
 
-    /** Bloc d'identification du dossier : unite, periode, type, numero, statut. */
+    /**
+     * Bloc d'identification compact : unite et numero de dossier sur une ligne, la
+     * periode sur la suivante, puis le volume de prestations. Pour un complementaire
+     * seulement, l'etat dont il depend et le motif de son ouverture.
+     */
     private void composerIdentification(Document document, ProcessusMensuel processus,
             EtatConsolide etat, PdfFont gras) {
 
-        Table table = new Table(UnitValue.createPercentArray(new float[] {30f, 70f}))
+        Table table = new Table(UnitValue.createPercentArray(new float[] {16f, 44f, 18f, 22f}))
                 .useAllAvailableWidth()
-                .setMarginBottom(18f);
+                .setMarginBottom(12f);
 
-        ajouterLigneIdentification(table, "Unite", processus.getCodeUnite(), gras);
-        ajouterLigneIdentification(table, "Periode", periodeEnToutesLettres(processus), gras);
-        ajouterLigneIdentification(table, "Type d'etat",
-                String.valueOf(processus.getTypeProcessus()), gras);
-        ajouterLigneIdentification(table, "Numero de dossier",
-                String.valueOf(processus.getId()), gras);
-        ajouterLigneIdentification(table, "Statut", String.valueOf(processus.getStatut()), gras);
-        ajouterLigneIdentification(table, "Journees saisies",
-                String.valueOf(valeur(etat.nombreJournees())), gras);
-        ajouterLigneIdentification(table, "Lignes de prestation",
-                String.valueOf(valeur(etat.nombreLignes())), gras);
-        ajouterLigneIdentification(table, "Beneficiaires servis",
-                String.valueOf(valeur(etat.nombreBeneficiaires())), gras);
+        table.addCell(cellule("Unité", 1).setFont(gras));
+        table.addCell(cellule(processus.getCodeUnite(), 1));
+        table.addCell(cellule("Dossier n°", 1).setFont(gras));
+        table.addCell(cellule(String.valueOf(processus.getId()), 1));
+
+        ajouterLigneEtalee(table, "Période", periodeEnToutesLettres(processus), gras);
+
+        if (processus.getTypeProcessus() == TypeProcessusEnum.COMPLEMENTAIRE) {
+            ajouterLigneEtalee(table, "Type", "Complémentaire de l'état n° "
+                    + processus.getIdProcessusOrigine(), gras);
+            String motif = texte(processus.getMotifOuverture()).strip();
+            if (!motif.isEmpty()) {
+                ajouterLigneEtalee(table, "Motif", motif, gras);
+            }
+        }
+
+        ajouterLigneEtalee(table, "Prestations",
+                pluriel(valeur(etat.nombreBeneficiaires()), "bénéficiaire") + ", "
+                        + pluriel(valeur(etat.nombreLignes()), "ligne"), gras);
 
         document.add(table);
     }
 
-    private void ajouterLigneIdentification(Table table, String libelle, String valeur, PdfFont gras) {
-        table.addCell(cellule(libelle).setFont(gras));
-        table.addCell(cellule(valeur));
+    private void ajouterLigneEtalee(Table table, String libelle, String valeur, PdfFont gras) {
+        table.addCell(cellule(libelle, 1).setFont(gras));
+        table.addCell(cellule(valeur, 3));
     }
 
-    // --- Detail journalier -------------------------------------------------------
+    // --- Detail et total ---------------------------------------------------------
 
-    private void composerDetailJournalier(Document document, EtatConsolide etat, PdfFont gras) {
-        document.add(titreSection("DETAIL PAR JOURNEE", gras));
+    /**
+     * Un seul tableau pour tout l'etat, avec un seul en-tete : la date est une
+     * colonne, et chaque journee se referme sur son sous-total. Les journees
+     * ouvertes sans aucune ligne ne sont pas imprimees, elles n'apprennent rien au
+     * valideur. Le total de la periode ferme le tableau.
+     */
+    private void composerDetailEtTotal(Document document, EtatConsolide etat, PdfFont gras) {
+        document.add(titreSection("DÉTAIL DES PRESTATIONS", gras));
+
+        Table table = new Table(UnitValue.createPercentArray(COLONNES))
+                .useAllAvailableWidth()
+                .setFixedLayout();
+
+        for (String entete : new String[] {
+                "Date", "Bénéficiaire", "N° compte", "Agence", "Nature", "Session", "Montant"}) {
+            table.addHeaderCell(cellule(entete, 1).setFont(gras));
+        }
 
         List<EtatConsolide.Journee> journees =
                 etat.journees() == null ? List.of() : etat.journees();
 
         for (EtatConsolide.Journee journee : journees) {
-            if (journee == null) {
-                continue;
-            }
-            document.add(new Paragraph(intituleJournee(journee))
-                    .setFont(gras)
-                    .setFontSize(GabaritDocument.CORPS)
-                    .setMarginTop(10f)
-                    .setMarginBottom(4f));
-
-            List<EtatConsolide.Ligne> lignes =
-                    journee.lignes() == null ? List.of() : journee.lignes();
-
-            if (lignes.isEmpty()) {
-                document.add(new Paragraph("Aucune prestation saisie pour cette journee.")
-                        .setFontSize(GabaritDocument.CORPS_TABLEAU)
-                        .setFontColor(GabaritDocument.GRIS));
+            if (journee == null || journee.lignes() == null || journee.lignes().isEmpty()) {
                 continue;
             }
 
-            document.add(tableauDesLignes(lignes, gras));
+            String date = dateDeLaJournee(journee);
 
-            document.add(new Paragraph(
-                    "Sous-total du " + intituleCourtJournee(journee) + " : "
-                            + fcfa(valeur(journee.sousTotalFcfa())))
-                    .setFont(gras)
-                    .setFontSize(GabaritDocument.CORPS_TABLEAU)
-                    .setTextAlignment(TextAlignment.RIGHT)
-                    .setMarginTop(3f));
-        }
-    }
-
-    private Table tableauDesLignes(List<EtatConsolide.Ligne> lignes, PdfFont gras) {
-        Table table = new Table(UnitValue.createPercentArray(COLONNES)).useAllAvailableWidth();
-
-        for (String entete : new String[] {
-                "Beneficiaire", "N° compte", "Agence", "Nature", "Session", "Montant"}) {
-            table.addHeaderCell(cellule(entete).setFont(gras));
-        }
-
-        for (EtatConsolide.Ligne ligne : lignes) {
-            if (ligne == null) {
-                continue;
+            for (EtatConsolide.Ligne ligne : journee.lignes()) {
+                if (ligne == null) {
+                    continue;
+                }
+                EtatConsolide.Beneficiaire beneficiaire = ligne.beneficiaire();
+                table.addCell(cellule(date, 1));
+                table.addCell(cellule(nomBeneficiaire(beneficiaire), 1));
+                table.addCell(cellule(beneficiaire == null ? "" : texte(beneficiaire.numCompteCourant()), 1));
+                table.addCell(cellule(beneficiaire == null ? "" : texte(beneficiaire.codeAgence()), 1));
+                table.addCell(cellule(capitaliser(ligne.nature()), 1));
+                table.addCell(cellule(capitaliser(ligne.session()), 1));
+                table.addCell(cellule(fcfa(valeur(ligne.montantApplique())), 1)
+                        .setTextAlignment(TextAlignment.RIGHT));
             }
-            EtatConsolide.Beneficiaire beneficiaire = ligne.beneficiaire();
-            table.addCell(cellule(nomBeneficiaire(beneficiaire)));
-            table.addCell(cellule(beneficiaire == null ? "" : texte(beneficiaire.numCompteCourant())));
-            table.addCell(cellule(beneficiaire == null ? "" : texte(beneficiaire.codeAgence())));
-            table.addCell(cellule(capitaliser(ligne.nature())));
-            table.addCell(cellule(capitaliser(ligne.session())));
-            table.addCell(cellule(fcfa(valeur(ligne.montantApplique())))
-                    .setTextAlignment(TextAlignment.RIGHT));
+
+            ajouterLigneDeTotal(table,
+                    journee.dateJour() == null
+                            ? "Sous-total (journée sans date)"
+                            : "Sous-total du " + date,
+                    valeur(journee.sousTotalFcfa()), gras);
         }
 
-        return table;
-    }
-
-    /** Total du mois, recopie de l'etat consolide et jamais recalcule. */
-    private void composerTotal(Document document, EtatConsolide etat, PdfFont gras) {
-        Table table = new Table(UnitValue.createPercentArray(new float[] {70f, 30f}))
-                .useAllAvailableWidth()
-                .setMarginTop(20f);
-
-        table.addCell(cellule("TOTAL DU MOIS").setFont(gras));
-        table.addCell(cellule(fcfa(valeur(etat.montantTotalFcfa())))
-                .setFont(gras)
-                .setTextAlignment(TextAlignment.RIGHT));
+        // Total de la periode, recopie de l'etat consolide et jamais recalcule.
+        ajouterLigneDeTotal(table, "TOTAL DE LA PÉRIODE", valeur(etat.montantTotalFcfa()), gras);
 
         document.add(table);
     }
 
-    // --- Page des visas ----------------------------------------------------------
+    private void ajouterLigneDeTotal(Table table, String libelle, long montant, PdfFont gras) {
+        table.addCell(cellule(libelle, COLONNES_AVANT_MONTANT)
+                .setFont(gras)
+                .setTextAlignment(TextAlignment.RIGHT));
+        table.addCell(cellule(fcfa(montant), 1)
+                .setFont(gras)
+                .setTextAlignment(TextAlignment.RIGHT));
+    }
+
+    // --- Bande des visas ---------------------------------------------------------
 
     /**
-     * Trace les trois cadres a leur position fixe et y inscrit les mentions
-     * connues.
+     * Trace les cadres a leur position fixe et y inscrit les mentions connues.
      *
-     * <p>Les cadres sont dessines pour les trois etapes, y compris
-     * {@link NomEtapeEnum#VALIDATION_DR} qui n'est atteinte qu'au-dela du seuil
-     * (RG-08) : un cadre reste vide plutot que d'etre absent, de sorte que la
-     * geometrie de la page ne depende jamais du montant. C'est ce qui permet a
-     * l'estampage des sous-sprints suivants de connaitre ses coordonnees sans lire
-     * le document.
+     * <p>Le cadre de l'agent et celui du chef d'unite sont toujours traces : un
+     * cadre reste vide plutot que d'etre absent, de sorte que la geometrie ne depend
+     * jamais du circuit. <b>Le cadre du directeur reseau n'est trace que s'il porte
+     * une mention</b> : son visa n'intervient qu'au-dela du seuil (RG-08), decision
+     * prise a la validation du chef d'unite, pas a la creation du document. C'est
+     * l'estampage de cette validation qui trace le cadre quand l'etat est aiguille
+     * vers lui (retour utilisateur post-7F.7).
      *
      * <p><b>Un cadre non signe reste rigoureusement vide.</b> Aucune mention « en
      * attente » n'y est gravee : l'estampage ajoute du contenu sans jamais en
      * retirer, et une telle mention resterait lisible sous la signature venue
-     * s'inscrire par-dessus. C'est le paragraphe d'introduction de la page qui dit
-     * ce que signifie un cadre vide.
+     * s'inscrire par-dessus.
      */
     private void dessinerCadresVisas(PdfDocument pdf, List<MentionSignature> signatures,
             PdfFont normal, PdfFont gras) {
@@ -324,8 +317,11 @@ public class DocumentService {
 
         PdfPage page = pdf.getLastPage();
         for (NomEtapeEnum etape : NomEtapeEnum.values()) {
-            RedacteurVisa.tracerCadre(page, etape, gras);
             MentionSignature mention = parEtape.get(etape);
+            if (etape == NomEtapeEnum.VALIDATION_DR && mention == null) {
+                continue;
+            }
+            RedacteurVisa.tracerCadre(page, etape, gras);
             if (mention != null) {
                 RedacteurVisa.inscrireMention(page, mention, normal, gras);
             }
@@ -378,57 +374,61 @@ public class DocumentService {
                 .setFont(gras)
                 .setFontSize(GabaritDocument.CORPS)
                 .setFontColor(GabaritDocument.NOIR)
-                .setMarginTop(6f)
+                .setMarginTop(4f)
                 .setMarginBottom(6f);
     }
 
-    /** Cellule a filets fins gris, fond blanc, sans aucun aplat de couleur (charte 8.2). */
-    private Cell cellule(String contenu) {
-        return new Cell()
+    /** Cellule a filets fins noirs, fond blanc, sans aucun aplat de couleur (charte 8.2). */
+    private Cell cellule(String contenu, int colonnes) {
+        return new Cell(1, colonnes)
                 .add(new Paragraph(texte(contenu)).setFontSize(GabaritDocument.CORPS_TABLEAU))
-                .setBorder(new SolidBorder(GabaritDocument.GRIS_FILET, 0.5f))
-                .setPadding(4f);
+                .setBorder(new SolidBorder(GabaritDocument.FILET, 0.5f))
+                .setPadding(3f);
     }
 
-    private String intituleJournee(EtatConsolide.Journee journee) {
+    private String dateDeLaJournee(EtatConsolide.Journee journee) {
         LocalDate date = journee.dateJour();
-        if (date == null) {
-            return "Journee sans date"
-                    + (journee.idFicheJournaliere() == null
-                            ? "" : " (fiche n° " + journee.idFicheJournaliere() + ")");
-        }
-        return "Journee du " + date.format(JOUR);
-    }
-
-    private String intituleCourtJournee(EtatConsolide.Journee journee) {
-        LocalDate date = journee.dateJour();
-        return date == null ? "cette journee" : date.format(JOUR);
+        return date == null ? "sans date" : date.format(JOUR);
     }
 
     /**
-     * La periode telle qu'elle s'imprime sur le document : « du 7 septembre 2026 au
-     * 13 septembre 2026 ».
-     *
-     * <p>Le tableau {@code MOIS} sert toujours, mais a nommer le mois de chaque
-     * borne — non plus a nommer la periode elle-meme, qui n'est plus un mois.
+     * La periode telle qu'elle s'imprime sur le document, en ne repetant que ce qui
+     * change : « du 4 au 10 octobre 2027 », « du 29 septembre au 5 octobre 2027 »,
+     * et les deux dates en entier seulement d'une annee a l'autre.
      */
     private String periodeEnToutesLettres(ProcessusMensuel processus) {
-        return "du " + jourEnToutesLettres(processus.getDateDebut())
-                + " au " + jourEnToutesLettres(processus.getDateFin());
-    }
+        LocalDate debut = processus.getDateDebut();
+        LocalDate fin = processus.getDateFin();
 
-    private String jourEnToutesLettres(LocalDate jour) {
-        if (jour == null) {
+        if (debut == null || fin == null) {
             return "(date absente)";
         }
-        return jour.getDayOfMonth() + " " + MOIS[jour.getMonthValue() - 1] + " " + jour.getYear();
+        if (debut.equals(fin)) {
+            return "le " + jourEtMois(debut) + " " + debut.getYear();
+        }
+        if (debut.getYear() != fin.getYear()) {
+            return "du " + jourEtMois(debut) + " " + debut.getYear()
+                    + " au " + jourEtMois(fin) + " " + fin.getYear();
+        }
+        if (debut.getMonth() != fin.getMonth()) {
+            return "du " + jourEtMois(debut) + " au " + jourEtMois(fin) + " " + fin.getYear();
+        }
+        return "du " + debut.getDayOfMonth() + " au " + jourEtMois(fin) + " " + fin.getYear();
+    }
+
+    private String jourEtMois(LocalDate jour) {
+        return jour.getDayOfMonth() + " " + MOIS[jour.getMonthValue() - 1];
+    }
+
+    private String pluriel(long nombre, String nom) {
+        return nombre + " " + nom + (nombre > 1 ? "s" : "");
     }
 
     /**
      * Montant en FCFA, entier, groupe par milliers avec une espace ordinaire.
      *
      * <p>Espace ordinaire et non insecable fine : l'encodage WinAnsi de
-     * Times-Roman ne porte pas ce caractere, qui s'imprimerait en carre vide sur
+     * Helvetica ne porte pas ce caractere, qui s'imprimerait en carre vide sur
      * chaque montant du document.
      */
     private String fcfa(long montant) {
@@ -471,6 +471,5 @@ public class DocumentService {
     private String texte(String valeur) {
         return valeur == null ? "" : valeur;
     }
-
 
 }

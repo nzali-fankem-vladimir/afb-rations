@@ -151,18 +151,24 @@ public class SignatureService {
      * document, mentions precedentes comprises, est reporte intact : iText recopie
      * les pages existantes, il ne les rejoue pas.
      *
+     * @param versDirecteurReseau vrai quand cette validation aiguille l'etat vers le
+     *        directeur reseau (RG-08) : le cadre de son visa, absent a la creation,
+     *        est alors trace dans la meme operation. Un etat clos au premier niveau
+     *        ne le porte jamais. Le tracer est un ajout, comme la mention : rien du
+     *        document existant n'est retire
      * @throws DocumentNonProduitException si le document est introuvable, illisible,
      *         ou si l'estampage echoue. Rien n'est alors ecrit : le fichier
      *         d'origine, avec ses signatures, reste en place
      */
     public ResultatSignature enrichirEtSigner(PieceJointe pieceJointe, ActeurSignataire acteur,
-            NomEtapeEnum etape, LocalDateTime horodatage) {
+            NomEtapeEnum etape, LocalDateTime horodatage, boolean versDirecteurReseau) {
 
         MentionSignature mention = new MentionSignature(
                 etape, acteur.login(), String.valueOf(acteur.role()), horodatage);
 
         byte[] existant = stockage.lire(pieceJointe.getCheminFichier());
-        byte[] enrichi = estamper(existant, mention, pieceJointe.getCheminFichier());
+        byte[] enrichi = estamper(existant, mention, versDirecteurReseau,
+                pieceJointe.getCheminFichier());
 
         DocumentEcrit ecrit = stockage.remplacer(pieceJointe.getCheminFichier(), enrichi);
 
@@ -171,19 +177,24 @@ public class SignatureService {
 
     // --- Estampage ---------------------------------------------------------------
 
-    private byte[] estamper(byte[] existant, MentionSignature mention, String cheminRelatif) {
+    private byte[] estamper(byte[] existant, MentionSignature mention,
+            boolean versDirecteurReseau, String cheminRelatif) {
         ByteArrayOutputStream sortie = new ByteArrayOutputStream();
 
         try (PdfDocument pdf = new PdfDocument(
                 new PdfReader(new ByteArrayInputStream(existant)), new PdfWriter(sortie))) {
 
-            PdfFont normal = PdfFontFactory.createFont(StandardFonts.TIMES_ROMAN);
-            PdfFont gras = PdfFontFactory.createFont(StandardFonts.TIMES_BOLD);
+            PdfFont normal = PdfFontFactory.createFont(StandardFonts.HELVETICA);
+            PdfFont gras = PdfFontFactory.createFont(StandardFonts.HELVETICA_BOLD);
 
-            // La page des visas est toujours la derniere : le gabarit lui reserve
-            // une page entiere, ce qui rend les coordonnees des cadres independantes
-            // du nombre de journees saisies.
+            // La bande des visas est toujours en bas de la derniere page : le gabarit
+            // reserve son emplacement sur toutes les pages, ce qui rend les
+            // coordonnees des cadres independantes du nombre de lignes saisies.
             RedacteurVisa.inscrireMention(pdf.getLastPage(), mention, normal, gras);
+
+            if (versDirecteurReseau) {
+                RedacteurVisa.tracerCadre(pdf.getLastPage(), NomEtapeEnum.VALIDATION_DR, gras);
+            }
 
         } catch (IOException | RuntimeException echec) {
             throw new DocumentNonProduitException(

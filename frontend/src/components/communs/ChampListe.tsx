@@ -17,7 +17,7 @@ export interface ChampListeProps extends Omit<SelectProps, 'children'> {
   erreur?: string
   obligatoire?: boolean
   className?: string
-  /** Libelle de l'option vide initiale (ex. "Selectionner..."). Absent : aucune option vide. */
+  /** Libelle de l'option vide initiale (ex. "Selectionner..."). Absent : aucune option vide. Chaine vide : option vide sans texte. */
   libellePlaceholder?: string
 }
 
@@ -45,7 +45,7 @@ export function ChampListe({
         aria-describedby={erreur ? idErreur : undefined}
         {...props}
       >
-        {libellePlaceholder && <option value="">{libellePlaceholder}</option>}
+        {libellePlaceholder !== undefined && <option value="">{libellePlaceholder}</option>}
         {options.map((option) => (
           <option key={option.valeur} value={option.valeur}>
             {option.libelle}

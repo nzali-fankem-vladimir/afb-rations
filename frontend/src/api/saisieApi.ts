@@ -36,10 +36,20 @@ export interface CreationLigneRequest {
   session: SessionEnum
 }
 
-/** Entree de PUT /saisie/lignes/{id} : seules la nature et la session se modifient. */
+/**
+ * Entree de PUT /saisie/lignes/{id} : nature et session, plus, facultativement,
+ * l'identite du beneficiaire. Une modification se fait sur place, en une seule
+ * transaction : compte inchange, nom/prenom/agence corrigent la fiche du
+ * beneficiaire ; compte different, la ligne est rattachee au beneficiaire de ce
+ * compte (cree s'il n'existe pas).
+ */
 export interface ModificationLigneRequest {
   nature: NatureEnum
   session: SessionEnum
+  nom?: string
+  prenom?: string
+  numCompteCourant?: string
+  codeAgence?: string
 }
 
 export interface BeneficiaireResume {
@@ -108,7 +118,7 @@ export async function creerLigne(requete: CreationLigneRequest): Promise<LigneRe
   return reponse.data
 }
 
-/** Traitee comme une creation cote backend : RG-03 et RG-04 rejouent integralement. */
+/** Traitee comme une creation cote backend : RG-03, RG-04 et RG-15 rejouent integralement. */
 export async function modifierLigne(
   idLigne: number,
   requete: ModificationLigneRequest,

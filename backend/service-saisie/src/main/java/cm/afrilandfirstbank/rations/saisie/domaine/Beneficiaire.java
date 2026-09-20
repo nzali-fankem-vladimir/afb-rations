@@ -106,6 +106,20 @@ public class Beneficiaire {
         return codeAgence;
     }
 
+    /**
+     * Corrige nom, prénom et agence, jamais le numéro de compte (c'est l'identité).
+     *
+     * <p>Correction explicite décidée par l'agent depuis la modification d'une ligne,
+     * tracée par l'appelant avec l'avant et l'après. Elle porte sur la fiche
+     * partagée : tout ce qui sera produit ensuite (documents, transmissions)
+     * portera la valeur corrigée, alors que ce qui est déjà parti reste tel quel.
+     */
+    public void corrigerIdentite(String nom, String prenom, String codeAgence) {
+        this.nom = nom;
+        this.prenom = prenom;
+        this.codeAgence = codeAgence;
+    }
+
     public LocalDateTime getDateCreation() {
         return dateCreation;
     }

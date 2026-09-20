@@ -11,6 +11,7 @@ import { Tableau } from '../../components/communs/Tableau'
 import type { Colonne } from '../../components/communs/Tableau'
 import { PageHeader } from '../../components/layout/PageHeader'
 import { useAuth } from '../../hooks/useAuth'
+import { useToast } from '../../hooks/useToast'
 import type { ApiErrorResponse } from '../../api/apiClient'
 import { rechercherDemandes } from '../../api/reportingApi'
 import type { DemandeResponse } from '../../api/reportingApi'
@@ -66,6 +67,7 @@ const COLONNES: Colonne<DemandeResponse>[] = [
 export function ProcessusListPage() {
   const navigate = useNavigate()
   const { codeUnite } = useAuth()
+  const { succes } = useToast()
   const [page, setPage] = useState(0)
   const [donnees, setDonnees] = useState<PageResponse<DemandeResponse> | null>(null)
   const [chargement, setChargement] = useState(true)
@@ -172,6 +174,7 @@ export function ProcessusListPage() {
           onFerme={() => setModaleOuverte(false)}
           onSucces={(idProcessus) => {
             setModaleOuverte(false)
+            succes('État déclenché', 'Vous pouvez commencer la saisie')
             navigate(`/saisie/${idProcessus}`)
           }}
         />

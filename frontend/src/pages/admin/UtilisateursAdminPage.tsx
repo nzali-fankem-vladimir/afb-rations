@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 
 import { AffichageErreur } from '../../components/communs/AffichageErreur'
-import { Alert, AlertDescription } from '../../components/communs/Alert'
 import { Badge } from '../../components/communs/Badge'
 import { Button } from '../../components/communs/Button'
 import { ChampListe } from '../../components/communs/ChampListe'
@@ -10,6 +9,7 @@ import { Tableau } from '../../components/communs/Tableau'
 import type { Colonne } from '../../components/communs/Tableau'
 import { PageHeader } from '../../components/layout/PageHeader'
 import { useAuth } from '../../hooks/useAuth'
+import { useToast } from '../../hooks/useToast'
 import type { ApiErrorResponse } from '../../api/apiClient'
 import { listerUtilisateurs } from '../../api/adminApi'
 import type { UtilisateurResponse } from '../../api/adminApi'
@@ -46,6 +46,7 @@ const OPTIONS_ACTIF = [
  */
 export function UtilisateursAdminPage() {
   const { utilisateur: profilCourant } = useAuth()
+  const { succes } = useToast()
 
   const [page, setPage] = useState(0)
   const [filtreRole, setFiltreRole] = useState<RoleEnum | ''>('')
@@ -142,16 +143,6 @@ export function UtilisateursAdminPage() {
       <div className="flex flex-col gap-6 p-8">
         {erreur && <AffichageErreur erreur={erreur} />}
 
-        <Alert variant="default">
-          <AlertDescription>
-            <p className="font-medium">Cet écran n'ouvre ni ne supprime de compte.</p>
-            <p>
-              Il attribue un rôle et un code unité à des comptes déjà existants dans l'annuaire de la
-              banque (CLAUDE.md §10). L'ouverture d'un profil reste un geste distinct, hors de cet écran.
-            </p>
-          </AlertDescription>
-        </Alert>
-
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <ChampListe
             id="filtre-role"
@@ -192,10 +183,10 @@ export function UtilisateursAdminPage() {
                 variant="outline"
                 size="sm"
                 disabled={estSoiMeme}
-                title={estSoiMeme ? 'Un administrateur ne peut pas modifier son propre rôle' : undefined}
+                title={estSoiMeme ? 'Un administrateur ne peut pas modifier son propre profil' : undefined}
                 onClick={() => setUtilisateurCible(utilisateur)}
               >
-                Attribuer
+                Modifier
               </Button>
             )
           }}
@@ -217,7 +208,8 @@ export function UtilisateursAdminPage() {
         <AttributionRoleModale
           utilisateur={utilisateurCible}
           onFerme={() => setUtilisateurCible(null)}
-          onSucces={() => {
+          onSucces={(profil) => {
+            succes('Profil modifié', `${profil.prenom} ${profil.nom}`)
             setUtilisateurCible(null)
             recharger()
           }}

@@ -36,6 +36,8 @@ export interface CriteresRechercheUtilisateurs {
 export interface AttributionRoleRequest {
   role: RoleEnum
   codeUnite: string | null
+  /** Absent : statut inchange. false desactive le profil, true le reactive. */
+  actif?: boolean
 }
 
 /**

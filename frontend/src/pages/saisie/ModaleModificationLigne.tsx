@@ -7,7 +7,7 @@ import { ChampTexte } from '../../components/communs/ChampTexte'
 import { Modale } from '../../components/communs/Modale'
 import type { ApiErrorResponse } from '../../api/apiClient'
 import type { LigneResponse } from '../../api/saisieApi'
-import { creerLigne, modifierLigne, supprimerLigne } from '../../api/saisieApi'
+import { modifierLigne } from '../../api/saisieApi'
 import type { NatureEnum, SessionEnum } from '../../types/enums'
 import {
   LONGUEUR_CODE_AGENCE,
@@ -30,30 +30,25 @@ export interface ModaleModificationLigneProps {
   ligne: LigneResponse
   onFerme: () => void
   /**
-   * `suppressionEchouee` a vrai uniquement quand le bénéficiaire a changé ET
-   * que la suppression de l'ancienne ligne a échoué après la création de la
-   * nouvelle : la modale se ferme dans tous les cas de succès, c'est donc à
-   * l'appelant d'afficher l'avertissement -- une bannière disparaissant avec
-   * la modale ne serait jamais lue.
+   * `avertissement` non nul quand le nouveau compte désignait un bénéficiaire
+   * déjà connu dont les données diffèrent de celles saisies : elles n'ont pas été
+   * écrasées. La modale se ferme dans tous les cas de succès, c'est donc à
+   * l'appelant d'afficher l'avertissement -- une bannière disparaissant avec la
+   * modale ne serait jamais lue.
    */
-  onSucces: (suppressionEchouee: boolean) => void
+  onSucces: (avertissement: string | null) => void
 }
 
 /**
  * Modifie une ligne (guide 7F.4, étape 5 ; fusionnée au rattrapage post-7F.6,
  * retour utilisateur : "un seul bouton Modifier, tous les champs préchargés").
  *
- * <b>Deux chemins selon ce qui change réellement</b>, transparents pour
- * l'agent :
- * - <b>bénéficiaire inchangé</b> (nom, prénom, compte, agence identiques) :
- *   `PUT /saisie/lignes/{id}` -- seul endpoint qui modifie une ligne en place,
- *   et il ne porte que nature et session (`ModificationLigneRequest.java`).
- * - <b>bénéficiaire modifié</b> : aucun endpoint ne réécrit un bénéficiaire en
- *   place (décision Sprint 3.1 -- un bénéficiaire est identifié par son seul
- *   numéro de compte, et son nom enregistré n'est jamais réécrit). La ligne
- *   est donc supprimée et recréée, avec toutes les valeurs du formulaire.
- *   <b>Créer d'abord, supprimer ensuite</b> : si la création échoue (RG-04,
- *   RG-03...), la ligne d'origine reste intacte.
+ * <b>Un seul chemin, sur place</b> : `PUT /saisie/lignes/{id}` porte nature,
+ * session et identité du bénéficiaire, et le serveur modifie la ligne en une
+ * seule transaction (RG-03, RG-04 et RG-15 rejouées avant d'écrire). L'ancien
+ * parcours « créer la nouvelle ligne puis supprimer l'ancienne » est abandonné :
+ * il refusait la correction d'une agence (RG-04 voyait un doublon de la ligne
+ * qu'on remplaçait) et pouvait laisser deux lignes pour la même prestation.
  */
 export function ModaleModificationLigne({ ligne, onFerme, onSucces }: ModaleModificationLigneProps) {
   const [nom, setNom] = useState(ligne.beneficiaire.nom)
@@ -68,6 +63,8 @@ export function ModaleModificationLigne({ ligne, onFerme, onSucces }: ModaleModi
   const erreursBeneficiaire = validerBeneficiaire({ nom, prenom, numCompteCourant, codeAgence })
   const aucuneErreur = Object.keys(erreursBeneficiaire).length === 0
 
+  const compteModifie = numCompteCourant !== ligne.beneficiaire.numCompteCourant
+
   const beneficiaireModifie =
     nom !== ligne.beneficiaire.nom ||
     prenom !== ligne.beneficiaire.prenom ||
@@ -79,39 +76,28 @@ export function ModaleModificationLigne({ ligne, onFerme, onSucces }: ModaleModi
     setErreur(null)
     if (!aucuneErreur) return
 
-    if (!beneficiaireModifie) {
-      // Seules nature et/ou session ont pu changer : modification en place,
-      // le montant est de toute facon revalide et refige par le serveur.
-      try {
-        await modifierLigne(ligne.id, { nature, session })
-        onSucces(false)
-      } catch (erreurApi) {
-        setErreur(erreurApi as ApiErrorResponse)
-      }
-      return
-    }
-
-    // Le beneficiaire a change : supprimer et recreer (decision Sprint 3.1).
     try {
-      await creerLigne({
-        idFicheJournaliere: ligne.idFicheJournaliere,
-        beneficiaire: { nom, prenom, numCompteCourant, codeAgence },
+      const reponse = await modifierLigne(ligne.id, {
         nature,
         session,
+        nom,
+        prenom,
+        numCompteCourant,
+        codeAgence,
       })
+      const b = reponse.beneficiaire
+      // Nouveau compte deja connu : le serveur garde les donnees du beneficiaire
+      // existant, il ne les ecrase pas. On le dit, sinon l'agent croirait avoir
+      // enregistre le nom ou l'agence qu'il vient de saisir.
+      const divergence =
+        compteModifie && (b.nom !== nom || b.prenom !== prenom || b.codeAgence !== codeAgence)
+      onSucces(
+        divergence
+          ? `Ce numéro de compte existait déjà : la ligne est rattachée à ${b.nom} ${b.prenom} (agence ${b.codeAgence}), dont les informations n'ont pas été modifiées.`
+          : null,
+      )
     } catch (erreurApi) {
       setErreur(erreurApi as ApiErrorResponse)
-      return
-    }
-
-    try {
-      await supprimerLigne(ligne.id)
-      onSucces(false)
-    } catch {
-      // La correction a reussi (la nouvelle ligne existe) : seule la
-      // suppression de l'ancienne a echoue. L'agent voit desormais les DEUX
-      // lignes et peut retirer lui-meme celle de trop.
-      onSucces(true)
     }
   }
 
@@ -129,8 +115,9 @@ export function ModaleModificationLigne({ ligne, onFerme, onSucces }: ModaleModi
           {beneficiaireModifie && (
             <Alert variant="warning">
               <AlertDescription>
-                Le bénéficiaire a changé : cette ligne sera remplacée par une nouvelle (nouveau
-                montant résolu à l'enregistrement, RG-03).
+                {compteModifie
+                  ? "Le numéro de compte a changé : la ligne sera rattachée au bénéficiaire de ce compte (créé s'il n'existe pas). Le montant est recalculé à l'enregistrement."
+                  : "Vous corrigez la fiche de ce bénéficiaire : le changement vaut pour toutes ses lignes à venir. Les documents déjà produits ne changent pas."}
               </AlertDescription>
             </Alert>
           )}

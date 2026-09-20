@@ -24,7 +24,7 @@ import { formatCombinaison, formatDateJJMMAAAA } from './formatters'
  * texte libre laissait taper un code inexistant sans jamais le signaler.
  */
 export const LIBELLE_ACTION: Record<string, string> = {
-  ATTRIBUTION_ROLE: "Attribution d'un rôle",
+  ATTRIBUTION_ROLE: "Modification d'un profil utilisateur",
   LIAISON_COMPTE_KEYCLOAK: 'Première connexion (liaison du compte)',
   ACCES_REFUSE: "Refus d'accès",
   CREATION_GRILLE: "Proposition d'une grille tarifaire",
@@ -82,6 +82,7 @@ const LIBELLE_SERVICE: Record<string, string> = {
 const LIBELLE_CHAMP: Record<string, string> = {
   valeur: 'Valeur',
   role: 'Rôle',
+  actif: 'Statut',
   codeUnite: 'Unité',
   code: 'Code',
   montant: 'Montant',
@@ -105,6 +106,12 @@ const LIBELLE_CHAMP: Record<string, string> = {
   session: 'Session',
   referenceComptable: 'Référence comptable',
   resultat: 'Résultat',
+}
+
+/** Un booleen `actif` se lit « Actif » / « Inactif », jamais « true » / « false ». */
+function formaterValeur(cle: string, valeur: unknown): string {
+  if (cle === 'actif' && typeof valeur === 'boolean') return valeur ? 'Actif' : 'Inactif'
+  return String(valeur)
 }
 
 /** Prettifie une cle camelCase ou snake_case inconnue en libelle lisible ("codeGuichet" -> "Code guichet"). */
@@ -168,11 +175,11 @@ export function analyserDetailJson(detailJson: string | null): LigneDelta[] {
       lignes.push({
         cle,
         libelle,
-        avant: avant === null || avant === undefined ? 'aucune' : String(avant),
-        apres: apres === null || apres === undefined ? 'aucune' : String(apres),
+        avant: avant === null || avant === undefined ? 'aucune' : formaterValeur(cle, avant),
+        apres: apres === null || apres === undefined ? 'aucune' : formaterValeur(cle, apres),
       })
     } else if (valeur !== null && valeur !== undefined) {
-      lignes.push({ cle, libelle, valeur: String(valeur) })
+      lignes.push({ cle, libelle, valeur: formaterValeur(cle, valeur) })
     }
   }
   return lignes

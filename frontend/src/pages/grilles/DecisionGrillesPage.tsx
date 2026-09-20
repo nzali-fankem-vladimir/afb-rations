@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../../components/commu
 import { Modale } from '../../components/communs/Modale'
 import { Recapitulatif } from '../../components/communs/Recapitulatif'
 import { PageHeader } from '../../components/layout/PageHeader'
+import { useToast } from '../../hooks/useToast'
 import type { ApiErrorResponse } from '../../api/apiClient'
 import { listerGrilles, validerGrille } from '../../api/grillesApi'
 import type { GrilleResponse, ValidationGrilleResponse } from '../../api/grillesApi'
@@ -69,6 +70,7 @@ interface ResultatDecision {
  * journée antérieure prend l'ancienne grille, et c'est voulu.
  */
 export function DecisionGrillesPage() {
+  const { succes } = useToast()
   const [enAttente, setEnAttente] = useState<GrilleResponse[]>([])
   const [actives, setActives] = useState<GrilleResponse[]>([])
   const [chargement, setChargement] = useState(true)
@@ -128,6 +130,7 @@ export function DecisionGrillesPage() {
     try {
       const resultat = await validerGrille(grille.id)
       setResultats((precedent) => ({ ...precedent, [grille.id]: { idGrille: grille.id, validation: resultat } }))
+      succes('Proposition validée', `${formatCombinaison(grille.nature, grille.session)} : ${formatMontantFcfa(grille.montantFcfa)}`)
     } catch (erreurApi) {
       setErreur(erreurApi as ApiErrorResponse)
     } finally {
@@ -338,6 +341,7 @@ export function DecisionGrillesPage() {
           onFerme={() => setIdModaleRejet(null)}
           onSucces={(grille) => {
             setResultats((precedent) => ({ ...precedent, [grille.id]: { idGrille: grille.id, rejet: grille } }))
+            succes('Proposition rejetée', formatCombinaison(grille.nature, grille.session))
             setIdModaleRejet(null)
           }}
         />

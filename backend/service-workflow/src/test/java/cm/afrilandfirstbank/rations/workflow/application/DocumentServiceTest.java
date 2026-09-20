@@ -61,43 +61,113 @@ class DocumentServiceTest {
     }
 
     @Test
-    @DisplayName("2. le document compte au moins deux pages : le detail, puis la page des visas")
-    void pageDesVisasToujoursPresente() throws IOException {
+    @DisplayName("2. un etat court tient sur UNE page : le detail et la bande des visas ensemble")
+    void unEtatCourtTientSurUnePage() throws IOException {
         byte[] document = service.genererEtatMensuel(processus, etatDeReference(),
                 List.of(signatureAgent()));
 
         try (PdfDocument pdf = ouvrir(document)) {
-            assertThat(pdf.getNumberOfPages()).isGreaterThanOrEqualTo(2);
+            assertThat(pdf.getNumberOfPages()).isEqualTo(1);
             assertThat(PdfTextExtractor.getTextFromPage(pdf.getLastPage()))
-                    .contains("VISAS ET SIGNATURES");
+                    .contains("Agent d'unité")
+                    .contains("MBARGA Jean");
+        }
+    }
+
+    @Test
+    @DisplayName("2 bis. un etat long deborde sur plusieurs pages, et la bande des visas reste libre sur la derniere")
+    void etatLongBandeLibre() throws IOException {
+        EtatConsolide.Ligne[] lignes = new EtatConsolide.Ligne[70];
+        for (int i = 0; i < lignes.length; i++) {
+            lignes[i] = ligne(200L + i, 1000,
+                    beneficiaire("AGENT" + i, "Test", String.format("0370200999%04d", i)));
+        }
+
+        byte[] document = service.genererEtatMensuel(processus,
+                etat(journee(LocalDate.of(2026, 9, 3), lignes)), List.of(signatureAgent()));
+
+        try (PdfDocument pdf = ouvrir(document)) {
+            assertThat(pdf.getNumberOfPages()).isGreaterThanOrEqualTo(2);
+            String derniere = PdfTextExtractor.getTextFromPage(pdf.getLastPage());
+            assertThat(derniere).contains("Agent d'unité").contains("jean_mbarga");
+            // Le total ferme le tableau, sur la derniere page comme le reste.
+            assertThat(derniere).contains("TOTAL DE LA PÉRIODE");
         }
     }
 
     // --- Contenu attendu par US-06 ---------------------------------------------
 
     @Test
-    @DisplayName("3. en-tete : la periode et l'unite figurent au document")
+    @DisplayName("3. en-tete : la periode, l'unite et le dossier figurent, sans statut ni vocabulaire mensuel")
     void enTetePeriodeEtUnite() throws IOException {
         String texte = texteDe(service.genererEtatMensuel(processus, etatDeReference(),
                 List.of(signatureAgent())));
 
         assertThat(texte)
-                .contains("ETAT MENSUEL DE PAIEMENT")
-                .contains("Rations et transport de la garde armee")
-                .contains("septembre 2026")
+                .contains("ÉTAT DE PAIEMENT")
+                .contains("Rations et transport de la garde armée")
+                .contains("du 1 au 30 septembre 2026")
                 .contains(UNITE)
-                .contains("Numero de dossier")
-                .contains("109");
+                .contains("Dossier n°")
+                .contains("109")
+                .contains("2 bénéficiaires, 3 lignes");
+
+        // Retrait valide par l'utilisateur : ces elements sont obsoletes ou trompeurs.
+        assertThat(texte)
+                .doesNotContain("MENSUEL")
+                .doesNotContain("Statut")
+                .doesNotContain("EN_COURS_SAISIE")
+                .doesNotContain("Journées saisies")
+                .doesNotContain("NORMAL");
     }
 
     @Test
-    @DisplayName("4. detail par journee : beneficiaire, nature, session et montant")
+    @DisplayName("3 bis. la periode ne repete que ce qui change")
+    void periodeSansRepetition() throws IOException {
+        assertThat(texteDe(service.genererEtatMensuel(
+                processusSurPeriode(LocalDate.of(2027, 10, 4), LocalDate.of(2027, 10, 10), 6389L),
+                etatDeReference(), List.of(signatureAgent()))))
+                .contains("du 4 au 10 octobre 2027");
+
+        assertThat(texteDe(service.genererEtatMensuel(
+                processusSurPeriode(LocalDate.of(2026, 9, 28), LocalDate.of(2026, 10, 4), 6390L),
+                etatDeReference(), List.of(signatureAgent()))))
+                .contains("du 28 septembre au 4 octobre 2026");
+
+        assertThat(texteDe(service.genererEtatMensuel(
+                processusSurPeriode(LocalDate.of(2026, 12, 28), LocalDate.of(2027, 1, 3), 6391L),
+                etatDeReference(), List.of(signatureAgent()))))
+                .contains("du 28 décembre 2026 au 3 janvier 2027");
+    }
+
+    @Test
+    @DisplayName("3 ter. un complementaire nomme l'etat dont il depend et son motif")
+    void complementaireIdentifie() throws IOException {
+        ProcessusMensuel origine = processusAvecIdentifiant(109L);
+        TransitionProcessus.soumettre(origine);
+        TransitionProcessus.transfererAuChefUnite(origine);
+        TransitionProcessus.cloturerApresValidationChefUnite(origine);
+        ProcessusMensuel complementaire = TransitionProcessus.ouvrirComplementaire(
+                origine, "Oubli signale par l'agent hors systeme");
+        fixerIdentifiant(complementaire, 240L);
+
+        String texte = texteDe(service.genererEtatMensuel(complementaire, etatDeReference(),
+                List.of(signatureAgent())));
+
+        assertThat(texte)
+                .contains("Complémentaire de l'état n° 109")
+                .contains("Oubli signale par l'agent hors systeme");
+    }
+
+    @Test
+    @DisplayName("4. detail : date, beneficiaire, nature, session et montant, avec les accents")
     void detailParJournee() throws IOException {
         String texte = texteDe(service.genererEtatMensuel(processus, etatDeReference(),
                 List.of(signatureAgent())));
 
         assertThat(texte)
-                .contains("Journee du 03/09/2026")
+                .contains("Bénéficiaire")
+                .contains("03/09/2026")
                 .contains("MBARGA Jean")
                 .contains("03702009991111")
                 .contains("Ration")
@@ -106,17 +176,18 @@ class DocumentServiceTest {
     }
 
     @Test
-    @DisplayName("5. sous-totaux journaliers et total du mois, recopies de l'etat consolide")
+    @DisplayName("5. sous-totaux journaliers et total de la periode, recopies de l'etat consolide")
     void sousTotauxEtTotal() throws IOException {
         String texte = texteDe(service.genererEtatMensuel(processus, etatDeReference(),
                 List.of(signatureAgent())));
 
         // 2500 + 1500 le 03/09, 4000 le 04/09, total 8000.
         assertThat(texte)
-                .contains("Sous-total du 03/09/2026 : 4 000 FCFA")
-                .contains("Sous-total du 04/09/2026 : 4 000 FCFA")
-                .contains("TOTAL DU MOIS")
+                .contains("Sous-total du 03/09/2026")
+                .contains("Sous-total du 04/09/2026")
+                .contains("TOTAL DE LA PÉRIODE")
                 .contains("8 000 FCFA");
+        assertThat(occurrences(texte, "4 000 FCFA")).isGreaterThanOrEqualTo(2);
     }
 
     @Test
@@ -138,8 +209,8 @@ class DocumentServiceTest {
     }
 
     @Test
-    @DisplayName("7. une journee ouverte sans ligne est imprimee, pas escamotee")
-    void journeeSansLigneImprimee() throws IOException {
+    @DisplayName("7. une journee ouverte sans ligne n'est pas imprimee : elle n'apprend rien au valideur")
+    void journeeSansLigneNonImprimee() throws IOException {
         EtatConsolide etat = etat(
                 journee(LocalDate.of(2026, 9, 3),
                         ligne(101L, 2500, beneficiaire("ATANGANA", "Sylvie", "03702009994444"))),
@@ -149,13 +220,14 @@ class DocumentServiceTest {
                 List.of(signatureAgent())));
 
         assertThat(texte)
-                .contains("Journee du 04/09/2026")
-                .contains("Aucune prestation saisie pour cette journee");
+                .contains("03/09/2026")
+                .doesNotContain("04/09/2026")
+                .doesNotContain("Aucune prestation");
     }
 
-    // --- Page des visas --------------------------------------------------------
+    // --- Bande des visas -------------------------------------------------------
     @Test
-    @DisplayName("8. a la soumission, seul le cadre de l'agent porte une mention ; les deux autres sont vides")
+    @DisplayName("8. a la soumission, seul le cadre de l'agent porte une mention ; celui du chef d'unite est vide ; celui du DR n'existe pas")
     void unSeulVisaALaSoumission() throws IOException {
         byte[] document = service.genererEtatMensuel(processus, etatDeReference(),
                 List.of(signatureAgent()));
@@ -163,38 +235,44 @@ class DocumentServiceTest {
         try (PdfDocument pdf = ouvrir(document)) {
             String visas = PdfTextExtractor.getTextFromPage(pdf.getLastPage());
 
-            // Les trois cadres existent, avec leur intitule.
             assertThat(visas)
-                    .contains("Agent d'unite")
-                    .contains("Chef d'Unite (DA)")
-                    .contains("Directeur Reseau (DR)");
+                    .contains("Agent d'unité")
+                    .contains("Chef d'unité")
+                    .doesNotContain("Directeur réseau");
 
             // Un seul porte une mention : login, role fige, horodatage (RG-09).
             assertThat(visas)
                     .contains("jean_mbarga")
-                    .contains("Role : AGENT_UNITE")
-                    .contains("Signe le 01/09/2026 a 10:24");
+                    .contains("Rôle : AGENT_UNITE")
+                    .contains("Signé le 01/09/2026 à 10:24");
 
             // Compter les horodatages est la mesure fiable du nombre de signatures :
             // c'est la ligne que RG-09 exige et que l'elargissement du cadre au
             // Sprint 4.2 a rendue possible.
-            assertThat(occurrences(visas, "Signe le ")).isEqualTo(1);
+            assertThat(occurrences(visas, "Signé le ")).isEqualTo(1);
+
+            // Ni la phrase d'introduction de l'ancienne page des visas, ni le renvoi
+            // a une regle interne : retires sur retour utilisateur.
+            assertThat(visas)
+                    .doesNotContain("RG-09")
+                    .doesNotContain("Chaque visa est apposé")
+                    .doesNotContain("VISAS ET SIGNATURES");
         }
     }
 
     @Test
-    @DisplayName("9. les trois cadres existent meme sans aucune signature : la geometrie ne depend pas du circuit")
-    void troisCadresMemeSansSignature() throws IOException {
+    @DisplayName("9. les deux cadres du circuit court existent meme sans signature : la geometrie ne depend pas du circuit")
+    void deuxCadresMemeSansSignature() throws IOException {
         byte[] document = service.genererEtatMensuel(processus, etatDeReference(), List.of());
 
         try (PdfDocument pdf = ouvrir(document)) {
             String visas = PdfTextExtractor.getTextFromPage(pdf.getLastPage());
 
             assertThat(visas)
-                    .contains("Agent d'unite")
-                    .contains("Chef d'Unite (DA)")
-                    .contains("Directeur Reseau (DR)");
-            assertThat(occurrences(visas, "Signe le ")).isZero();
+                    .contains("Agent d'unité")
+                    .contains("Chef d'unité")
+                    .doesNotContain("Directeur réseau");
+            assertThat(occurrences(visas, "Signé le ")).isZero();
         }
     }
 
@@ -218,27 +296,35 @@ class DocumentServiceTest {
     void signaturesNullesTolerees() throws IOException {
         byte[] document = service.genererEtatMensuel(processus, etatDeReference(), null);
 
-        assertThat(texteDe(document)).contains("VISAS ET SIGNATURES");
+        assertThat(texteDe(document)).contains("Agent d'unité");
     }
 
-    // --- Geometrie des cadres, partagee avec l'estampage des sprints 4.3 et 4.4 --
+    // --- Geometrie des cadres, partagee avec l'estampage -------------------------
 
     @Test
-    @DisplayName("12. chaque etape a son cadre, et les trois ne se chevauchent jamais")
+    @DisplayName("12. chaque etape a son cadre dans la bande, cote a cote sans jamais se chevaucher")
     void cadresDisjoints() {
         Rectangle agent = GabaritDocument.cadreVisa(NomEtapeEnum.SOUMISSION_AGENT);
         Rectangle chef = GabaritDocument.cadreVisa(NomEtapeEnum.VALIDATION_DA);
         Rectangle directeur = GabaritDocument.cadreVisa(NomEtapeEnum.VALIDATION_DR);
 
         // Un chevauchement ferait ecrire la signature du chef d'unite par-dessus
-        // celle de l'agent au sous-sprint 4.3, sans qu'aucun test ne le voie.
-        assertThat(agent.getY()).isGreaterThan(chef.getY() + chef.getHeight());
-        assertThat(chef.getY()).isGreaterThan(directeur.getY() + directeur.getHeight());
+        // celle de l'agent, sans qu'aucun test ne le voie.
+        assertThat(agent.getX() + agent.getWidth()).isLessThan(chef.getX());
+        assertThat(chef.getX() + chef.getWidth()).isLessThan(directeur.getX());
 
-        // Tous restent dans la page, au-dessus du pied de page.
-        assertThat(directeur.getY()).isGreaterThan(GabaritDocument.MARGE);
-        assertThat(agent.getY() + agent.getHeight())
-                .isLessThan(GabaritDocument.FORMAT.getHeight() - GabaritDocument.MARGE);
+        // Meme ligne de base pour les trois : c'est une bande.
+        assertThat(chef.getY()).isEqualTo(agent.getY());
+        assertThat(directeur.getY()).isEqualTo(agent.getY());
+
+        // Tous restent dans les marges, au-dessus du pied de page.
+        assertThat(agent.getY()).isGreaterThan(GabaritDocument.MARGE / 2f);
+        assertThat(directeur.getX() + directeur.getWidth())
+                .isLessThanOrEqualTo(GabaritDocument.FORMAT.getWidth() - GabaritDocument.MARGE + 0.01f);
+
+        // Le contenu s'arrete AU-DESSUS de la bande, sur toutes les pages.
+        assertThat(GabaritDocument.MARGE_BASSE)
+                .isGreaterThan(agent.getY() + agent.getHeight());
     }
 
     @Test
@@ -252,7 +338,9 @@ class DocumentServiceTest {
                 NomEtapeEnum.VALIDATION_DR);
 
         assertThat(GabaritDocument.intituleVisa(NomEtapeEnum.SOUMISSION_AGENT))
-                .isEqualTo("Agent d'unite");
+                .isEqualTo("Agent d'unité");
+        assertThat(GabaritDocument.intituleVisa(NomEtapeEnum.VALIDATION_DR))
+                .isEqualTo("Directeur réseau");
     }
 
     // --- Convention de nommage --------------------------------------------------
@@ -326,6 +414,17 @@ class DocumentServiceTest {
      */
     private ProcessusMensuel processus(int mois, int annee, Long id) {
         ProcessusMensuel cree = declencherSur(mois, annee, UNITE);
+        fixerIdentifiant(cree, id);
+        return cree;
+    }
+
+    private ProcessusMensuel processusSurPeriode(LocalDate debut, LocalDate fin, Long id) {
+        ProcessusMensuel cree = TransitionProcessus.declencher(debut, fin, UNITE);
+        fixerIdentifiant(cree, id);
+        return cree;
+    }
+
+    private void fixerIdentifiant(ProcessusMensuel cree, Long id) {
         try {
             var champ = ProcessusMensuel.class.getDeclaredField("id");
             champ.setAccessible(true);
@@ -334,7 +433,6 @@ class DocumentServiceTest {
             throw new IllegalStateException("Le champ id de ProcessusMensuel a change de nom.",
                     impossible);
         }
-        return cree;
     }
 
     private EtatConsolide etatDeReference() {
