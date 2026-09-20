@@ -77,3 +77,7 @@ graphify-out/
 # Ce sont des donnees, pas du code : le repertoire est recree au demarrage et son
 # contenu depend de la base locale.
 backend/*/donnees/
+
+# Guides d'exploitation locale, non versionnes (decision utilisateur)
+docs/GUIDE_LANCEMENT_ET_VERIFICATIONS.md
+docs/LIBERATION_PERIODES_ET_NETTOYAGE_DEMO.md
