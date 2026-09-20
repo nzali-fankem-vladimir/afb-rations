@@ -1,8 +1,5 @@
-import { creerClientApi } from './apiClient'
+import apiClient from './apiClient'
 import type { PageResponse } from '../types/pagination'
-
-/** Client du service Audit (port 8087, CLAUDE.md section 11). */
-const auditApiClient = creerClientApi(import.meta.env.VITE_API_AUDIT_URL)
 
 /**
  * Les six services qui publient sur le topic d'audit (CLAUDE.md section 9.2).
@@ -62,7 +59,7 @@ export interface CriteresRechercheAudit {
 export async function rechercherAuditEntrees(
   criteres: CriteresRechercheAudit = {},
 ): Promise<PageResponse<AuditEntreeResponse>> {
-  const reponse = await auditApiClient.get<PageResponse<AuditEntreeResponse>>('/audit/entrees', {
+  const reponse = await apiClient.get<PageResponse<AuditEntreeResponse>>('/audit/entrees', {
     params: criteres,
   })
   return reponse.data
@@ -70,7 +67,7 @@ export async function rechercherAuditEntrees(
 
 /** Journal complet d'un processus, niveau workflow uniquement, trie du premier au dernier evenement. */
 export async function consulterAuditProcessus(idProcessus: number): Promise<AuditEntreeResponse[]> {
-  const reponse = await auditApiClient.get<AuditEntreeResponse[]>(`/audit/processus/${idProcessus}`)
+  const reponse = await apiClient.get<AuditEntreeResponse[]>(`/audit/processus/${idProcessus}`)
   return reponse.data
 }
 
@@ -82,6 +79,6 @@ export async function consulterAuditProcessus(idProcessus: number): Promise<Audi
  * copie suive le backend si une septieme action apparaissait un jour.
  */
 export async function listerActionsDisponibles(): Promise<string[]> {
-  const reponse = await auditApiClient.get<string[]>('/audit/actions')
+  const reponse = await apiClient.get<string[]>('/audit/actions')
   return reponse.data
 }

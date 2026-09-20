@@ -263,7 +263,6 @@ export function FormulaireAjoutLigne({
             <ChampTexte
               id="ligne-prenom"
               label="Prénom"
-              obligatoire
               disabled={disabled}
               erreur={tentative ? erreursBeneficiaire.prenom : undefined}
               value={prenom}

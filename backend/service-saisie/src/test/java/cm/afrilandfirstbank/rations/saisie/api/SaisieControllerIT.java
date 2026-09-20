@@ -261,6 +261,44 @@ class SaisieControllerIT {
     }
 
     /**
+     * Le prenom est FACULTATIF (Sprint 8.1, retour utilisateur) : certains beneficiaires
+     * n'en ont pas. Absent, vide ou blanc, la creation est acceptee ; c'est le nom qui
+     * reste obligatoire. La normalisation en chaine vide se prouve sur l'entite.
+     */
+    @ParameterizedTest(name = "prenom {0} accepte")
+    @ValueSource(strings = { "\"prenom\":\"\",", "\"prenom\":\"   \",", "" })
+    @DisplayName("6ter. POST /saisie/lignes sans prenom (absent, vide ou blanc) : 201, le prenom n'est pas obligatoire")
+    void creationSansPrenomAcceptee(String champPrenom) throws Exception {
+        keycloakEmet(SUB_AGENT, "jean_mbarga", "AGENT_UNITE");
+        Beneficiaire beneficiaire = beneficiaire(88L, "MBARGA", "", "02000123456");
+        LignePrestation ligneCreee = ligne(1205L, 501L, 88L, NatureEnum.RATION, SessionEnum.JOUR, 2500, 12L);
+        when(ligneService.creer(any(), anyString(), any()))
+                .thenReturn(new LigneAvecBeneficiaire(ligneCreee, beneficiaire));
+
+        mockMvc.perform(post("/saisie/lignes")
+                .header(HttpHeaders.AUTHORIZATION, JETON)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(CORPS_LIGNE_NOMINALE.replace("\"prenom\":\"Jean\",", champPrenom)))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    @DisplayName("6quater. POST /saisie/lignes sans nom : 400, le nom RESTE obligatoire quand le prenom ne l'est plus")
+    void creationSansNomToujoursRefusee() throws Exception {
+        keycloakEmet(SUB_AGENT, "jean_mbarga", "AGENT_UNITE");
+
+        mockMvc.perform(post("/saisie/lignes")
+                .header(HttpHeaders.AUTHORIZATION, JETON)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(CORPS_LIGNE_NOMINALE.replace("\"nom\":\"MBARGA\",", "\"nom\":\"\",")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("REQUETE_INVALIDE"))
+                .andExpect(jsonPath("$.message").value(Matchers.containsString("nom du bénéficiaire")));
+
+        verify(ligneService, never()).creer(any(), anyString(), any());
+    }
+
+    /**
      * Point T-02 (Sprint 7F.6) : le numero de compte courant fait onze chiffres. Un
      * compte a 14 chiffres -- la forme fausse qu'ont propagee les jeux d'essai --,
      * a 10 chiffres, ou portant un espace est refuse AVANT d'atteindre le service :
@@ -417,6 +455,28 @@ class SaisieControllerIT {
                 .isEqualTo("02000999888");
         org.assertj.core.api.Assertions.assertThat(commande.getValue().codeAgence()).isEqualTo("00003");
         org.assertj.core.api.Assertions.assertThat(commande.getValue().nom()).isEqualTo("NZALI");
+    }
+
+    @Test
+    @DisplayName("11 bis. PUT /saisie/lignes/1205 avec un prenom vide : accepte, c'est ainsi qu'on RETIRE un prenom")
+    void modificationQuiVideLePrenomAcceptee() throws Exception {
+        keycloakEmet(SUB_AGENT, "jean_mbarga", "AGENT_UNITE");
+        Beneficiaire beneficiaire = beneficiaire(88L, "MBARGA", "", "02000123456");
+        LignePrestation ligneRevisee = ligne(1205L, 501L, 88L, NatureEnum.RATION, SessionEnum.JOUR, 2500, 12L);
+        org.mockito.ArgumentCaptor<CommandeModificationLigne> commande =
+                org.mockito.ArgumentCaptor.forClass(CommandeModificationLigne.class);
+        when(ligneService.modifier(eq(1205L), commande.capture(), anyString(), any()))
+                .thenReturn(new LigneAvecBeneficiaire(ligneRevisee, beneficiaire));
+
+        mockMvc.perform(put("/saisie/lignes/1205")
+                .header(HttpHeaders.AUTHORIZATION, JETON)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"nature":"RATION","session":"JOUR","prenom":""}"""))
+                .andExpect(status().isOk());
+
+        // Vide (retirer le prenom) et non null (laisser inchange) : deux demandes distinctes.
+        org.assertj.core.api.Assertions.assertThat(commande.getValue().prenom()).isEmpty();
     }
 
     @Test

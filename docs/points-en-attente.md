@@ -1268,3 +1268,25 @@ prêterait.
 le 7F.7 (module Reporting côté frontend, ou tout sous-sprint ultérieur),
 vérifier explicitement si ce point est repris ; sinon, le signaler comme
 non planifié plutôt que de le laisser retomber dans l'oubli une seconde fois.
+
+---
+
+## Registre Eureka : aucune sécurité, à cloisonner au réseau interne (Sprint 8.1)
+
+**Ouvert le 20 septembre 2026. Propriétaire : DSI, à traiter au Sprint 8.3
+(manifests Kubernetes).**
+
+Le registre (`registry`, port 8761) expose son tableau de bord et son API
+d'enregistrement **sans aucune authentification**. Quiconque l'atteint lit la
+liste des services, leurs adresses et leurs ports, et peut y enregistrer une
+instance.
+
+C'est sans conséquence en développement local, où il n'écoute que sur la
+machine, et il reste **éteint par défaut** de toute façon
+(`EUREKA_ENABLED=false`, `docs/routage-passerelle.md` §1.2). Le point devient
+réel au déploiement : le registre ne doit être joignable que depuis le réseau
+interne du cluster, jamais exposé par un service Kubernetes de type
+`LoadBalancer` ni par une entrée d'`Ingress`.
+
+À rapprocher du point **D-08** (URL publiques de la passerelle et du frontend),
+déjà en attente auprès de la DSI : la même conversation tranche les deux.

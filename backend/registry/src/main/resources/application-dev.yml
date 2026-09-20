@@ -1,6 +1,6 @@
 # Instance de registre autonome pour le developpement local : ne s'enregistre
-# pas et ne recupere pas de registre aupres d'elle-meme. Enregistrement des
-# services configure au Sprint 8.
+# pas et ne recupere pas de registre aupres d'elle-meme. Les services et la
+# passerelle s'y enregistrent quand EUREKA_ENABLED=true (Sprint 8.1).
 eureka:
   client:
     register-with-eureka: false

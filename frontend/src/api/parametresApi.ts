@@ -1,7 +1,4 @@
-import { creerClientApi } from './apiClient'
-
-/** Client du service Workflow (port 8084, CLAUDE.md section 11). */
-const workflowApiClient = creerClientApi(import.meta.env.VITE_API_WORKFLOW_URL)
+import apiClient from './apiClient'
 
 /**
  * Les trois seuls codes modifiables par PUT /parametres/{code} (guide 7F.6,
@@ -47,7 +44,7 @@ export interface FonctionnalitesActivesResponse {
  * tete de OuvertureComplementaireService.
  */
 export async function consulterFonctionnalitesActives(): Promise<FonctionnalitesActivesResponse> {
-  const reponse = await workflowApiClient.get<FonctionnalitesActivesResponse>('/parametres/fonctionnalites')
+  const reponse = await apiClient.get<FonctionnalitesActivesResponse>('/parametres/fonctionnalites')
   return reponse.data
 }
 
@@ -57,7 +54,7 @@ export async function consulterFonctionnalitesActives(): Promise<Fonctionnalites
  * a un ecrasement non voulu.
  */
 export async function consulterParametre(code: string): Promise<ParametreResponse> {
-  const reponse = await workflowApiClient.get<ParametreResponse>(`/parametres/${code}`)
+  const reponse = await apiClient.get<ParametreResponse>(`/parametres/${code}`)
   return reponse.data
 }
 
@@ -67,6 +64,6 @@ export async function consulterParametre(code: string): Promise<ParametreRespons
  * du guide 7F.6, etape 6).
  */
 export async function modifierParametre(code: string, valeur: string): Promise<ParametreResponse> {
-  const reponse = await workflowApiClient.put<ParametreResponse>(`/parametres/${code}`, { valeur })
+  const reponse = await apiClient.put<ParametreResponse>(`/parametres/${code}`, { valeur })
   return reponse.data
 }

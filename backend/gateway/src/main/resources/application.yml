@@ -4,8 +4,263 @@ spring:
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:dev}
 
+  cloud:
+    gateway:
+      server:
+        webflux:
+          # ------------------------------------------------------------------
+          # CORS, ET A CE SEUL ENDROIT (Sprint 8.1, etape 5)
+          #
+          # Les sept services ont perdu leur propre configuration au meme
+          # sprint. Deux configurations produiraient des en-tetes en double,
+          # que le navigateur rejette avec un message peu explicite.
+          #
+          # add-to-simple-url-handler-mapping : les routes portent leur verbe
+          # (POST, PUT, DELETE...), donc un preflight OPTIONS ne correspond a
+          # aucune route et serait refuse en 404 avant d'etre vu. Ce reglage
+          # fait repondre la passerelle elle-meme au preflight, sans le router.
+          #
+          # exposed-headers : sans lui, le navigateur interdit au JavaScript de
+          # LIRE Content-Disposition, meme quand la requete aboutit. Le
+          # telechargement du document signe et l'export de rapport y perdraient
+          # leur nom de fichier, retombant sur un repli generique.
+          # ------------------------------------------------------------------
+          globalcors:
+            add-to-simple-url-handler-mapping: true
+            cors-configurations:
+              '[/**]':
+                allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+                allowed-methods: [GET, POST, PUT, DELETE, OPTIONS]
+                allowed-headers: [Authorization, Content-Type]
+                exposed-headers: [Content-Disposition]
+                max-age: 3600
+
+          # ------------------------------------------------------------------
+          # TABLE DE ROUTAGE (Sprint 8.1) -- voir docs/routage-passerelle.md
+          #
+          # PRINCIPE : liste blanche. Seuls les chemins declares ici sont
+          # exposes ; tout le reste rend 404 a la passerelle. Les dix endpoints
+          # internes du module (consolidation, habilitation, verrou de
+          # transmission, accuse comptable...) ne sont donc pas exposes parce
+          # qu'ils ne figurent pas dans cette liste, et non parce qu'une regle
+          # les exclut -- une liste noire aurait laisse passer tout endpoint
+          # interne ajoute plus tard.
+          #
+          # CHAQUE ROUTE PORTE SON VERBE. Deux chemins portent a la fois un
+          # endpoint du contrat et un endpoint interne :
+          #   - /transmission/processus/{id} : GET du contrat, POST interne
+          #   - /processus/{id}/integration  : PUT et GET, tous deux internes
+          # Une regle ecrite sur le chemin seul exposerait le POST de
+          # declenchement de transmission, c'est-a-dire le moyen d'envoyer en
+          # paiement un etat depuis l'exterieur. Meme lecon qu'au Sprint 5.3
+          # sur le securityMatcher.
+          #
+          # LES IDENTIFIANTS SONT CONTRAINTS AUX CHIFFRES. Sans {id:[0-9]+},
+          # GET /processus/recherche (interne) serait capte par la regle
+          # GET /processus/{id} et expose.
+          #
+          # ADRESSES : une variable par service, defaut local en adresse fixe.
+          # En recette et en production, la meme variable vaut
+          # lb://service-xxx et le routage passe par le registre, sans qu'une
+          # seule ligne de cette table ne change (decision de l'etape 2).
+          # ------------------------------------------------------------------
+          routes:
+
+            # --- Service Identite (3 endpoints du contrat) ------------------
+            - id: identite-moi
+              uri: ${IDENTITE_URI:http://localhost:8081}
+              predicates:
+                - Path=/api/identite/moi
+                - Method=GET
+              filters:
+                - StripPrefix=1
+
+            # Chemin exact : ne capte pas /identite/utilisateurs/libelles,
+            # endpoint interne de traduction des identifiants en logins.
+            - id: identite-utilisateurs
+              uri: ${IDENTITE_URI:http://localhost:8081}
+              predicates:
+                - Path=/api/identite/utilisateurs
+                - Method=GET
+              filters:
+                - StripPrefix=1
+
+            - id: identite-attribution-role
+              uri: ${IDENTITE_URI:http://localhost:8081}
+              predicates:
+                - Path=/api/identite/utilisateurs/{id:[0-9]+}/role
+                - Method=PUT
+              filters:
+                - StripPrefix=1
+
+            # --- Service Saisie (5 endpoints du contrat) --------------------
+            - id: saisie-fiches
+              uri: ${SAISIE_URI:http://localhost:8082}
+              predicates:
+                - Path=/api/saisie/fiches
+                - Method=POST
+              filters:
+                - StripPrefix=1
+
+            - id: saisie-lignes-de-la-fiche
+              uri: ${SAISIE_URI:http://localhost:8082}
+              predicates:
+                - Path=/api/saisie/fiches/{id:[0-9]+}/lignes
+                - Method=GET
+              filters:
+                - StripPrefix=1
+
+            - id: saisie-creation-ligne
+              uri: ${SAISIE_URI:http://localhost:8082}
+              predicates:
+                - Path=/api/saisie/lignes
+                - Method=POST
+              filters:
+                - StripPrefix=1
+
+            - id: saisie-modification-suppression-ligne
+              uri: ${SAISIE_URI:http://localhost:8082}
+              predicates:
+                - Path=/api/saisie/lignes/{id:[0-9]+}
+                - Method=PUT,DELETE
+              filters:
+                - StripPrefix=1
+
+            # --- Service Grilles (5 du contrat + le retrait, hors contrat) --
+            - id: grilles-liste-et-creation
+              uri: ${GRILLES_URI:http://localhost:8083}
+              predicates:
+                - Path=/api/grilles
+                - Method=GET,POST
+              filters:
+                - StripPrefix=1
+
+            - id: grilles-montant-applicable
+              uri: ${GRILLES_URI:http://localhost:8083}
+              predicates:
+                - Path=/api/grilles/active
+                - Method=GET
+              filters:
+                - StripPrefix=1
+
+            # Le retrait d'une proposition par son auteur est hors du contrat
+            # des 26 endpoints (ajout post-7F.6) mais appele par l'ecran des
+            # grilles : ne pas le router le rendrait inoperant sans erreur.
+            - id: grilles-decision-drh-et-retrait
+              uri: ${GRILLES_URI:http://localhost:8083}
+              predicates:
+                - Path=/api/grilles/{id:[0-9]+}/validation,/api/grilles/{id:[0-9]+}/rejet,/api/grilles/{id:[0-9]+}/retrait
+                - Method=POST
+              filters:
+                - StripPrefix=1
+
+            # --- Service Workflow (6 endpoints du contrat) ------------------
+            - id: workflow-declenchement
+              uri: ${WORKFLOW_URI:http://localhost:8084}
+              predicates:
+                - Path=/api/processus
+                - Method=POST
+              filters:
+                - StripPrefix=1
+
+            # {id:[0-9]+} est indispensable : sans lui, /processus/recherche
+            # (endpoint interne du Reporting) serait route et expose.
+            - id: workflow-consultation
+              uri: ${WORKFLOW_URI:http://localhost:8084}
+              predicates:
+                - Path=/api/processus/{id:[0-9]+},/api/processus/{id:[0-9]+}/etat,/api/processus/{id:[0-9]+}/document
+                - Method=GET
+              filters:
+                - StripPrefix=1
+
+            - id: workflow-circuit-de-validation
+              uri: ${WORKFLOW_URI:http://localhost:8084}
+              predicates:
+                - Path=/api/processus/{id:[0-9]+}/soumission,/api/processus/{id:[0-9]+}/validation,/api/processus/{id:[0-9]+}/retour
+                - Method=POST
+              filters:
+                - StripPrefix=1
+
+            # HORS CONTRAT MAIS ROUTE, ET CE N'EST PAS UN OUBLI. Le frontend
+            # lit ce drapeau a chaque session pour savoir s'il affiche la
+            # regularisation (Sprint 7F.7). Le classer interne masquerait la
+            # regularisation a tous les agents, sans aucune erreur visible.
+            # Declare avant la route d'administration ci-dessous, dont le
+            # motif {code} le couvrirait : l'intention doit se lire ici.
+            - id: workflow-fonctionnalites-actives
+              uri: ${WORKFLOW_URI:http://localhost:8084}
+              predicates:
+                - Path=/api/parametres/fonctionnalites
+                - Method=GET
+              filters:
+                - StripPrefix=1
+
+            # Ecran d'administration des parametres (hors contrat, ADMIN).
+            # Le role est verifie par le service, pas ici.
+            - id: workflow-administration-parametres
+              uri: ${WORKFLOW_URI:http://localhost:8084}
+              predicates:
+                - Path=/api/parametres/{code}
+                - Method=GET,PUT
+              filters:
+                - StripPrefix=1
+
+            # --- Service Reporting (4 endpoints du contrat) -----------------
+            - id: reporting-suivi-et-rapports
+              uri: ${REPORTING_URI:http://localhost:8085}
+              predicates:
+                - Path=/api/reporting/demandes,/api/reporting/rapports,/api/reporting/rapports/export
+                - Method=GET
+              filters:
+                - StripPrefix=1
+
+            # A ne pas confondre avec /processus/{id}/historique, servi par le
+            # Workflow, qui est interne : celui-ci est celui du contrat.
+            - id: reporting-historique
+              uri: ${REPORTING_URI:http://localhost:8085}
+              predicates:
+                - Path=/api/reporting/processus/{id:[0-9]+}/historique
+                - Method=GET
+              filters:
+                - StripPrefix=1
+
+            # --- Service Transmission (1 seul endpoint du contrat) ----------
+            # GET SEULEMENT. Le meme chemin porte en POST le declenchement de
+            # transmission, appele par le service Workflow a la cloture : un
+            # POST venu de l'exterieur enverrait en paiement un etat choisi,
+            # en contournant le circuit de validation (chemin de CT-22).
+            - id: transmission-statut-integration
+              uri: ${TRANSMISSION_URI:http://localhost:8086}
+              predicates:
+                - Path=/api/transmission/processus/{id:[0-9]+}
+                - Method=GET
+              filters:
+                - StripPrefix=1
+
+            # --- Service Audit (2 du contrat + la liste des actions) --------
+            # Le service Audit n'expose aucune ecriture : son alimentation se
+            # fait exclusivement par le topic Kafka (CLAUDE.md section 11).
+            - id: audit-consultation
+              uri: ${AUDIT_URI:http://localhost:8087}
+              predicates:
+                - Path=/api/audit/entrees,/api/audit/actions,/api/audit/processus/{id:[0-9]+}
+                - Method=GET
+              filters:
+                - StripPrefix=1
+
 server:
   port: ${SERVER_PORT:8080}
+
+# Registre Eureka (Sprint 8.1). ETEINT par defaut, comme dans les sept services :
+# en local la passerelle route par adresses fixes. Allume, elle peut router par
+# nom logique (lb://service-xxx), voir docs/routage-passerelle.md.
+eureka:
+  client:
+    enabled: ${EUREKA_ENABLED:false}
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka}
+  instance:
+    instance-id: ${spring.application.name}:${server.port}
 
 management:
   endpoints:

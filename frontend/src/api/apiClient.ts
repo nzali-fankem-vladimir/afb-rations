@@ -29,18 +29,18 @@ export interface ApiErrorResponse {
 let redirectionEnCours = false
 
 /**
- * Cree un client Axios pour un service backend donne, avec les memes
- * intercepteurs partout : jeton joint automatiquement, traitement uniforme du
- * 401 et mise en forme du format d'erreur (CLAUDE.md section 11).
+ * Cree le client Axios de l'application : jeton joint automatiquement,
+ * traitement uniforme du 401 et mise en forme du format d'erreur
+ * (CLAUDE.md section 11).
  *
- * <p>La passerelle (Spring Cloud Gateway) existe en code mais n'est pas encore
- * deployee en local (Sprint 0.8, toujours en attente) : chaque service est donc
- * appele directement sur son propre port, une base d'URL par service (arbitrage
- * pris au Sprint 7F.4). Le jour ou la passerelle route reellement, il suffira de
- * faire pointer chaque variable d'environnement vers elle -- aucun changement de
- * code, seulement de configuration.
+ * <p><b>Fonction privee depuis le Sprint 8.1.</b> Elle etait exportee tant que
+ * chaque service etait appele sur son propre port (arbitrage Sprint 7F.4, six
+ * clients, six variables d'environnement). La passerelle etant desormais le
+ * point d'entree unique, il n'existe plus qu'un seul client, et ne plus exporter
+ * la fabrique fait qu'un appel a une adresse de service ne compile plus -- au
+ * lieu de rester un oubli silencieux que rien ne signalerait.
  */
-export function creerClientApi(baseURL: string | undefined): AxiosInstance {
+function creerClientApi(baseURL: string): AxiosInstance {
   const client = axios.create({
     baseURL,
     headers: {
@@ -111,7 +111,31 @@ export function creerClientApi(baseURL: string | undefined): AxiosInstance {
   return client
 }
 
-/** Client du service Identite (port 8081, contrat d'API section 2). */
-const apiClient = creerClientApi(import.meta.env.VITE_API_BASE_URL)
+/**
+ * Adresse de la passerelle, prefixe /api compris (CLAUDE.md section 11).
+ *
+ * <p>Exigee, et non facultative : sans elle, Axios prendrait l'origine de la
+ * page pour base et chaque appel partirait vers le serveur de developpement du
+ * frontend, qui rendrait une page HTML en 404. L'ecran afficherait une erreur
+ * reseau sans rapport avec la cause. Meme garde que pour les variables Keycloak.
+ */
+function urlPasserelle(): string {
+  const valeur = import.meta.env.VITE_API_BASE_URL
+  if (!valeur) {
+    throw new Error(
+      "Variable d'environnement VITE_API_BASE_URL absente. Renseigner le fichier .env a partir de .env.example.",
+    )
+  }
+  return valeur
+}
+
+/**
+ * Client unique de l'application : toutes les requetes passent par la
+ * passerelle, seule adresse que le frontend connaisse (Sprint 8.1). Aucune
+ * adresse de service individuel ne subsiste ici -- un appel direct
+ * fonctionnerait en developpement et echouerait en production, ou seule la
+ * passerelle est exposee.
+ */
+const apiClient = creerClientApi(urlPasserelle())
 
 export default apiClient

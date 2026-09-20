@@ -33,9 +33,6 @@ spring:
           audiences: ${KEYCLOAK_AUDIENCE:rations-api}
 
 app:
-  cors:
-    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
-
   identite:
     # Adresse du service Identite, interroge a la CREATION d'une grille pour
     # resoudre l'identifiant local de l'auteur (id_createur, colonne NOT NULL

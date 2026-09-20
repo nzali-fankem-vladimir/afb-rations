@@ -33,9 +33,6 @@ spring:
           audiences: ${KEYCLOAK_AUDIENCE:rations-api}
 
 app:
-  cors:
-    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
-
   grilles:
     # Adresse du service Grilles, interroge AVANT de figer chaque ligne de
     # prestation pour connaitre le montant applicable (RG-03, GET /grilles/active).

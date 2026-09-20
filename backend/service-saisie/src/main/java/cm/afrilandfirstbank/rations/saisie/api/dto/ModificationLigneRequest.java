@@ -54,7 +54,8 @@ public record ModificationLigneRequest(
         @Size(max = 100, message = "le nom du bénéficiaire ne peut pas dépasser 100 caractères")
         String nom,
 
-        @Pattern(regexp = ".*\\S.*", message = "le prénom du bénéficiaire ne peut pas être vide")
+        // Pas de @Pattern : contrairement au nom, le prénom est facultatif, donc une chaîne
+        // vide est une demande valide (retirer le prénom). Absent (null) = inchangé.
         @Size(max = 100, message = "le prénom du bénéficiaire ne peut pas dépasser 100 caractères")
         String prenom,
 

@@ -16,9 +16,6 @@ spring:
           audiences: ${KEYCLOAK_AUDIENCE:rations-api}
 
 app:
-  cors:
-    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
-
   identite:
     # Adresse du service Identite. Interroge pour un seul besoin dans ce service :
     # traduire les identifiants d'acteurs d'un historique en logins lisibles

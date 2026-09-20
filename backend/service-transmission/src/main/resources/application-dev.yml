@@ -26,9 +26,6 @@ spring:
           audiences: ${KEYCLOAK_AUDIENCE:rations-api}
 
 app:
-  cors:
-    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
-
   transmission:
     # Topic de l'echange comptable. Nom de DEVELOPPEMENT arrete au Sprint 0.5 ; le
     # nommage definitif en environnement partage reste un point en attente DSI

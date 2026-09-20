@@ -8,7 +8,8 @@
  * - numero de compte courant : exactement 11 chiffres (point T-02) ;
  * - code agence : exactement 5 chiffres (contrat d'API §1.1) -- seul le FORMAT
  *   est verifiable, le referentiel des codes guichets vit hors du module ;
- * - nom et prenom : non vides.
+ * - nom : non vide. Le prenom est FACULTATIF : certains beneficiaires n'en ont pas,
+ *   et le service Saisie l'enregistre alors comme chaine vide.
  */
 
 export const LONGUEUR_COMPTE_COURANT = 11
@@ -44,7 +45,6 @@ function controlerNumero(valeur: string, longueur: number): string | undefined {
 export function validerBeneficiaire(identite: IdentiteBeneficiaireSaisie): ErreursBeneficiaire {
   const erreurs: ErreursBeneficiaire = {}
   if (identite.nom.trim() === '') erreurs.nom = 'Obligatoire'
-  if (identite.prenom.trim() === '') erreurs.prenom = 'Obligatoire'
   const compte = controlerNumero(identite.numCompteCourant, LONGUEUR_COMPTE_COURANT)
   if (compte) erreurs.numCompteCourant = compte
   const agence = controlerNumero(identite.codeAgence, LONGUEUR_CODE_AGENCE)

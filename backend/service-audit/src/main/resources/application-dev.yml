@@ -34,9 +34,6 @@ spring:
           audiences: ${KEYCLOAK_AUDIENCE:rations-api}
 
 app:
-  cors:
-    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
-
   audit:
     # Nom de DEVELOPPEMENT (Sprint 0.5) ; nommage definitif en environnement
     # partage non arrete, point DSI D-07 (CLAUDE.md section 9). Ne pas figer

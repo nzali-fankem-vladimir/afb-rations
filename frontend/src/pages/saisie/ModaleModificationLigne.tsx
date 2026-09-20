@@ -134,7 +134,6 @@ export function ModaleModificationLigne({ ligne, onFerme, onSucces }: ModaleModi
             <ChampTexte
               id="modification-prenom"
               label="Prénom"
-              obligatoire
               erreur={tentative ? erreursBeneficiaire.prenom : undefined}
               value={prenom}
               onChange={(event) => setPrenom(event.target.value)}

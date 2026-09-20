@@ -1,4 +1,4 @@
-import { creerClientApi } from './apiClient'
+import apiClient from './apiClient'
 import type { PageResponse } from '../types/pagination'
 import type {
   NatureEnum,
@@ -9,9 +9,6 @@ import type {
   StatutIntegrationEnum,
   TypeProcessusEnum,
 } from '../types/enums'
-
-/** Client du service Reporting (port 8085, CLAUDE.md section 11). */
-const reportingApiClient = creerClientApi(import.meta.env.VITE_API_REPORTING_URL)
 
 /**
  * Copie conforme de SituationIntegration.java (service Reporting) : statutIntegration
@@ -68,7 +65,7 @@ export interface CriteresRechercheDemandes {
 export async function rechercherDemandes(
   criteres: CriteresRechercheDemandes = {},
 ): Promise<PageResponse<DemandeResponse>> {
-  const reponse = await reportingApiClient.get<PageResponse<DemandeResponse>>('/reporting/demandes', {
+  const reponse = await apiClient.get<PageResponse<DemandeResponse>>('/reporting/demandes', {
     params: criteres,
   })
   return reponse.data
@@ -120,7 +117,7 @@ export interface HistoriqueResponse {
  * (manque backend n°2 de l'ouverture de session, arbitre sans ajout backend).
  */
 export async function consulterHistorique(idProcessus: number): Promise<HistoriqueResponse> {
-  const reponse = await reportingApiClient.get<HistoriqueResponse>(
+  const reponse = await apiClient.get<HistoriqueResponse>(
     `/reporting/processus/${idProcessus}/historique`,
   )
   return reponse.data
@@ -188,7 +185,7 @@ export interface CriteresRapport {
 
 /** Rapport d'activite d'une periode, reserve a l'ARH. dateDebut/dateFin obligatoires. */
 export async function produireRapport(criteres: CriteresRapport): Promise<RapportResponse> {
-  const reponse = await reportingApiClient.get<RapportResponse>('/reporting/rapports', {
+  const reponse = await apiClient.get<RapportResponse>('/reporting/rapports', {
     params: criteres,
   })
   return reponse.data
@@ -221,7 +218,7 @@ export async function exporterRapport(
   criteres: CriteresRapport,
   format: FormatExportRapport,
 ): Promise<RapportExporte> {
-  const reponse = await reportingApiClient.get<Blob>('/reporting/rapports/export', {
+  const reponse = await apiClient.get<Blob>('/reporting/rapports/export', {
     params: { ...criteres, format },
     responseType: 'blob',
   })

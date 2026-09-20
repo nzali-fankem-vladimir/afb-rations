@@ -1,8 +1,5 @@
-import { creerClientApi } from './apiClient'
+import apiClient from './apiClient'
 import type { NatureEnum, SessionEnum, StatutEnum, TypeProcessusEnum } from '../types/enums'
-
-/** Client du service Workflow (port 8084, CLAUDE.md section 11). */
-const workflowApiClient = creerClientApi(import.meta.env.VITE_API_WORKFLOW_URL)
 
 /**
  * Entree de POST /processus (DeclenchementProcessusRequest.java). Les trois
@@ -138,12 +135,12 @@ export interface SoumissionResponse {
 export async function declencherProcessus(
   requete: DeclenchementProcessusRequest,
 ): Promise<ProcessusResponse> {
-  const reponse = await workflowApiClient.post<ProcessusResponse>('/processus', requete)
+  const reponse = await apiClient.post<ProcessusResponse>('/processus', requete)
   return reponse.data
 }
 
 export async function consulterProcessus(id: number): Promise<ProcessusResponse> {
-  const reponse = await workflowApiClient.get<ProcessusResponse>(`/processus/${id}`)
+  const reponse = await apiClient.get<ProcessusResponse>(`/processus/${id}`)
   return reponse.data
 }
 
@@ -152,13 +149,13 @@ export async function consulterProcessus(id: number): Promise<ProcessusResponse>
  * avec zero journee et un total de zero -- jamais une erreur.
  */
 export async function consulterEtatProcessus(id: number): Promise<EtatProcessusResponse> {
-  const reponse = await workflowApiClient.get<EtatProcessusResponse>(`/processus/${id}/etat`)
+  const reponse = await apiClient.get<EtatProcessusResponse>(`/processus/${id}/etat`)
   return reponse.data
 }
 
 /** Aucun corps de requete : tout se deduit du processus et du jeton (US-07). */
 export async function soumettreProcessus(id: number): Promise<SoumissionResponse> {
-  const reponse = await workflowApiClient.post<SoumissionResponse>(`/processus/${id}/soumission`)
+  const reponse = await apiClient.post<SoumissionResponse>(`/processus/${id}/soumission`)
   return reponse.data
 }
 
@@ -266,7 +263,7 @@ export interface RetourResponse {
  * traite, pas le role de l'appelant (RG-07).
  */
 export async function validerProcessus(id: number): Promise<ValidationResponse> {
-  const reponse = await workflowApiClient.post<ValidationResponse>(`/processus/${id}/validation`)
+  const reponse = await apiClient.post<ValidationResponse>(`/processus/${id}/validation`)
   return reponse.data
 }
 
@@ -275,7 +272,7 @@ export async function validerProcessus(id: number): Promise<ValidationResponse> 
  * statut cible est toujours RETOURNE, quel que soit le niveau d'origine.
  */
 export async function retournerProcessus(id: number, motif: string): Promise<RetourResponse> {
-  const reponse = await workflowApiClient.post<RetourResponse>(`/processus/${id}/retour`, {
+  const reponse = await apiClient.post<RetourResponse>(`/processus/${id}/retour`, {
     motif,
   } satisfies RetourRequest)
   return reponse.data
@@ -301,12 +298,12 @@ function nomFichierDepuisEnTete(enTeteDisposition: string | undefined, repli: st
  *
  * ATTENTION -- `responseType: 'blob'` : une erreur du serveur (404, 403...)
  * arrive alors elle-meme sous forme de Blob, jamais de JSON deja decode.
- * `creerClientApi` la reconvertit dans son intercepteur de reponse avant de la
+ * `apiClient.ts` la reconvertit dans son intercepteur de reponse avant de la
  * rendre a l'appelant : AffichageErreur ne voit donc jamais qu'un
  * ApiErrorResponse ordinaire, quel que soit le type de requete qui a echoue.
  */
 export async function telechargerDocument(id: number): Promise<DocumentTelecharge> {
-  const reponse = await workflowApiClient.get<Blob>(`/processus/${id}/document`, {
+  const reponse = await apiClient.get<Blob>(`/processus/${id}/document`, {
     responseType: 'blob',
   })
   return {

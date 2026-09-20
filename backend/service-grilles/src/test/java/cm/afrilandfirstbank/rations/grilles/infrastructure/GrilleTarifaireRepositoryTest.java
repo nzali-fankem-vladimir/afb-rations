@@ -21,8 +21,19 @@ import cm.afrilandfirstbank.rations.grilles.domaine.TransitionGrille;
 
 /**
  * Tests du repository sur les donnees de reference du Sprint 0.5 : les quatre
- * grilles ACTIVE (une par couple nature/session), date_debut au premier jour du
- * mois courant, date_fin nulle.
+ * grilles ACTIVE, une par couple nature/session.
+ *
+ * <p><b>Ce que ces tests n'affirment plus (correctif du Sprint 8.1).</b> Ils
+ * decrivaient le jeu de donnees d'origine — « date_debut au premier jour du mois
+ * courant, date_fin nulle » — et deux d'entre eux l'affirmaient. Or une grille
+ * peut etre remplacee, et l'est : une bascule validee le 17 septembre 2026 a
+ * ferme la grille RATION / JOUR au 30 septembre au profit d'une remplacante au
+ * 1er octobre. Comportement <b>correct</b>, decide au Sprint 2.3 (fermeture
+ * programmee) — mais les deux tests tombaient, sur un build qui n'avait rien
+ * casse. C'est l'erreur que CLAUDE.md section 15 interdit : un test ne depend
+ * pas de la valeur ambiante d'une donnee que l'exploitation fait legitimement
+ * evoluer, il pose ou compare ce qu'il eprouve. Les tests 12 ter et 13 le
+ * faisaient deja ; les tests 10 et 12 bis, plus anciens, ont ete alignes.
  *
  * <p>{@code @AutoConfigureTestDatabase(replace = NONE)} : on tourne contre la
  * vraie base {@code rations_grilles} (conteneur Docker du Sprint 0.5), pas une
@@ -62,15 +73,29 @@ class GrilleTarifaireRepositoryTest {
     @Test
     @DisplayName("10. la recherche de grille active retourne une grille pour RATION / JOUR aujourd'hui")
     void grilleActivePourRationJour() {
+        LocalDate aujourdHui = LocalDate.now();
+
         Optional<GrilleTarifaire> trouvee =
-                grilleActive(NatureEnum.RATION, SessionEnum.JOUR, LocalDate.now());
+                grilleActive(NatureEnum.RATION, SessionEnum.JOUR, aujourdHui);
 
         assertThat(trouvee).isPresent();
         assertThat(trouvee.get().getNature()).isEqualTo(NatureEnum.RATION);
         assertThat(trouvee.get().getSession()).isEqualTo(SessionEnum.JOUR);
         assertThat(trouvee.get().getStatutValidation()).isEqualTo(StatutGrilleEnum.ACTIVE);
-        assertThat(trouvee.get().getDateFin()).isNull();
         assertThat(trouvee.get().getMontantFcfa()).isPositive();
+
+        // Ce que ce test doit verifier est que la grille rendue COUVRE la date
+        // demandee, bornes incluses. Il affirmait auparavant que sa date_fin etait
+        // nulle : c'etait affirmer qu'aucune remplacante n'a jamais ete programmee
+        // sur ce couple, vrai du seul jeu de donnees d'origine. Depuis le Sprint
+        // 2.3, une grille parfaitement applicable aujourd'hui peut porter une
+        // fermeture programmee, et le test 13 la produit lui-meme.
+        assertThat(trouvee.get().getDateDebut()).isBeforeOrEqualTo(aujourdHui);
+        assertThat(trouvee.get().getDateFin())
+                .as("une grille rendue pour aujourd'hui est soit sans fin, soit close apres aujourd'hui")
+                .satisfiesAnyOf(
+                        dateFin -> assertThat(dateFin).isNull(),
+                        dateFin -> assertThat(dateFin).isAfterOrEqualTo(aujourdHui));
     }
 
     @Test
@@ -109,6 +134,16 @@ class GrilleTarifaireRepositoryTest {
         Long idAvant = enVigueurAvant.getId();
         Integer montantAvant = enVigueurAvant.getMontantFcfa();
 
+        // Releve AVANT, pour comparer apres. La grille courante n'est pas
+        // necessairement celle qui s'applique aujourd'hui : elles divergent des la
+        // premiere bascule (meme distinction qu'au test 13). Comparer avant et
+        // apres eprouve ce que la proposition change, sans rien presumer de l'etat
+        // de depart.
+        Long idCouranteAvant = repository
+                .rechercherGrilleCourante(NatureEnum.RATION, SessionEnum.JOUR)
+                .orElseThrow()
+                .getId();
+
         // L'ARH propose un nouveau tarif : nouvelle ligne, statut EN_ATTENTE_DRH
         // (decisions Sprint 2.2, etapes 1 et 4).
         GrilleTarifaire proposition = new GrilleTarifaire(NatureEnum.RATION, SessionEnum.JOUR,
@@ -123,24 +158,33 @@ class GrilleTarifaireRepositoryTest {
         assertThat(aujourdHuiApres.get().getId()).isEqualTo(idAvant);
         assertThat(aujourdHuiApres.get().getMontantFcfa()).isEqualTo(montantAvant);
 
-        // A la date de prise d'effet demandee : toujours l'ancienne grille. Tant
-        // que la DRH n'a pas tranche, la proposition n'existe pas pour les saisies,
-        // meme apres sa propre date de debut.
+        // A la date de prise d'effet demandee : jamais la proposition. Tant que la
+        // DRH n'a pas tranche, elle n'existe pas pour les saisies, meme apres sa
+        // propre date de debut.
+        //
+        // Le test exigeait ici l'ancienne grille elle-meme. C'etait supposer
+        // qu'aucune autre grille ne prend legitimement effet dans le mois qui
+        // vient, ce qui est faux des qu'une bascule est programmee (Sprint 2.3) et
+        // etranger a ce que CT-25 verifie. La formulation juste est negative : le
+        // montant applique ne vient pas d'une grille non validee.
         Optional<GrilleTarifaire> aLaDateDemandee =
                 grilleActive(NatureEnum.RATION, SessionEnum.JOUR, priseEffetFuture);
         assertThat(aLaDateDemandee).isPresent();
-        assertThat(aLaDateDemandee.get().getId()).isEqualTo(idAvant);
+        assertThat(aLaDateDemandee.get().getId())
+                .as("la proposition en attente ne doit jamais etre rendue comme grille applicable")
+                .isNotEqualTo(proposition.getId());
         assertThat(aLaDateDemandee.get().getMontantFcfa())
                 .as("le montant applique ne doit jamais venir d'une grille non validee")
-                .isEqualTo(montantAvant);
+                .isNotEqualTo(999_999);
+        assertThat(aLaDateDemandee.get().getStatutValidation()).isEqualTo(StatutGrilleEnum.ACTIVE);
 
-        // La grille courante est elle aussi inchangee : c'est ce que lit le
-        // controle d'unicite.
+        // La grille courante est inchangee : c'est ce que lit le controle
+        // d'unicite. Comparee a son releve d'avant, non a la grille du jour.
         assertThat(repository.rechercherGrilleCourante(NatureEnum.RATION, SessionEnum.JOUR))
                 .isPresent()
                 .get()
                 .extracting(GrilleTarifaire::getId)
-                .isEqualTo(idAvant);
+                .isEqualTo(idCouranteAvant);
 
         // La proposition existe bel et bien : elle est simplement invisible des
         // recherches de grille applicable.

@@ -1,9 +1,6 @@
-import { creerClientApi } from './apiClient'
+import apiClient from './apiClient'
 import type { PageResponse } from '../types/pagination'
 import type { NatureEnum, SessionEnum, StatutGrilleEnum } from '../types/enums'
-
-/** Client du service Grilles (port 8083, CLAUDE.md section 11). */
-const grillesApiClient = creerClientApi(import.meta.env.VITE_API_GRILLES_URL)
 
 /**
  * Une grille tarifaire (GrilleResponse.java). `createur` et `validateur` sont
@@ -86,7 +83,7 @@ export async function resoudreMontant(
   session: SessionEnum,
   date: string,
 ): Promise<MontantApplicableResponse> {
-  const reponse = await grillesApiClient.get<MontantApplicableResponse>('/grilles/active', {
+  const reponse = await apiClient.get<MontantApplicableResponse>('/grilles/active', {
     params: { nature, session, date },
   })
   return reponse.data
@@ -102,7 +99,7 @@ export interface CriteresRechercheGrilles {
 export async function listerGrilles(
   criteres: CriteresRechercheGrilles = {},
 ): Promise<PageResponse<GrilleResponse>> {
-  const reponse = await grillesApiClient.get<PageResponse<GrilleResponse>>('/grilles', {
+  const reponse = await apiClient.get<PageResponse<GrilleResponse>>('/grilles', {
     params: criteres,
   })
   return reponse.data
@@ -118,7 +115,7 @@ export async function listerGrilles(
  * remplacement normal et il est accepte).
  */
 export async function proposerGrille(requete: CreationGrilleRequest): Promise<GrilleResponse> {
-  const reponse = await grillesApiClient.post<GrilleResponse>('/grilles', requete)
+  const reponse = await apiClient.post<GrilleResponse>('/grilles', requete)
   return reponse.data
 }
 
@@ -129,7 +126,7 @@ export async function proposerGrille(requete: CreationGrilleRequest): Promise<Gr
  * programmee). Effet immediat sur GET /grilles/active des le commit.
  */
 export async function validerGrille(id: number): Promise<ValidationGrilleResponse> {
-  const reponse = await grillesApiClient.post<ValidationGrilleResponse>(`/grilles/${id}/validation`)
+  const reponse = await apiClient.post<ValidationGrilleResponse>(`/grilles/${id}/validation`)
   return reponse.data
 }
 
@@ -139,7 +136,7 @@ export async function validerGrille(id: number): Promise<ValidationGrilleRespons
  * s'appliquera pas", pas "il n'y a plus de tarif".
  */
 export async function rejeterGrille(id: number, motif: string): Promise<GrilleResponse> {
-  const reponse = await grillesApiClient.post<GrilleResponse>(`/grilles/${id}/rejet`, {
+  const reponse = await apiClient.post<GrilleResponse>(`/grilles/${id}/rejet`, {
     motif,
   } satisfies RejetGrilleRequest)
   return reponse.data
@@ -159,7 +156,7 @@ export interface RetraitGrilleRequest {
  * 403 GRILLE_NON_PROPRIETAIRE.
  */
 export async function retirerGrille(id: number, motif: string): Promise<GrilleResponse> {
-  const reponse = await grillesApiClient.post<GrilleResponse>(`/grilles/${id}/retrait`, {
+  const reponse = await apiClient.post<GrilleResponse>(`/grilles/${id}/retrait`, {
     motif,
   } satisfies RetraitGrilleRequest)
   return reponse.data

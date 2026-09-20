@@ -1,23 +1,17 @@
 package cm.afrilandfirstbank.rations.workflow.infrastructure.config;
 
-import java.util.List;
-
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
-import org.springframework.web.cors.CorsConfiguration;
-import org.springframework.web.cors.CorsConfigurationSource;
-import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 /**
  * Configuration de securite du service.
@@ -56,12 +50,9 @@ public class SecurityConfig {
      */
     static final HttpMethod VERBE_INTEGRATION_INTERNE = HttpMethod.PUT;
 
-    private final List<String> originsAutorisees;
     private final String cleInterne;
 
-    public SecurityConfig(@Value("${app.cors.allowed-origins}") List<String> originsAutorisees,
-            @Value("${app.integration.cle-interne}") String cleInterne) {
-        this.originsAutorisees = originsAutorisees;
+    public SecurityConfig(@Value("${app.integration.cle-interne}") String cleInterne) {
         this.cleInterne = cleInterne;
     }
 
@@ -111,7 +102,13 @@ public class SecurityConfig {
                 // API stateless consommee par un client porteur de jeton : pas de session
                 // a proteger, donc pas de CSRF.
                 .csrf(csrf -> csrf.disable())
-                .cors(Customizer.withDefaults())
+                // CORS CENTRALISE SUR LA PASSERELLE (Sprint 8.1). Desactive ici
+                // explicitement, et non supprime en silence : une seconde
+                // configuration produirait des en-tetes en double, que le
+                // navigateur rejette avec un message peu explicite. Le
+                // navigateur n'atteint ce service que par la passerelle ; les
+                // appels de service a service ne sont pas soumis au CORS.
+                .cors(cors -> cors.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         // Seule la sonde de sante est ouverte : elle est interrogee par
@@ -126,25 +123,6 @@ public class SecurityConfig {
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(roleJwtConverter)));
         return http.build();
-    }
-
-    @Bean
-    public CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(originsAutorisees);
-        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
-        // Sans elle, le navigateur bloque la LECTURE de cet en-tete par le
-        // JavaScript appelant (Access-Control-Expose-Headers), meme quand la
-        // requete elle-meme aboutit : GET /processus/{id}/document (rattrapage
-        // post-7F.6) en depend pour nommer le fichier telecharge cote frontend.
-        // Sans cette ligne, le nom retombe toujours sur le repli generique.
-        configuration.setExposedHeaders(List.of("Content-Disposition"));
-        configuration.setMaxAge(3600L);
-
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", configuration);
-        return source;
     }
 
 }

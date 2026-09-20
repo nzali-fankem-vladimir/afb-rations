@@ -7,6 +7,20 @@ spring:
 server:
   port: ${SERVER_PORT:8081}
 
+# Enregistrement au registre Eureka (Sprint 8.1). ETEINT par defaut : un poste
+# de developpement travaille sans registre, la passerelle route alors par les
+# adresses fixes de ses variables d'environnement. Allume (EUREKA_ENABLED=true)
+# en recette et en production, ou le nom logique ci-dessus sert au routage
+# lb://<nom>. Ne jamais renommer spring.application.name : le service emetteur
+# du journal d'audit en est estampille.
+eureka:
+  client:
+    enabled: ${EUREKA_ENABLED:false}
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka}
+  instance:
+    instance-id: ${spring.application.name}:${server.port}
+
 management:
   endpoints:
     web:

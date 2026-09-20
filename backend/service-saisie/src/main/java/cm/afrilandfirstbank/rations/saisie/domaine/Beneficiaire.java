@@ -72,7 +72,7 @@ public class Beneficiaire {
      */
     public Beneficiaire(String nom, String prenom, String numCompteCourant, String codeAgence) {
         this.nom = nom;
-        this.prenom = prenom;
+        this.prenom = normaliserPrenom(prenom);
         this.numCompteCourant = numCompteCourant;
         this.codeAgence = codeAgence;
     }
@@ -116,8 +116,19 @@ public class Beneficiaire {
      */
     public void corrigerIdentite(String nom, String prenom, String codeAgence) {
         this.nom = nom;
-        this.prenom = prenom;
+        this.prenom = normaliserPrenom(prenom);
         this.codeAgence = codeAgence;
+    }
+
+    /**
+     * Le prénom est facultatif : certains bénéficiaires n'en ont pas. Absent ou blanc, il
+     * est enregistré comme <b>chaîne vide</b>, jamais {@code null} : la colonne reste
+     * {@code NOT NULL} (aucune migration) et tout ce qui affiche ou transmet le prénom
+     * continue de recevoir une chaîne. Point unique par lequel passent la création et la
+     * correction, pour qu'aucun chemin ne l'oublie.
+     */
+    static String normaliserPrenom(String prenom) {
+        return prenom == null || prenom.isBlank() ? "" : prenom;
     }
 
     public LocalDateTime getDateCreation() {

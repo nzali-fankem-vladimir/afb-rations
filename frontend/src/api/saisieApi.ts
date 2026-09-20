@@ -1,8 +1,5 @@
-import { creerClientApi } from './apiClient'
+import apiClient from './apiClient'
 import type { NatureEnum, SessionEnum, StatutFicheEnum } from '../types/enums'
-
-/** Client du service Saisie (port 8082, CLAUDE.md section 11). */
-const saisieApiClient = creerClientApi(import.meta.env.VITE_API_SAISIE_URL)
 
 /**
  * Entree de POST /saisie/fiches (OuvertureFicheRequest.java). Aucun codeUnite :
@@ -103,18 +100,18 @@ export interface FicheResponse {
 export async function ouvrirFiche(
   requete: OuvertureFicheRequest,
 ): Promise<{ fiche: FicheResponse; creee: boolean }> {
-  const reponse = await saisieApiClient.post<FicheResponse>('/saisie/fiches', requete)
+  const reponse = await apiClient.post<FicheResponse>('/saisie/fiches', requete)
   return { fiche: reponse.data, creee: reponse.status === 201 }
 }
 
 /** Lignes d'une fiche, beneficiaire et sous-total inclus. */
 export async function listerLignesFiche(idFiche: number): Promise<FicheResponse> {
-  const reponse = await saisieApiClient.get<FicheResponse>(`/saisie/fiches/${idFiche}/lignes`)
+  const reponse = await apiClient.get<FicheResponse>(`/saisie/fiches/${idFiche}/lignes`)
   return reponse.data
 }
 
 export async function creerLigne(requete: CreationLigneRequest): Promise<LigneResponse> {
-  const reponse = await saisieApiClient.post<LigneResponse>('/saisie/lignes', requete)
+  const reponse = await apiClient.post<LigneResponse>('/saisie/lignes', requete)
   return reponse.data
 }
 
@@ -123,11 +120,11 @@ export async function modifierLigne(
   idLigne: number,
   requete: ModificationLigneRequest,
 ): Promise<LigneResponse> {
-  const reponse = await saisieApiClient.put<LigneResponse>(`/saisie/lignes/${idLigne}`, requete)
+  const reponse = await apiClient.put<LigneResponse>(`/saisie/lignes/${idLigne}`, requete)
   return reponse.data
 }
 
 /** 204 sans corps. Une seconde suppression de la meme ligne rend 404 (non idempotent). */
 export async function supprimerLigne(idLigne: number): Promise<void> {
-  await saisieApiClient.delete(`/saisie/lignes/${idLigne}`)
+  await apiClient.delete(`/saisie/lignes/${idLigne}`)
 }
