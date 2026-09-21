@@ -63,7 +63,26 @@ Un compte annuaire valide sans profil local ouvert est refusé en 403. Voir [doc
 
 Le realm de développement, ses six rôles et ses comptes de test sont versionnés dans [infra/keycloak/](infra/keycloak/), avec le script de recréation.
 
-## Commandes de démarrage
+## Démarrage complet avec Docker (recommandé)
+
+Le module démarre en entier depuis une seule commande, **sans rien installer ni configurer d'autre** : PostgreSQL, Kafka (et ses topics), Keycloak (realm importé), les sept services, la passerelle, le registre et le frontend sont dans la composition.
+
+Prérequis : Docker Desktop (Compose v2), au moins **8 Go de mémoire alloués à Docker**, et les ports 8080, 5173, 5433, 9092 et 8180 libres.
+
+```bash
+cd infra/docker
+docker compose up -d --build     # première fois : construction des 10 images (environ 20 minutes)
+docker compose ps                # tout doit passer à "healthy" (compter 5 à 8 minutes à froid)
+```
+
+Puis ouvrir http://localhost:5173 et se connecter avec un compte de test, par exemple `jean_mbarga` / `Rations2026` (agent d'unité). Les autres comptes et leurs rôles sont dans [infra/keycloak/README.md](infra/keycloak/README.md).
+
+- **Port 8180 déjà pris** (un autre Keycloak sur le poste) : créer `infra/docker/.env` contenant `KEYCLOAK_PORT=8181`. Tout le reste s'en déduit. Les autres variables sont documentées dans [infra/docker/.env.example](infra/docker/.env.example) ; aucune n'est obligatoire.
+- **Arrêter** : `docker compose down`. Les données sont conservées. **Ne jamais ajouter `-v`** : cela supprime les bases, les topics Kafka et les documents signés.
+- **Documentation d'API** de chaque service : `http://localhost:8081/swagger-ui.html` (8082 à 8087 pour les autres), accessible depuis le poste seulement.
+- Les images et leur publication sur le registre Harbor : [docs/publication-images.md](docs/publication-images.md).
+
+## Développement depuis l'IDE (sans Docker)
 
 Prérequis : PostgreSQL 16 sur 5432, Keycloak sur 8180 avec le realm `afb-rations-dev`.
 

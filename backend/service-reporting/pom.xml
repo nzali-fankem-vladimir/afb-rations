@@ -104,4 +104,17 @@
         </dependency>
     </dependencies>
 
+    <build>
+        <plugins>
+            <!-- Jar executable (Sprint 8.2). Declare module par module et non
+                 dans le parent : rations-audit-commun est une bibliotheque, et
+                 repackagee elle deviendrait inutilisable comme dependance.
+                 L'execution "repackage" vient du parent Spring Boot. -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+
 </project>

@@ -14,7 +14,19 @@ set -euo pipefail
 export MSYS_NO_PATHCONV=1
 
 CONTAINER="${KAFKA_CONTAINER:-rations-kafka}"
-BROKER="localhost:9092"
+BROKER="${KAFKA_BROKER:-localhost:9092}"
+
+# Deux modes, un seul jeu de noms de topics (ce fichier reste le SEUL endroit
+# ou ils sont ecrits) :
+#   - depuis l'hote (defaut) : passe par docker exec dans le conteneur du broker ;
+#   - dans un conteneur (KAFKA_LOCAL=1) : la composition Docker (service
+#     kafka-init, Sprint 8.2) monte ce fichier et l'execute avec
+#     KAFKA_BROKER=kafka:19092. Ainsi un poste neuf a ses topics sans rien faire.
+if [ "${KAFKA_LOCAL:-0}" = "1" ]; then
+    kafka_topics() { /opt/kafka/bin/kafka-topics.sh "$@"; }
+else
+    kafka_topics() { docker exec "$CONTAINER" /opt/kafka/bin/kafka-topics.sh "$@"; }
+fi
 
 creer_topic() {
     local topic="$1"
@@ -26,7 +38,7 @@ creer_topic() {
     fi
 
     echo "Creation du topic : $topic"
-    docker exec "$CONTAINER" /opt/kafka/bin/kafka-topics.sh \
+    kafka_topics \
         --bootstrap-server "$BROKER" \
         --create --if-not-exists \
         --topic "$topic" \
@@ -50,4 +62,4 @@ creer_topic "rations.audit.evenement" 604800000
 
 echo ""
 echo "Topics presents sur le broker :"
-docker exec "$CONTAINER" /opt/kafka/bin/kafka-topics.sh --bootstrap-server "$BROKER" --list
+kafka_topics --bootstrap-server "$BROKER" --list

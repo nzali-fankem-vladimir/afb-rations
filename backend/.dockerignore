@@ -1,0 +1,17 @@
+# Contexte de build des images backend (Sprint 8.2).
+# Ce qui est compile ou produit a l'execution ne doit jamais entrer dans une
+# image : les classes sont recompilees dans l'etape de construction, et les
+# pieces jointes (donnees/) sont des donnees metier signees, pas du code.
+**/target
+**/donnees
+**/.git
+**/*.iml
+**/.idea
+**/.vscode
+**/.classpath
+**/.project
+**/.settings
+**/*.log
+# Fichiers d'environnement : jamais dans une image (document maitre 7.6).
+**/.env
+**/.env.*

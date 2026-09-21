@@ -46,6 +46,10 @@ class PerimetreDuModuleTest {
             "DeltaAudit",
             "PublicateurAudit",
             "PublicateurAuditKafka",
+            // Sprint 8.2 : prechauffage du producteur d'audit au demarrage. Fait
+            // partie de la publication d'audit (il ferme la perte du premier
+            // evenement apres chaque demarrage), sans aucun type metier.
+            "PrechauffageProducteurAudit",
             "AuditCommunAutoConfiguration",
             "AuditProprietes");
 

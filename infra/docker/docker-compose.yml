@@ -1,16 +1,89 @@
 
-# Infrastructure locale du module Paiement des Rations et du Transport de la
-# Garde Armee : PostgreSQL et Kafka uniquement (CLAUDE.md section 2).
+# Composition du module Paiement des Rations et du Transport de la Garde Armee.
 #
-# Keycloak est volontairement absent de cette composition : le realm de
-# developpement afb-rations-dev vit dans le conteneur partage dottel-keycloak,
-# externe a ce depot (infra/keycloak/README.md). Verifier qu'il tourne avant de
-# lancer les services applicatifs : infra/keycloak/verifier-keycloak.ps1.
+# Sprint 0.5 : infrastructure (PostgreSQL, Kafka).
+# Sprint 8.2 : les neuf modules backend et le frontend, une image par module.
+#
+# La composition est AUTOSUFFISANTE : sur un poste neuf, `docker compose up -d`
+# demarre tout, sans installer ni configurer autre chose. Elle porte donc son
+# propre Keycloak (realm importe automatiquement depuis
+# infra/keycloak/realm-afb-rations-dev.json) et cree ses topics Kafka. Il
+# n'a AUCUN lien avec le Keycloak du projet DOTTEL (conteneur, volume et port
+# distincts). Sur un poste ou le port 8180 est deja pris (DOTTEL), poser
+# KEYCLOAK_PORT=8181 dans .env : tout le reste s'en deduit.
+#
+# Ordre de demarrage, fonde sur les SONDES DE SANTE et non sur des
+# temporisations (une temporisation fixe echoue des que la machine est plus
+# lente que prevu) :
+#   postgres, kafka (puis creation des topics)  ->  registry  ->  les sept
+#   services  ->  gateway  ->  frontend (qui attend aussi Keycloak)
 #
 # Aucun mot de passe en clair : toutes les valeurs sensibles passent par des
-# variables d'environnement, avec repli explicite sur changeme-in-development.
+# variables d'environnement (fichier .env, modele .env.example), avec repli
+# explicite sur changeme-in-development.
+#
+# Les images sont construites depuis le depot : docker compose build.
+
+# --- Blocs communs (ancres YAML) --------------------------------------------
+
+# Reglages communs aux neuf modules backend.
+x-backend: &backend
+  # Relance limitee : un service qui manque de memoire s'arrete de lui-meme
+  # (-XX:+ExitOnOutOfMemoryError) et doit etre relance. Pas "always", pour ne
+  # pas relancer sans fin un service qui echoue au demarrage.
+  restart: on-failure:5
+  # Tolerance de demarrage. Sur un poste neuf, sept JVM demarrent EN MEME TEMPS
+  # et saturent chacune un coeur : un contexte Spring met alors plus de 70 s a
+  # s'initialiser (mesure au Sprint 8.2), plus que le budget de 60 s de la
+  # sonde de l'image. Compose declarait alors les services non sains et
+  # renoncait a demarrer la passerelle. Aucune duree fixe n'est attendue : la
+  # sonde declare le service sain des sa premiere reponse, y compris pendant
+  # cette periode ; seul un echec APRES elle compte. Le test (wget) reste celui
+  # de l'image.
+  healthcheck:
+    interval: 15s
+    timeout: 5s
+    retries: 10
+    start_period: 240s
+  # host.docker.internal : inutile tant que le Keycloak de la composition est
+  # utilise. Conserve pour qui pointerait KEYCLOAK_JWK_SET_URI vers un Keycloak
+  # externe, sur l'hote (Docker Desktop le fournit ; la ligne le rend valable
+  # sous Linux).
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+
+# Registre de services (Sprint 8.1). Allume ici : la composition est le
+# premier environnement ou il a un sens. EUREKA_ENABLED=false dans le fichier
+# .env revient au routage par adresses fixes (voir .env.example).
+x-env-eureka: &env-eureka
+  EUREKA_ENABLED: ${EUREKA_ENABLED:-true}
+  EUREKA_URL: http://registry:8761/eureka
+  # L'adresse IP et non le nom d'hote, qui est un identifiant de conteneur.
+  EUREKA_INSTANCE_PREFERIPADDRESS: "true"
+
+x-env-kafka: &env-kafka
+  # Adresse INTERNE du broker : celle que le broker annonce aux conteneurs.
+  KAFKA_BOOTSTRAP_SERVERS: kafka:19092
+
+# Validation des jetons. Les jetons sont demandes par le NAVIGATEUR, a
+# localhost:<KEYCLOAK_PORT> : leur emetteur (iss) est donc
+# http://localhost:<KEYCLOAK_PORT>/... Un conteneur ne peut pas y joindre
+# Keycloak (son localhost est lui-meme). On separe donc :
+#   - l'emetteur attendu (KEYCLOAK_ISSUER_URI), compare tel quel au jeton ;
+#   - l'adresse des cles de signature (jwk-set-uri), atteinte par le reseau
+#     interne de la composition (keycloak:8080).
+# Sans la seconde, la decouverte de l'emetteur echoue et TOUT jeton est refuse
+# en 401 (verifie au Sprint 8.2). Aucun changement de code : variables
+# d'environnement uniquement.
+x-env-jwt: &env-jwt
+  KEYCLOAK_ISSUER_URI: ${KEYCLOAK_ISSUER_URI:-http://localhost:${KEYCLOAK_PORT:-8180}/realms/afb-rations-dev}
+  KEYCLOAK_AUDIENCE: ${KEYCLOAK_AUDIENCE:-rations-api}
+  SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI: ${KEYCLOAK_JWK_SET_URI:-http://keycloak:8080/realms/afb-rations-dev/protocol/openid-connect/certs}
 
 services:
+
+  # --- Infrastructure -------------------------------------------------------
+
   postgres:
     image: postgres:16
     container_name: rations-postgres
@@ -42,16 +115,344 @@ services:
     user: root
     ports:
       - "9092:9092"
+    environment:
+      # Depuis le Sprint 8.2 le broker annonce DEUX adresses. Avec la seule
+      # localhost:9092 du Sprint 0.5, un client dans un autre conteneur se
+      # connecte a "kafka:9092", recoit "localhost:9092" comme adresse du broker
+      # et se renvoie vers lui-meme : aucun message ne part.
+      #   INTERNAL  kafka:19092      les conteneurs de cette composition
+      #   EXTERNAL  localhost:9092   l'hote (outils, services lances a la main)
+      # Une fois ces variables posees, le fichier de configuration par defaut de
+      # l'image n'est plus lu : tout ce qui suit est donc obligatoire.
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: INTERNAL://:19092,EXTERNAL://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:19092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      # Meme repertoire que la configuration par defaut : le volume existant,
+      # ses topics et ses offsets sont conserves.
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+      # Broker unique : aucune replication possible.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      # Par defaut la JVM du broker reserve 1 Go, hors de proportion avec le
+      # volume de ce module. Poste a 1,3 Go libres au Sprint 8.1.
+      KAFKA_HEAP_OPTS: -Xmx512m -Xms256m
     volumes:
       - rations-kafka-data:/tmp/kraft-combined-logs
     healthcheck:
       test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092"]
       interval: 10s
-      timeout: 10s
-      retries: 10
+      # Cette sonde lance une JVM entiere. Quand la composition demarre, sept
+      # services et Keycloak saturent les coeurs en meme temps : avec 10 s et 10
+      # essais (Sprint 0.5), le broker etait declare non sain alors qu'il
+      # fonctionnait, et Compose renoncait a tout demarrer (mesure au Sprint 8.2).
+      timeout: 30s
+      retries: 20
+      start_period: 60s
+
+  # Creation des topics (noms et retentions dans kafka-topics.sh, seul endroit
+  # ou ils sont ecrits). S'execute puis s'arrete ; les clients Kafka attendent
+  # qu'il ait termine. Idempotent : --if-not-exists, sans effet sur un topic
+  # existant et ses messages.
+  kafka-init:
+    image: apache/kafka:3.7.1
+    container_name: rations-kafka-init
+    user: root
+    restart: "no"
+    entrypoint: ["bash", "/scripts/kafka-topics.sh"]
+    environment:
+      KAFKA_LOCAL: "1"
+      KAFKA_BROKER: kafka:19092
+    volumes:
+      - ./kafka-topics.sh:/scripts/kafka-topics.sh:ro
+    depends_on:
+      kafka: {condition: service_healthy}
+
+  # Fournisseur d'identite propre au module (Keycloak 26, mode developpement).
+  # AUCUN lien avec dottel-keycloak. Le realm est reimporte depuis le fichier
+  # versionne a chaque creation du conteneur : rien a configurer, et aucun
+  # etat a sauvegarder (les comptes de test sont dans le fichier, mot de passe
+  # dans infra/keycloak/README.md). Comptes de developpement uniquement.
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    container_name: rations-keycloak
+    command: start-dev --import-realm
+    restart: on-failure:5
+    mem_limit: 768m
+    ports:
+      # 127.0.0.1 : la console d'administration ne doit pas etre exposee au
+      # reseau. 8180 par defaut ; 8181 sur un poste ou DOTTEL occupe deja 8180.
+      - "127.0.0.1:${KEYCLOAK_PORT:-8180}:8080"
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-changeme-in-development}
+      KC_HEALTH_ENABLED: "true"
+      JAVA_OPTS_KC_HEAP: -Xms256m -Xmx512m
+    volumes:
+      - ../keycloak/realm-afb-rations-dev.json:/opt/keycloak/data/import/realm-afb-rations-dev.json:ro
+    healthcheck:
+      # L'image n'a ni curl ni wget : requete HTTP a la main sur le port de
+      # supervision (9000), qui rend {"status": "UP"} quand le realm est pret.
+      test:
+        - CMD-SHELL
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/9000 &&
+          printf 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          timeout 5 cat <&3 | grep -q '"status": "UP"'
+      interval: 10s
+      timeout: 8s
+      retries: 20
+      start_period: 30s
+
+  # --- Registre -------------------------------------------------------------
+
+  registry:
+    <<: *backend
+    build:
+      context: ../../backend
+      dockerfile: registry/Dockerfile
+    image: rations-registry:${IMAGE_TAG:-latest}
+    container_name: rations-registry
+    mem_limit: 384m
+    ports:
+      # Tableau de bord du registre, sans securite (point ouvert, Sprint 8.1) :
+      # limite a l'hote, jamais au reseau.
+      - "127.0.0.1:8761:8761"
+
+  # --- Services metier ------------------------------------------------------
+  # Les ports sont publies sur 127.0.0.1 seulement : le swagger-ui de chaque
+  # service reste consultable depuis le poste, sans etre expose au reseau. Seuls
+  # la passerelle et le frontend le sont (Sprint 8.1 : point d'entree unique).
+
+  service-identite:
+    <<: *backend
+    build:
+      context: ../../backend
+      dockerfile: service-identite/Dockerfile
+    image: rations-identite:${IMAGE_TAG:-latest}
+    container_name: rations-identite
+    mem_limit: 512m
+    ports:
+      - "127.0.0.1:8081:8081"
+    environment:
+      <<: [*env-eureka, *env-kafka, *env-jwt]
+      DB_IDENTITE_URL: jdbc:postgresql://postgres:5432/rations_identite
+      DB_IDENTITE_USERNAME: rations_identite
+      DB_IDENTITE_PASSWORD: ${RATIONS_DB_PASSWORD:-changeme-in-development}
+    depends_on:
+      postgres: {condition: service_healthy}
+      kafka-init: {condition: service_completed_successfully}
+      registry: {condition: service_healthy}
+
+  service-saisie:
+    <<: *backend
+    build:
+      context: ../../backend
+      dockerfile: service-saisie/Dockerfile
+    image: rations-saisie:${IMAGE_TAG:-latest}
+    container_name: rations-saisie
+    mem_limit: 512m
+    ports:
+      - "127.0.0.1:8082:8082"
+    environment:
+      <<: [*env-eureka, *env-kafka, *env-jwt]
+      DB_SAISIE_URL: jdbc:postgresql://postgres:5432/rations_saisie
+      DB_SAISIE_USERNAME: rations_saisie
+      DB_SAISIE_PASSWORD: ${RATIONS_DB_PASSWORD:-changeme-in-development}
+      IDENTITE_URL: http://service-identite:8081
+      GRILLES_URL: http://service-grilles:8083
+      WORKFLOW_URL: http://service-workflow:8084
+    depends_on:
+      postgres: {condition: service_healthy}
+      kafka-init: {condition: service_completed_successfully}
+      registry: {condition: service_healthy}
+
+  service-grilles:
+    <<: *backend
+    build:
+      context: ../../backend
+      dockerfile: service-grilles/Dockerfile
+    image: rations-grilles:${IMAGE_TAG:-latest}
+    container_name: rations-grilles
+    mem_limit: 512m
+    ports:
+      - "127.0.0.1:8083:8083"
+    environment:
+      <<: [*env-eureka, *env-kafka, *env-jwt]
+      DB_GRILLES_URL: jdbc:postgresql://postgres:5432/rations_grilles
+      DB_GRILLES_USERNAME: rations_grilles
+      DB_GRILLES_PASSWORD: ${RATIONS_DB_PASSWORD:-changeme-in-development}
+      IDENTITE_URL: http://service-identite:8081
+    depends_on:
+      postgres: {condition: service_healthy}
+      kafka-init: {condition: service_completed_successfully}
+      registry: {condition: service_healthy}
+
+  service-workflow:
+    <<: *backend
+    build:
+      context: ../../backend
+      dockerfile: service-workflow/Dockerfile
+    image: rations-workflow:${IMAGE_TAG:-latest}
+    container_name: rations-workflow
+    mem_limit: 512m
+    ports:
+      - "127.0.0.1:8084:8084"
+    environment:
+      <<: [*env-eureka, *env-kafka, *env-jwt]
+      DB_WORKFLOW_URL: jdbc:postgresql://postgres:5432/rations_workflow
+      DB_WORKFLOW_USERNAME: rations_workflow
+      DB_WORKFLOW_PASSWORD: ${RATIONS_DB_PASSWORD:-changeme-in-development}
+      IDENTITE_URL: http://service-identite:8081
+      SAISIE_URL: http://service-saisie:8082
+      TRANSMISSION_URL: http://service-transmission:8086
+      # Meme valeur que celle du service Transmission : c'est le secret partage
+      # de l'endpoint interne PUT /processus/{id}/integration (Sprint 5.2).
+      INTEGRATION_CLE_INTERNE: ${INTEGRATION_CLE_INTERNE:-changeme-in-development}
+      # Repertoire fixe par l'image (le volume ci-dessous y est monte).
+      PIECES_JOINTES_REPERTOIRE: /donnees/pieces-jointes
+    volumes:
+      # Les etats signes (RG-09) : seules pieces justificatives des paiements.
+      # Volume NOMME, comme les donnees de PostgreSQL et de Kafka.
+      - rations-pieces-jointes:/donnees/pieces-jointes
+    depends_on:
+      postgres: {condition: service_healthy}
+      kafka-init: {condition: service_completed_successfully}
+      registry: {condition: service_healthy}
+
+  service-reporting:
+    <<: *backend
+    build:
+      context: ../../backend
+      dockerfile: service-reporting/Dockerfile
+    image: rations-reporting:${IMAGE_TAG:-latest}
+    container_name: rations-reporting
+    mem_limit: 512m
+    ports:
+      - "127.0.0.1:8085:8085"
+    environment:
+      <<: [*env-eureka, *env-kafka, *env-jwt]
+      IDENTITE_URL: http://service-identite:8081
+      SAISIE_URL: http://service-saisie:8082
+      WORKFLOW_URL: http://service-workflow:8084
+    depends_on:
+      kafka-init: {condition: service_completed_successfully}
+      registry: {condition: service_healthy}
+
+  service-transmission:
+    <<: *backend
+    build:
+      context: ../../backend
+      dockerfile: service-transmission/Dockerfile
+    image: rations-transmission:${IMAGE_TAG:-latest}
+    container_name: rations-transmission
+    mem_limit: 512m
+    ports:
+      - "127.0.0.1:8086:8086"
+    environment:
+      <<: [*env-eureka, *env-kafka, *env-jwt]
+      SAISIE_URL: http://service-saisie:8082
+      WORKFLOW_URL: http://service-workflow:8084
+      INTEGRATION_CLE_INTERNE: ${INTEGRATION_CLE_INTERNE:-changeme-in-development}
+    depends_on:
+      kafka-init: {condition: service_completed_successfully}
+      registry: {condition: service_healthy}
+
+  service-audit:
+    <<: *backend
+    build:
+      context: ../../backend
+      dockerfile: service-audit/Dockerfile
+    image: rations-audit:${IMAGE_TAG:-latest}
+    container_name: rations-audit
+    mem_limit: 512m
+    ports:
+      - "127.0.0.1:8087:8087"
+    environment:
+      <<: [*env-eureka, *env-kafka, *env-jwt]
+      DB_AUDIT_URL: jdbc:postgresql://postgres:5432/rations_audit
+      DB_AUDIT_USERNAME: rations_audit
+      DB_AUDIT_PASSWORD: ${RATIONS_DB_PASSWORD:-changeme-in-development}
+    depends_on:
+      postgres: {condition: service_healthy}
+      kafka-init: {condition: service_completed_successfully}
+      registry: {condition: service_healthy}
+
+  # --- Passerelle -----------------------------------------------------------
+  # Point d'entree unique (Sprint 8.1). Elle attend que les sept services soient
+  # sains ET enregistres : demarree avant eux, elle rendrait 503 sur des routes
+  # dont le service tourne deja.
+
+  gateway:
+    <<: *backend
+    build:
+      context: ../../backend
+      dockerfile: gateway/Dockerfile
+    image: rations-gateway:${IMAGE_TAG:-latest}
+    container_name: rations-gateway
+    mem_limit: 384m
+    ports:
+      - "8080:8080"
+    environment:
+      <<: *env-eureka
+      # Origine du navigateur : celle du frontend publie ci-dessous.
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173}
+      # Registre allume : routage par nom logique (lb://). Registre eteint :
+      # remplacer ces sept valeurs par http://<service>:<port> (.env.example).
+      IDENTITE_URI: ${GATEWAY_IDENTITE_URI:-lb://service-identite}
+      SAISIE_URI: ${GATEWAY_SAISIE_URI:-lb://service-saisie}
+      GRILLES_URI: ${GATEWAY_GRILLES_URI:-lb://service-grilles}
+      WORKFLOW_URI: ${GATEWAY_WORKFLOW_URI:-lb://service-workflow}
+      REPORTING_URI: ${GATEWAY_REPORTING_URI:-lb://service-reporting}
+      TRANSMISSION_URI: ${GATEWAY_TRANSMISSION_URI:-lb://service-transmission}
+      AUDIT_URI: ${GATEWAY_AUDIT_URI:-lb://service-audit}
+    depends_on:
+      registry: {condition: service_healthy}
+      service-identite: {condition: service_healthy}
+      service-saisie: {condition: service_healthy}
+      service-grilles: {condition: service_healthy}
+      service-workflow: {condition: service_healthy}
+      service-reporting: {condition: service_healthy}
+      service-transmission: {condition: service_healthy}
+      service-audit: {condition: service_healthy}
+
+  # --- Frontend -------------------------------------------------------------
+  # Une seule image pour tous les environnements : les adresses sont ecrites
+  # dans /config.js au demarrage a partir de ces variables (Sprint 8.2).
+  # Elles sont lues par le NAVIGATEUR, pas par le conteneur : ce sont donc les
+  # adresses vues depuis le poste (localhost), pas les noms de conteneurs.
+
+  frontend:
+    build:
+      context: ../../frontend
+      dockerfile: Dockerfile
+    image: rations-frontend:${IMAGE_TAG:-latest}
+    container_name: rations-frontend
+    restart: on-failure:5
+    mem_limit: 128m
+    ports:
+      # 5173 : port fige dans les URI de redirection du realm Keycloak. Le
+      # conteneur ecoute sur 8080 (utilisateur non privilegie).
+      - "5173:8080"
+    environment:
+      API_BASE_URL: ${FRONTEND_API_BASE_URL:-http://localhost:8080/api}
+      KEYCLOAK_URL: ${FRONTEND_KEYCLOAK_URL:-http://localhost:${KEYCLOAK_PORT:-8180}}
+      KEYCLOAK_REALM: ${FRONTEND_KEYCLOAK_REALM:-afb-rations-dev}
+      KEYCLOAK_CLIENT_ID: ${FRONTEND_KEYCLOAK_CLIENT_ID:-rations-frontend}
+    depends_on:
+      gateway: {condition: service_healthy}
+      keycloak: {condition: service_healthy}
 
 volumes:
   rations-postgres-data:
     name: rations-postgres-data
   rations-kafka-data:
     name: rations-kafka-data
+  rations-pieces-jointes:
+    name: rations-pieces-jointes

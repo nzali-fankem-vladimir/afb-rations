@@ -88,6 +88,7 @@
   ],
   "users": [
     {
+      "id": "4bf9cd35-4f6b-4b62-a005-12b1481d33fa",
       "username": "jean_mbarga",
       "email": "jean_mbarga@afrilandfirstbank.com",
       "emailVerified": true,
@@ -111,6 +112,7 @@
       ]
     },
     {
+      "id": "513f3cfd-9a2f-4627-b93d-51f3d2d39626",
       "username": "paul_essama",
       "email": "paul_essama@afrilandfirstbank.com",
       "emailVerified": true,
@@ -134,6 +136,7 @@
       ]
     },
     {
+      "id": "514d9c58-b6e7-450a-9dfe-c14f6786a956",
       "username": "sylvie_atangana",
       "email": "sylvie_atangana@afrilandfirstbank.com",
       "emailVerified": true,
@@ -157,6 +160,7 @@
       ]
     },
     {
+      "id": "a0855bf5-be53-493b-906c-d93fd92d9dfa",
       "username": "claire_nkolo",
       "email": "claire_nkolo@afrilandfirstbank.com",
       "emailVerified": true,
@@ -180,6 +184,7 @@
       ]
     },
     {
+      "id": "0aee59b0-5cfe-4ab7-b061-ffe8fc7c525b",
       "username": "agnes_tchinda",
       "email": "agnes_tchinda@afrilandfirstbank.com",
       "emailVerified": true,
@@ -203,6 +208,7 @@
       ]
     },
     {
+      "id": "9986301b-262d-44cf-8754-68a477a632b7",
       "username": "martin_fouda",
       "email": "martin_fouda@afrilandfirstbank.com",
       "emailVerified": true,
@@ -226,6 +232,7 @@
       ]
     },
     {
+      "id": "fa84b3b6-1e07-44f0-bab0-ce21f7de623a",
       "username": "pierre_belinga",
       "email": "pierre_belinga@afrilandfirstbank.com",
       "emailVerified": true,
@@ -247,7 +254,9 @@
       "realmRoles": [
         "AGENT_UNITE"
       ],
-      "_commentaire": "ANCIEN compte de controle du refus 403. Depuis le Sprint 6.3, un profil local lui a ete ouvert et son sub_keycloak est lie : il ne peut plus servir a verifier le refus. Le compte de controle est desormais thomas_ndzana. Voir docs/decisions/2026-09-04-compte-de-controle-du-refus-403.md"
+      "attributes": {
+        "commentaire": ["ANCIEN compte de controle du refus 403. Depuis le Sprint 6.3, un profil local lui a ete ouvert et son sub_keycloak est lie : il ne peut plus servir a verifier le refus. Le compte de controle est desormais thomas_ndzana. Voir docs/decisions/2026-09-04-compte-de-controle-du-refus-403.md"]
+      }
     },
     {
       "username": "thomas_ndzana",
@@ -271,7 +280,9 @@
       "realmRoles": [
         "AGENT_UNITE"
       ],
-      "_commentaire": "COMPTE DE CONTROLE DU REFUS 403 -- NE JAMAIS LUI OUVRIR DE PROFIL LOCAL. Present a l'annuaire, volontairement absent de la migration V1000 du service Identite. C'est le seul compte qui prouve qu'un jeton Keycloak valide sans habilitation dans le module est bien refuse (403 UTILISATEUR_NON_HABILITE, decision Sprint 0.4). Lui ouvrir un profil detruit ce cas de test en silence : la checklist rendrait un succes la ou elle attend un refus. Voir docs/decisions/2026-09-04-compte-de-controle-du-refus-403.md"
+      "attributes": {
+        "commentaire": ["COMPTE DE CONTROLE DU REFUS 403 -- NE JAMAIS LUI OUVRIR DE PROFIL LOCAL. Present a l'annuaire, volontairement absent de la migration V1000 du service Identite. C'est le seul compte qui prouve qu'un jeton Keycloak valide sans habilitation dans le module est bien refuse (403 UTILISATEUR_NON_HABILITE, decision Sprint 0.4). Lui ouvrir un profil detruit ce cas de test en silence : la checklist rendrait un succes la ou elle attend un refus. Voir docs/decisions/2026-09-04-compte-de-controle-du-refus-403.md"]
+      }
     }
   ]
 }

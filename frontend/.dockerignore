@@ -1,0 +1,23 @@
+# Contexte de build de l'image du frontend (Sprint 8.2).
+# Les dependances sont reinstallees proprement dans l'image (npm ci) et le paquet
+# reconstruit : ni node_modules ni dist ne doivent y entrer.
+node_modules
+dist
+dist-ssr
+.vite
+*.log
+
+# Fichiers d'environnement : JAMAIS dans une image. Vite lit .env au build et
+# en inscrirait les valeurs (adresses localhost) dans le paquet (document maitre
+# 7.6). Les adresses arrivent au demarrage du conteneur, pas au build.
+.env
+.env.*
+*.local
+
+# Non necessaires au build.
+Dockerfile
+.dockerignore
+README.md
+.git
+.vscode
+.idea

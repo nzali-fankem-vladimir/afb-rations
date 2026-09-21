@@ -1,0 +1,4 @@
+# Les scripts shell sont executes dans des conteneurs Linux : un retour chariot
+# (fin de ligne Windows) casserait la ligne #! et le script ne demarrerait pas.
+# Avec core.autocrlf=true, sans cette regle, Git les reecrirait en CRLF au checkout.
+*.sh text eol=lf

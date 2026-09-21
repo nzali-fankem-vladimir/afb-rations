@@ -1,5 +1,6 @@
 package cm.afrilandfirstbank.rations.commun.audit;
 
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.Executor;
@@ -121,6 +122,21 @@ public class AuditCommunAutoConfiguration {
         executeur.setAwaitTerminationSeconds(5);
         executeur.initialize();
         return executeur;
+    }
+
+    /**
+     * Prechauffage du producteur au demarrage (Sprint 8.2) : sans lui, le
+     * premier evenement de chaque service demarre depasse {@code max.block.ms}
+     * et se perd. La borne, elle, n'est pas modifiee. Voir
+     * {@link PrechauffageProducteurAudit}.
+     */
+    @Bean
+    public PrechauffageProducteurAudit prechauffageProducteurAudit(
+            @Qualifier("kafkaTemplateAudit") KafkaTemplate<String, String> kafkaTemplate,
+            @Qualifier("executeurAudit") Executor executeur,
+            AuditProprietes proprietes) {
+        return new PrechauffageProducteurAudit(kafkaTemplate, proprietes.topic(), executeur,
+                Duration.ofSeconds(1));
     }
 
     /**

@@ -2,6 +2,7 @@ import axios from 'axios'
 import type { AxiosInstance } from 'axios'
 
 import { fournisseurAuth } from '../auth'
+import { variableRequise } from '../config/configurationExecution'
 import type { CodeManqueEnum } from '../types/enums'
 
 export interface ManqueCompletude {
@@ -112,30 +113,16 @@ function creerClientApi(baseURL: string): AxiosInstance {
 }
 
 /**
- * Adresse de la passerelle, prefixe /api compris (CLAUDE.md section 11).
- *
- * <p>Exigee, et non facultative : sans elle, Axios prendrait l'origine de la
- * page pour base et chaque appel partirait vers le serveur de developpement du
- * frontend, qui rendrait une page HTML en 404. L'ecran afficherait une erreur
- * reseau sans rapport avec la cause. Meme garde que pour les variables Keycloak.
- */
-function urlPasserelle(): string {
-  const valeur = import.meta.env.VITE_API_BASE_URL
-  if (!valeur) {
-    throw new Error(
-      "Variable d'environnement VITE_API_BASE_URL absente. Renseigner le fichier .env a partir de .env.example.",
-    )
-  }
-  return valeur
-}
-
-/**
  * Client unique de l'application : toutes les requetes passent par la
  * passerelle, seule adresse que le frontend connaisse (Sprint 8.1). Aucune
  * adresse de service individuel ne subsiste ici -- un appel direct
  * fonctionnerait en developpement et echouerait en production, ou seule la
  * passerelle est exposee.
+ *
+ * <p>L'adresse (prefixe /api compris, CLAUDE.md section 11) vient de la
+ * configuration d'execution et est EXIGEE : voir {@code variableRequise}, qui
+ * refuse plutot que de laisser Axios prendre l'origine de la page pour base.
  */
-const apiClient = creerClientApi(urlPasserelle())
+const apiClient = creerClientApi(variableRequise('API_BASE_URL'))
 
 export default apiClient

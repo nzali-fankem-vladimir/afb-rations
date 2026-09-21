@@ -13,6 +13,24 @@ fournisseur d'identite.
 | `init-realm.ps1` | Cree ou recree le realm dans un conteneur Keycloak a partir du fichier ci-dessus. |
 | `realm-export.json` | Instantane de ce que Keycloak detient reellement, obtenu par export partiel de l'API d'administration. Sert de controle, pas de source. |
 
+## Avec la composition Docker (Sprint 8.2)
+
+La composition `infra/docker` demarre **son propre Keycloak** et y importe ce realm
+automatiquement, sans script. Il n'a aucun lien avec `dottel-keycloak`. Port 8180 par defaut,
+`KEYCLOAK_PORT=8181` dans `infra/docker/.env` si un autre Keycloak l'occupe.
+
+Deux contraintes a respecter en modifiant `realm-afb-rations-dev.json` :
+
+- **Aucun champ inconnu de Keycloak** (ni `_commentaire` ni autre) : l'import au demarrage
+  refuse le fichier entier, alors que `init-realm.ps1` (API d'administration) les tolerait. Un
+  commentaire se place dans `attributes.commentaire` du compte.
+- **Les `id` des comptes sont figes** : ce sont les `sub` enregistres dans la table
+  `utilisateurs` du service Identite. Les changer ferait refuser les profils deja lies en 403.
+  Un nouveau compte n'en a pas besoin (Keycloak en genere un, lie au premier login).
+
+Le realm n'est importe qu'a la **creation** du conteneur : apres modification du fichier,
+`docker compose up -d --force-recreate keycloak`.
+
 ## Recreer le realm
 
 Keycloak tourne en `start-dev` : sa configuration disparait a la suppression du

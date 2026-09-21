@@ -36,6 +36,36 @@ d'événements acceptable est-il nul ? Si oui, l'outbox devient obligatoire pour
 les six services, et le module `rations-audit-commun` est le seul endroit à
 reprendre.
 
+### Constat du Sprint 8.2 : le premier événement après chaque démarrage se perdait
+
+Constaté en conteneur, démarrage à froid : **le premier événement d'audit de chaque
+service démarré est perdu**, les suivants partent. Cause mesurée : le producteur est
+créé au premier `send()`, dont l'ouverture de connexion et la récupération des
+métadonnées prennent environ 2,3 s sur ce poste, au-delà des 2 s de `max.block.ms`
+(la réponse arrive 88 ms après l'abandon). Le service Audit ne perdait rien : 11
+lignes en base pour 11 messages sur le topic.
+
+**Réponse de ce sprint, limitée :** `PrechauffageProducteurAudit` (dans
+`rations-audit-commun`) interroge le broker dès que l'application est prête, sur le
+pool d'audit. La borne de 2 s n'est pas relevée (CLAUDE.md §15). Cela ferme le cas
+constaté en fonctionnement normal ; cela **ne garantit rien** si le broker est absent
+ou très lent au moment d'un geste, ni pour un événement émis avant la fin du
+préchauffage.
+
+**L'outbox reste la seule garantie totale, et elle est à planifier comme un sprint à
+part, AVANT la production.** Trois raisons de ne pas l'avoir faite au Sprint 8.2 :
+
+- **Ampleur** : une table et une migration par base, un relais supervisé, et un service
+  Audit à rendre tolérant aux doublons (un relais qui réessaie livre au moins une fois).
+- **Deux services n'ont aucune base** : Reporting et Transmission (CLAUDE.md §3). Une
+  table locale n'y existe pas. Arbitrage à rendre : leur donner une base (contredit §3),
+  ou un autre mécanisme pour ces deux-là (reporting : ses événements sont des exports,
+  donc rejouables ; transmission : le drapeau `transmis_comptabilite` et le verrou de
+  RG-13 portent déjà l'état).
+- **Régression possible** : cela remplace le mécanisme validé aux Sprints 1.3 à 6.3.
+
+Le niveau de perte acceptable reste la question posée plus haut au contrôle interne.
+
 ## Révocation immédiate d'un jeton Keycloak après changement de rôle
 
 Sprint 1.2, décision du 26 août 2026
@@ -1290,3 +1320,34 @@ interne du cluster, jamais exposé par un service Kubernetes de type
 
 À rapprocher du point **D-08** (URL publiques de la passerelle et du frontend),
 déjà en attente auprès de la DSI : la même conversation tranche les deux.
+
+
+## Harbor : adresse, projet et compte de publication (D-02, D-09, Sprint 8.2)
+
+La procédure de publication est rédigée (`docs/publication-images.md`) mais **jamais
+exécutée** : aucune de ses valeurs n'est connue. Elles portent les marqueurs
+`A_CONFIRMER_DSI_*` et ne doivent jamais être remplacées par une valeur plausible.
+
+| Marqueur | Objet | Réf |
+|---|---|---|
+| `A_CONFIRMER_DSI_REGISTRE` | Adresse du registre Harbor | D-02 |
+| `A_CONFIRMER_DSI_PROJET_HARBOR` | Projet Harbor du module | **nouveau** |
+| `A_CONFIRMER_DSI_COMPTE_ROBOT` | Compte robot limité à la publication, et son mode de remise | **nouveau** |
+| (réglages) | Immuabilité des étiquettes de version, analyse de vulnérabilités, rétention | **nouveau** |
+| (pipeline) | Livraison registre vers cluster | D-09 |
+
+Le guide du Sprint 8.2 renvoyait « les identifiants de publication » au document maître
+section 10 ; cette section ne liste que le pipeline (D-09). Le projet Harbor et le compte
+robot y sont donc ajoutés ici, faute de figurer ailleurs.
+
+## Aucun profil de production dans les services (Sprint 8.2)
+
+Chaque service ne porte sa configuration de base de données et de Keycloak que dans
+`application-dev.yml`, et **aucun profil de production n'existe**. Les images tournent
+donc en profil `dev`, ce qui charge la migration `V1000` (comptes de test du service
+Identité, dont `thomas_ndzana` à ne jamais habiliter, cf. Sprint 6.3).
+
+Acceptable pour valider en local. **À traiter avant la première publication vers un
+environnement autre que le poste du développeur** : profil `prod` sans `db/dev`, sans
+comptes de test, sans valeurs de repli `changeme-in-development`. Chantier du Sprint 8.3,
+avec les Secrets Kubernetes (D-04).
