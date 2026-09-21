@@ -2,6 +2,7 @@ import Keycloak from 'keycloak-js'
 
 import type { RoleEnum } from '../types/enums'
 import type { FournisseurAuthentification, IdentiteJeton } from './FournisseurAuthentification'
+import { poserMarqueur } from './marqueurSession'
 
 const ROLES_CONNUS: readonly RoleEnum[] = [
   'AGENT_UNITE',
@@ -65,10 +66,13 @@ export class FournisseurKeycloak implements FournisseurAuthentification {
   }
 
   async connecter(): Promise<void> {
+    // Le marqueur suit le geste, pas la page : voir marqueurSession.ts.
+    poserMarqueur('CONNEXION')
     await this.keycloak.login({ redirectUri: window.location.href })
   }
 
   async deconnecter(): Promise<void> {
+    poserMarqueur('DECONNEXION')
     await this.keycloak.logout({ redirectUri: window.location.origin })
   }
 

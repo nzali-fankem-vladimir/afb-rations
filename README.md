@@ -67,7 +67,7 @@ Le realm de développement, ses six rôles et ses comptes de test sont versionn�
 
 Le module démarre en entier depuis une seule commande, **sans rien installer ni configurer d'autre** : PostgreSQL, Kafka (et ses topics), Keycloak (realm importé), les sept services, la passerelle, le registre et le frontend sont dans la composition.
 
-Prérequis : Docker Desktop (Compose v2), au moins **8 Go de mémoire alloués à Docker**, et les ports 8080, 5173, 5433, 9092 et 8180 libres.
+Prérequis : Docker Desktop (Compose v2), au moins **8 Go de mémoire alloués à Docker**, et les ports 8080, 5173, 5433, 9092 et 8180 libres (8080 et 8180 sont modifiables, voir plus bas).
 
 ```bash
 cd infra/docker
@@ -78,6 +78,8 @@ docker compose ps                # tout doit passer à "healthy" (compter 5 à 8
 Puis ouvrir http://localhost:5173 et se connecter avec un compte de test, par exemple `jean_mbarga` / `Rations2026` (agent d'unité). Les autres comptes et leurs rôles sont dans [infra/keycloak/README.md](infra/keycloak/README.md).
 
 - **Port 8180 déjà pris** (un autre Keycloak sur le poste) : créer `infra/docker/.env` contenant `KEYCLOAK_PORT=8181`. Tout le reste s'en déduit. Les autres variables sont documentées dans [infra/docker/.env.example](infra/docker/.env.example) ; aucune n'est obligatoire.
+- **Port 8080 déjà pris** (une autre application Java, par exemple DOTTEL) : ajouter `GATEWAY_PORT=8090` dans le même fichier `infra/docker/.env`. La passerelle (point d'entrée de l'API) et l'adresse donnée au frontend s'en déduisent. **Sans cela, la passerelle et le frontend ne démarrent pas** et l'écran de connexion affiche « le service d'identité ne répond pas ».
+- **Après un redémarrage de Docker Desktop**, PostgreSQL et Kafka ne repartent pas seuls : relancer `docker compose up -d` (aucune donnée n'est perdue).
 - **Arrêter** : `docker compose down`. Les données sont conservées. **Ne jamais ajouter `-v`** : cela supprime les bases, les topics Kafka et les documents signés.
 - **Documentation d'API** de chaque service : `http://localhost:8081/swagger-ui.html` (8082 à 8087 pour les autres), accessible depuis le poste seulement.
 - Les images et leur publication sur le registre Harbor : [docs/publication-images.md](docs/publication-images.md).

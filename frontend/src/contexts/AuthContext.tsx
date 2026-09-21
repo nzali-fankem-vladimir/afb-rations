@@ -5,7 +5,10 @@ import type { ApiErrorResponse } from '../api/apiClient'
 import { chargerProfilCourant } from '../api/identiteApi'
 import type { ProfilUtilisateur } from '../api/identiteApi'
 import { fournisseurAuth } from '../auth'
+import { consommerMarqueur } from '../auth/marqueurSession'
+import { useToast } from '../hooks/useToast'
 import type { RoleEnum } from '../types/enums'
+import { LIBELLE_ROLE } from '../utils/libelleRole'
 import { AuthContext } from './authContexte'
 import type { AuthContexte, CauseErreurSession, EtatSession } from './authContexte'
 
@@ -19,6 +22,7 @@ import type { AuthContexte, CauseErreurSession, EtatSession } from './authContex
  * Aucun champ de mot de passe n'existe ici : la connexion est une redirection.
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const { succes } = useToast()
   const [etat, setEtat] = useState<EtatSession>('CHARGEMENT')
   const [causeErreur, setCauseErreur] = useState<CauseErreurSession | null>(null)
   const [utilisateur, setUtilisateur] = useState<ProfilUtilisateur | null>(null)
@@ -44,6 +48,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (!authentifie) {
         setEtat('DECONNECTE')
+        // Retour de la deconnexion : la page est repartie chez le fournisseur puis
+        // revenue, la notification s'affiche donc ICI et non au clic.
+        if (consommerMarqueur('DECONNEXION')) {
+          succes('Déconnexion réussie', 'Votre session est fermée.')
+        }
         return
       }
 
@@ -52,6 +61,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (annule) return
         setUtilisateur(profil)
         setEtat('CONNECTE')
+        // Uniquement au retour d'un geste de connexion, pas a chaque rechargement
+        // de la page, ou check-sso restaure une session existante.
+        if (consommerMarqueur('CONNEXION')) {
+          succes('Connexion réussie', `Bienvenue, ${profil.prenom} ${profil.nom} · ${LIBELLE_ROLE[profil.role]}`)
+        }
       } catch (erreur) {
         if (annule) return
         setUtilisateur(null)
@@ -83,7 +97,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       annule = true
     }
-  }, [])
+    // succes est stable (useCallback) : l'effet ne se relance pas.
+  }, [succes])
 
   const connecter = useCallback(() => fournisseurAuth.connecter(), [])
 

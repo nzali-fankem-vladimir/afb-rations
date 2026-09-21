@@ -128,6 +128,27 @@ Erreurs de ma part, corrigées : mon script de parcours supposait `id` là où l
 
 L'utilisateur a joué les étapes de vérification à l'écran (connexion via le Keycloak de la composition sur le port 8181, états existants, téléchargement d'un document signé, exports, journal d'audit, refus de `thomas_ndzana`, appels réseau uniquement vers la passerelle). Aucun défaut signalé. Il a choisi l'**option A** pour le cache de build et demandé la mise à jour de deux guides d'exploitation locaux.
 
+
+## Suites de la vérification visuelle (soir du 21 septembre)
+
+Trois éléments sont nés de l'usage réel après le commit `f45b2a2`.
+
+- **Panne à l'ouverture de l'application** (« le service d'identité ne répond pas »). Cause double :
+  Docker Desktop avait redémarré (PostgreSQL et Kafka, sans redémarrage automatique, sont restés
+  arrêtés, les services ont abandonné), et le **port 8080 était pris par `DottelApplication`**, ce qui
+  empêchait la passerelle et le frontend de démarrer. Correctifs : `docker compose up -d`, et une
+  variable **`GATEWAY_PORT`** (8090 sur ce poste) sur le modèle de `KEYCLOAK_PORT`. Vérifié : 14
+  conteneurs sains, connexions réelles 200, 200 et 403, CORS correct, DOTTEL intact.
+- **Toast de connexion et de déconnexion**, demandé par l'utilisateur, affiché au **retour** de
+  Keycloak (les deux gestes quittent la page) grâce à un marqueur `sessionStorage` sans jeton.
+  `tsc` et `oxlint` à 0, paquet servi vérifié, **validé à l'écran par l'utilisateur**.
+- **Guide de démarrage** : la commande pour voir ce qui est envoyé à la comptabilité figure
+  désormais au §3.0 et au mémo du quotidien (elle était enfouie au §6.2). Testée : 8 messages lus, en
+  PowerShell comme en Git Bash.
+
+**Non tranché** : politique de redémarrage automatique de PostgreSQL et Kafka (consommerait de la
+mémoire à chaque lancement de Docker). Rien n'a été posé, la reprise est documentée.
+
 ## Espace disque
 
 Le poste n'avait que **8 Go libres sur 235** en fin de sprint.

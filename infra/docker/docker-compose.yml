@@ -398,7 +398,12 @@ services:
     container_name: rations-gateway
     mem_limit: 384m
     ports:
-      - "8080:8080"
+      # 8080 par defaut. Sur un poste ou ce port est deja pris (l'application
+      # DOTTEL l'occupe), poser GATEWAY_PORT=8090 dans .env : l'adresse donnee
+      # au frontend s'en deduit. Constate au Sprint 8.2 : sans cela, la
+      # passerelle et le frontend ne demarrent pas et l'ecran de connexion
+      # affiche « le service d'identite ne repond pas ».
+      - "${GATEWAY_PORT:-8080}:8080"
     environment:
       <<: *env-eureka
       # Origine du navigateur : celle du frontend publie ci-dessous.
@@ -441,7 +446,7 @@ services:
       # conteneur ecoute sur 8080 (utilisateur non privilegie).
       - "5173:8080"
     environment:
-      API_BASE_URL: ${FRONTEND_API_BASE_URL:-http://localhost:8080/api}
+      API_BASE_URL: ${FRONTEND_API_BASE_URL:-http://localhost:${GATEWAY_PORT:-8080}/api}
       KEYCLOAK_URL: ${FRONTEND_KEYCLOAK_URL:-http://localhost:${KEYCLOAK_PORT:-8180}}
       KEYCLOAK_REALM: ${FRONTEND_KEYCLOAK_REALM:-afb-rations-dev}
       KEYCLOAK_CLIENT_ID: ${FRONTEND_KEYCLOAK_CLIENT_ID:-rations-frontend}

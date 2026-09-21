@@ -190,3 +190,40 @@ Le poste de développement n'avait que **8 Go libres sur 235** en fin de sprint 
   Docker et de la pile, terminal administrateur), à décider par l'utilisateur.
 - L'archive du volume Kafka (`C:\Users\Pro\sauvegardes-rations\kafka-data-2026-09-21.tgz`,
   7,3 Mo) peut être supprimée une fois le sprint validé.
+
+## 10. Suites de la vérification visuelle (21 septembre 2026, soir)
+
+**Panne constatée par l'utilisateur** : l'écran de connexion affichait « le service d'identité du
+module ne répond pas ». Deux causes distinctes, qui se sont cumulées.
+
+- **Docker a redémarré** (`dottel-keycloak` affichait lui aussi « Up 24 minutes » alors qu'il
+  tournait depuis le 16 septembre). PostgreSQL et Kafka, sans politique de redémarrage, sont
+  restés arrêtés (code 255). Les six services métier ont échoué faute de base et abandonné après
+  leurs 5 essais (`restart: on-failure:5`). `docker compose up -d` a tout remis dans l'ordre,
+  données intactes.
+- **Le port 8080 était pris par `DottelApplication`** (l'application Java de DOTTEL, lancée le jour
+  même). La passerelle et le frontend n'ont pas pu démarrer (`ports are not available`) : c'est ce
+  qui produisait le message d'erreur, **les services eux-mêmes étant sains**. Un `404` sur 8080 avait
+  d'ailleurs trompé la première vérification : il venait de l'autre application.
+
+**Décision : variable `GATEWAY_PORT`**, sur le modèle de `KEYCLOAK_PORT` (8080 par défaut, 8090 sur
+le poste du développeur). L'adresse donnée au frontend s'en déduit. Les deux ports variables de la
+composition sont désormais ceux qui entrent en conflit avec DOTTEL. Le CORS de la passerelle ne
+change pas : il porte sur l'origine du frontend (5173), pas sur le port de la passerelle.
+
+**Non tranché, à décider** : une politique `restart: unless-stopped` sur PostgreSQL et Kafka
+éviterait la première cause, mais démarrerait le module à chaque lancement de Docker Desktop, sur un
+poste dont la mémoire est comptée (1,3 Go libres au Sprint 8.1). Rien n'a été posé ; la procédure de
+reprise (`docker compose up -d`) est documentée au README et au guide de lancement.
+
+**Toast de connexion et de déconnexion.** Demande de l'utilisateur, dans le prolongement des
+notifications de succès existantes. Les deux gestes **font quitter la page** (redirection vers
+Keycloak puis retour) : une notification affichée au clic disparaîtrait avec elle. Elle s'affiche au
+retour. Un marqueur `sessionStorage` (`rations-evenement-session`, un mot et une heure, deux minutes)
+est posé par `FournisseurKeycloak` avant la redirection et consommé une seule fois au retour. **Il ne
+porte aucun jeton** : la règle « jamais de jeton dans un stockage persistant » (§10 de `CLAUDE.md`)
+est intacte, et la phrase qui affirmait qu'il n'y avait qu'une seule trace (`kc-callback-<state>`) a
+été corrigée. Sans ce marqueur, « connexion réussie » s'afficherait à chaque rechargement, `check-sso`
+restaurant alors une session existante. `ToastProvider` est monté au-dessus d'`AuthProvider`. Le
+frontend n'ayant pas de cadre de test, la vérification est le typage, le lint, le paquet servi et
+l'essai réel de l'utilisateur, qui a validé.
